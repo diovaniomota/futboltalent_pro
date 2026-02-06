@@ -1,0 +1,37 @@
+export '../../../flutter_flow/lat_lng.dart';
+export 'package:supabase_flutter/supabase_flutter.dart' hide Provider;
+
+export '../supabase.dart';
+export 'row.dart';
+export 'table.dart';
+
+export 'tables/convocatorias.dart';
+export 'tables/ads.dart';
+export 'tables/convocatorias_detalle_view.dart';
+export 'tables/user_badges.dart';
+export 'tables/followers.dart';
+export 'tables/user_stats.dart';
+export 'tables/search_view.dart';
+export 'tables/user_progress_view.dart';
+export 'tables/countrys.dart';
+export 'tables/clubes.dart';
+export 'tables/videos.dart';
+export 'tables/guardians.dart';
+export 'tables/positions.dart';
+export 'tables/players.dart';
+export 'tables/follows.dart';
+export 'tables/levels.dart';
+export 'tables/feedback.dart';
+export 'tables/user_saved_videos_view.dart';
+export 'tables/comments_with_user.dart';
+export 'tables/scouts.dart';
+export 'tables/badges.dart';
+export 'tables/postulaciones.dart';
+export 'tables/plans.dart';
+export 'tables/genders.dart';
+export 'tables/comments.dart';
+export 'tables/user_videos_saved.dart';
+export 'tables/users.dart';
+export 'tables/likes.dart';
+export 'tables/roles.dart';
+export 'tables/action_points.dart';
