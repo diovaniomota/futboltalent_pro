@@ -36,7 +36,16 @@ class _LoginWidgetState extends State<LoginWidget> {
   void initState() {
     super.initState();
     _model = createModel(context, () => LoginModel());
-    WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final blockMessage = FFAppState().authBlockMessage.trim();
+      if (blockMessage.isNotEmpty) {
+        setState(() => _errorMessage = blockMessage);
+        FFAppState().authBlockMessage = '';
+      } else {
+        safeSetState(() {});
+      }
+    });
   }
 
   @override
@@ -97,19 +106,72 @@ class _LoginWidgetState extends State<LoginWidget> {
         return;
       }
 
-      final response = await SupaFlow.client
+      // Sincroniza o userType do banco e aguarda conclusão
+      await FFAppState().syncUserType();
+      String userType = FFAppState.normalizeUserType(FFAppState().userType);
+
+      // Fallback: se syncUserType não encontrou, busca diretamente
+      if (userType.isEmpty) {
+        final response = await SupaFlow.client
+            .from('users')
+            .select('userType')
+            .eq('user_id', currentUserUid)
+            .maybeSingle();
+        userType = FFAppState.normalizeUserType(
+          response?['userType'],
+          fallback: 'jugador',
+        );
+        FFAppState().userType = userType;
+      }
+
+      debugPrint('🔑 Login: userType resolvido = "$userType"');
+
+      // Check if user is suspended or minor without guardian
+      final userData = await SupaFlow.client
           .from('users')
-          .select('userType')
+          .select('banned_until, is_minor, has_guardian')
           .eq('user_id', currentUserUid)
           .maybeSingle();
-      final userType =
-          response?['userType']?.toString().toLowerCase() ?? 'jugador';
-
-      // Salva no AppState para uso global da NavBar
-      FFAppState().userType = userType;
+      if (userData != null && userData['banned_until'] != null) {
+        final bannedUntil =
+            DateTime.tryParse(userData['banned_until'].toString())?.toLocal();
+        if (bannedUntil != null && bannedUntil.isAfter(DateTime.now())) {
+          final formattedDate =
+              '${bannedUntil.day.toString().padLeft(2, '0')}/${bannedUntil.month.toString().padLeft(2, '0')}/${bannedUntil.year}';
+          final blockMessage =
+              'Cuenta suspendida hasta $formattedDate. Contacte al administrador.';
+          FFAppState().authBlockMessage = blockMessage;
+          await authManager.signOut();
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _errorMessage = blockMessage;
+            });
+          }
+          return;
+        }
+      }
+      // Block minor without guardian
+      if (userData != null &&
+          userData['is_minor'] == true &&
+          userData['has_guardian'] != true) {
+        const blockMessage =
+            'Cuenta de menor sin adulto responsable. Registre nuevamente con un responsable.';
+        FFAppState().authBlockMessage = blockMessage;
+        await authManager.signOut();
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = blockMessage;
+          });
+        }
+        return;
+      }
 
       if (mounted) {
-        if (userType == 'jugador' || userType == 'profesional') {
+        if (userType == 'admin') {
+          context.goNamed(AdminDashboardWidget.routeName);
+        } else if (userType == 'jugador' || userType == 'profesional') {
           context.goNamed(FeedWidget.routeName);
         } else if (userType == 'club') {
           context.goNamed(DashboardClubWidget.routeName);

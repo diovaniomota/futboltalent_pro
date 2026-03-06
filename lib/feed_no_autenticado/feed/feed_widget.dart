@@ -42,8 +42,12 @@ class _FeedWidgetState extends State<FeedWidget>
   late String _instanceId;
   bool _isVisible = true;
   bool _isActiveRoute = true;
+  bool _isRouteObserverSubscribed = false;
   bool _hasShownLoginModal = false;
   int _videosWatchedWithoutLogin = 0;
+  String? _scoutCategoryFilter;
+  String? _scoutPositionFilter;
+  String? _scoutLocationFilter;
 
   @override
   void initState() {
@@ -54,13 +58,39 @@ class _FeedWidgetState extends State<FeedWidget>
     _instanceId = DateTime.now().millisecondsSinceEpoch.toString();
     FeedWidget.activeInstanceId = _instanceId;
 
+    // Se o usuário está logado mas o userType está vazio, sincroniza do banco
+    _ensureUserType();
     _loadVideos();
+  }
+
+  Future<void> _ensureUserType() async {
+    // Sempre sincroniza quando o usuário está logado
+    // Isso garante que mudanças manuais no Supabase reflitam no app
+    await FFAppState().syncUserType();
+
+    final normalizedType = FFAppState.normalizeUserType(FFAppState().userType);
+    if (normalizedType != FFAppState().userType) {
+      FFAppState().userType = normalizedType;
+    }
+
+    // Fallback final
+    if (FFAppState().userType.isEmpty) {
+      FFAppState().userType = 'jugador';
+    }
+
+    debugPrint('🏠 Feed: userType = "${FFAppState().userType}"');
+    if (mounted) safeSetState(() {});
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
+    if (_isRouteObserverSubscribed) return;
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+      _isRouteObserverSubscribed = true;
+    }
   }
 
   @override
@@ -71,7 +101,10 @@ class _FeedWidgetState extends State<FeedWidget>
     if (FeedWidget.activeInstanceId == _instanceId) {
       FeedWidget.activeInstanceId = null;
     }
-    routeObserver.unsubscribe(this);
+    if (_isRouteObserverSubscribed) {
+      routeObserver.unsubscribe(this);
+      _isRouteObserverSubscribed = false;
+    }
     super.dispose();
   }
 
@@ -79,18 +112,29 @@ class _FeedWidgetState extends State<FeedWidget>
   void didPushNext() {
     _pauseAllVideos();
     _isActiveRoute = false;
+    if (FeedWidget.activeInstanceId == _instanceId) {
+      FeedWidget.activeInstanceId = null;
+    }
+    if (mounted) safeSetState(() {});
   }
 
   @override
   void didPopNext() {
     _isActiveRoute = true;
-    setState(() {});
+    FeedWidget.activeInstanceId = _instanceId;
+    if (mounted) {
+      safeSetState(() {});
+      _loadVideos();
+    }
   }
 
   @override
   void deactivate() {
     _pauseAllVideos();
     _isActiveRoute = false;
+    if (FeedWidget.activeInstanceId == _instanceId) {
+      FeedWidget.activeInstanceId = null;
+    }
     super.deactivate();
   }
 
@@ -98,6 +142,9 @@ class _FeedWidgetState extends State<FeedWidget>
   void activate() {
     super.activate();
     _isActiveRoute = true;
+    if (_isVisible) {
+      FeedWidget.activeInstanceId = _instanceId;
+    }
   }
 
   @override
@@ -116,6 +163,326 @@ class _FeedWidgetState extends State<FeedWidget>
   String? get _currentUserId =>
       currentUserUid.isNotEmpty ? currentUserUid : null;
   bool get _isUserLoggedIn => currentUserUid.isNotEmpty;
+  bool get _isScoutViewer =>
+      FFAppState.normalizeUserType(FFAppState().userType) == 'profesional';
+
+  String? _firstNonEmpty(Iterable<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        return text;
+      }
+    }
+    return null;
+  }
+
+  String? _categoryFromBirthday(dynamic birthday) {
+    if (birthday == null) return null;
+    try {
+      final birth = DateTime.parse(birthday.toString());
+      final now = DateTime.now();
+      int age = now.year - birth.year;
+      if (now.month < birth.month ||
+          (now.month == birth.month && now.day < birth.day)) {
+        age--;
+      }
+
+      if (age <= 12) return 'U12';
+      if (age <= 14) return 'U14';
+      if (age <= 16) return 'U16';
+      if (age <= 19) return 'U19';
+      return 'Senior';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _normalizeFilterValue(String value) =>
+      value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  String _videoCategory(Map<String, dynamic> video) {
+    final userData = video['user_data'];
+    if (userData is! Map) return '';
+    return _firstNonEmpty([
+          userData['category'],
+          userData['categoria'],
+          _categoryFromBirthday(
+            userData['birthday'] ?? userData['birth_date'],
+          ),
+        ]) ??
+        '';
+  }
+
+  String _videoPosition(Map<String, dynamic> video) {
+    final userData = video['user_data'];
+    if (userData is! Map) return '';
+    return _firstNonEmpty([
+          userData['position'],
+          userData['posicion'],
+          userData['posição'],
+        ]) ??
+        '';
+  }
+
+  String _videoLocation(Map<String, dynamic> video) {
+    final userData = video['user_data'];
+    if (userData is! Map) return '';
+    final city = _firstNonEmpty([
+          userData['city'],
+          userData['ciudad'],
+          userData['location'],
+          userData['lugar'],
+        ]) ??
+        '';
+    final country = _firstNonEmpty([
+          userData['country'],
+          userData['pais'],
+          userData['country_name'],
+        ]) ??
+        '';
+    return [city, country].where((part) => part.isNotEmpty).join(' · ');
+  }
+
+  List<String> _collectVideoFilterOptions(
+      String Function(Map<String, dynamic>) resolver) {
+    final set = <String>{};
+    for (final video in _videos) {
+      final value = resolver(video).trim();
+      if (value.isNotEmpty) {
+        set.add(value);
+      }
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  List<String> get _scoutCategoryOptions =>
+      _collectVideoFilterOptions(_videoCategory);
+  List<String> get _scoutPositionOptions =>
+      _collectVideoFilterOptions(_videoPosition);
+  List<String> get _scoutLocationOptions =>
+      _collectVideoFilterOptions(_videoLocation);
+
+  int get _activeScoutFeedFiltersCount => [
+        _scoutCategoryFilter,
+        _scoutPositionFilter,
+        _scoutLocationFilter
+      ].where((value) => value != null && value.trim().isNotEmpty).length;
+
+  List<Map<String, dynamic>> get _scoutFilteredVideos {
+    return _videos.where((video) {
+      if (_scoutCategoryFilter != null && _scoutCategoryFilter!.isNotEmpty) {
+        final category = _videoCategory(video);
+        if (_normalizeFilterValue(category) !=
+            _normalizeFilterValue(_scoutCategoryFilter!)) {
+          return false;
+        }
+      }
+
+      if (_scoutPositionFilter != null && _scoutPositionFilter!.isNotEmpty) {
+        final position = _videoPosition(video);
+        if (_normalizeFilterValue(position) !=
+            _normalizeFilterValue(_scoutPositionFilter!)) {
+          return false;
+        }
+      }
+
+      if (_scoutLocationFilter != null && _scoutLocationFilter!.isNotEmpty) {
+        final location = _videoLocation(video);
+        if (_normalizeFilterValue(location) !=
+            _normalizeFilterValue(_scoutLocationFilter!)) {
+          return false;
+        }
+      }
+
+      return true;
+    }).toList();
+  }
+
+  Future<void> _openScoutFeedFilters() async {
+    if (!_isScoutViewer) return;
+
+    String? tempCategory = _scoutCategoryFilter;
+    String? tempPosition = _scoutPositionFilter;
+    String? tempLocation = _scoutLocationFilter;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        Widget buildFilterSection({
+          required String title,
+          required List<String> options,
+          required String? selected,
+          required ValueChanged<String?> onChanged,
+        }) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (options.isEmpty)
+                const Text(
+                  'Sem dados disponíveis para este filtro.',
+                  style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: options.map((option) {
+                    final isSelected = selected == option;
+                    return ChoiceChip(
+                      label: Text(option),
+                      selected: isSelected,
+                      onSelected: (_) => onChanged(isSelected ? null : option),
+                      selectedColor: const Color(0xFF0D3B66),
+                      checkmarkColor: Colors.white,
+                      labelStyle: TextStyle(
+                        color:
+                            isSelected ? Colors.white : const Color(0xFF0F172A),
+                        fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                      side: BorderSide(
+                        color: isSelected
+                            ? const Color(0xFF0D3B66)
+                            : const Color(0xFFCBD5E1),
+                      ),
+                      backgroundColor: Colors.white,
+                    );
+                  }).toList(),
+                ),
+            ],
+          );
+        }
+
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 14,
+                bottom: MediaQuery.of(ctx).padding.bottom + 16,
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFCBD5E1),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Filtrar feed de scouts',
+                      style: TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    buildFilterSection(
+                      title: 'Categoría',
+                      options: _scoutCategoryOptions,
+                      selected: tempCategory,
+                      onChanged: (value) =>
+                          setModalState(() => tempCategory = value),
+                    ),
+                    const SizedBox(height: 12),
+                    buildFilterSection(
+                      title: 'Posición',
+                      options: _scoutPositionOptions,
+                      selected: tempPosition,
+                      onChanged: (value) =>
+                          setModalState(() => tempPosition = value),
+                    ),
+                    const SizedBox(height: 12),
+                    buildFilterSection(
+                      title: 'Ubicación',
+                      options: _scoutLocationOptions,
+                      selected: tempLocation,
+                      onChanged: (value) =>
+                          setModalState(() => tempLocation = value),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              setState(() {
+                                _scoutCategoryFilter = null;
+                                _scoutPositionFilter = null;
+                                _scoutLocationFilter = null;
+                                _currentIndex = 0;
+                              });
+                              if (_pageController?.hasClients ?? false) {
+                                _pageController?.jumpToPage(0);
+                              }
+                              Navigator.pop(ctx);
+                            },
+                            child: const Text('Limpiar'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              _pauseAllVideos();
+                              setState(() {
+                                _scoutCategoryFilter = tempCategory;
+                                _scoutPositionFilter = tempPosition;
+                                _scoutLocationFilter = tempLocation;
+                                _currentIndex = 0;
+                              });
+                              if (_pageController?.hasClients ?? false) {
+                                _pageController?.jumpToPage(0);
+                              }
+                              Navigator.pop(ctx);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0D3B66),
+                            ),
+                            child: const Text(
+                              'Aplicar',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   void _showCreateProfileModal() {
     if (_hasShownLoginModal) return;
@@ -123,7 +490,7 @@ class _FeedWidgetState extends State<FeedWidget>
     showDialog(
         context: context,
         barrierDismissible: true,
-        builder: (context) => Dialog(
+        builder: (dialogContext) => Dialog(
               backgroundColor: Colors.transparent,
               child: Container(
                 width: 331,
@@ -146,7 +513,10 @@ class _FeedWidgetState extends State<FeedWidget>
                   const SizedBox(height: 30),
                   GestureDetector(
                     onTap: () {
-                      Navigator.pop(context);
+                      _pauseAllVideos();
+                      _isActiveRoute = false;
+                      FeedWidget.activeInstanceId = null;
+                      Navigator.pop(dialogContext);
                       context.goNamed('login');
                     },
                     child: Container(
@@ -167,7 +537,10 @@ class _FeedWidgetState extends State<FeedWidget>
                         style: TextStyle(fontSize: 14)),
                     GestureDetector(
                         onTap: () {
-                          Navigator.pop(context);
+                          _pauseAllVideos();
+                          _isActiveRoute = false;
+                          FeedWidget.activeInstanceId = null;
+                          Navigator.pop(dialogContext);
                           context.goNamed('seleccionDelTipoDePerfil');
                         },
                         child: const Text('Registrarse',
@@ -180,7 +553,7 @@ class _FeedWidgetState extends State<FeedWidget>
                   const SizedBox(height: 30),
                   GestureDetector(
                       onTap: () {
-                        Navigator.pop(context);
+                        Navigator.pop(dialogContext);
                         _videosWatchedWithoutLogin = 0;
                         _hasShownLoginModal = false;
                       },
@@ -401,13 +774,27 @@ class _FeedWidgetState extends State<FeedWidget>
                       child: Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                    child: SizedBox(
+                      height: 44,
+                      child: Stack(
+                        alignment: Alignment.center,
                         children: [
-                          _buildTab('Todos', 'todos'),
-                          const SizedBox(width: 24),
-                          _buildTab('Siguiendo', 'siguiendo'),
-                        ]),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _buildTab('Todos', 'todos'),
+                              const SizedBox(width: 24),
+                              _buildTab('Siguiendo', 'siguiendo'),
+                            ],
+                          ),
+                          if (_isScoutViewer)
+                            Positioned(
+                              right: 0,
+                              child: _buildScoutFeedFilterButton(),
+                            ),
+                        ],
+                      ),
+                    ),
                   )),
                 ]),
               ),
@@ -457,6 +844,55 @@ class _FeedWidgetState extends State<FeedWidget>
     );
   }
 
+  Widget _buildScoutFeedFilterButton() {
+    return GestureDetector(
+      onTap: _openScoutFeedFilters,
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.34),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withOpacity(0.32)),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Center(
+              child: Icon(
+                Icons.tune_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+            ),
+            if (_activeScoutFeedFiltersCount > 0)
+              Positioned(
+                right: -2,
+                top: -2,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D3B66),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.white, width: 1),
+                  ),
+                  child: Text(
+                    '$_activeScoutFeedFiltersCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildContent(double feedHeight) {
     if (_isLoading) {
       return const Center(
@@ -467,13 +903,31 @@ class _FeedWidgetState extends State<FeedWidget>
     }
     if (_videos.isEmpty) return _buildNoVideosContent();
 
+    final visibleVideos = _isScoutViewer ? _scoutFilteredVideos : _videos;
+    if (visibleVideos.isEmpty) {
+      if (_isScoutViewer && _activeScoutFeedFiltersCount > 0) {
+        return _buildNoFilteredVideosContent();
+      }
+      return _buildNoVideosContent();
+    }
+
+    if (_currentIndex >= visibleVideos.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _currentIndex = 0);
+        if (_pageController?.hasClients ?? false) {
+          _pageController?.jumpToPage(0);
+        }
+      });
+    }
+
     return PageView.builder(
         controller: _pageController,
         scrollDirection: Axis.vertical,
-        itemCount: _videos.length,
+        itemCount: visibleVideos.length,
         onPageChanged: _onPageChanged,
         itemBuilder: (context, index) {
-          final video = _videos[index];
+          final video = visibleVideos[index];
           return _VideoPlayerItem(
             key: ValueKey('${video['id']}-$_selectedTab-$_instanceId'),
             videoUrl: video['video_url'] ?? '',
@@ -514,6 +968,54 @@ class _FeedWidgetState extends State<FeedWidget>
               backgroundColor: const Color(0xFF0D3B66)),
           child: const Text('Descubrir personas')),
     ]));
+  }
+
+  Widget _buildNoFilteredVideosContent() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.filter_alt_off, color: Colors.white54, size: 58),
+            const SizedBox(height: 18),
+            const Text(
+              'No hay videos con estos filtros',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Probá cambiar categoría, posición o ubicación.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _scoutCategoryFilter = null;
+                  _scoutPositionFilter = null;
+                  _scoutLocationFilter = null;
+                  _currentIndex = 0;
+                });
+                if (_pageController?.hasClients ?? false) {
+                  _pageController?.jumpToPage(0);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0D3B66),
+              ),
+              child: const Text('Limpiar filtros'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildNoVideosContent() {
@@ -566,6 +1068,7 @@ class _VideoPlayerItem extends StatefulWidget {
 class _VideoPlayerItemState extends State<_VideoPlayerItem>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   VideoPlayerController? _controller;
+  VoidCallback? _controllerListener;
   bool _isInitialized = false;
   bool _hasError = false;
   String _errorMessage = ''; // Debug logging
@@ -592,6 +1095,179 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
     return current.isNotEmpty && owner.isNotEmpty && owner == current;
   }
 
+  bool get _isScoutViewer =>
+      FFAppState.normalizeUserType(FFAppState().userType) == 'profesional';
+
+  String _videoKindLabel() {
+    final description = widget.videoData['description']?.toString() ?? '';
+    final title =
+        widget.videoData['title']?.toString().trim().toLowerCase() ?? '';
+    final hasChallengeTag =
+        RegExp(r'\[challenge_ref:(course|exercise):([^\]]+)\]')
+            .hasMatch(description);
+    final looksChallengeTitle = title.startsWith('desafío:') ||
+        title.startsWith('desafio:') ||
+        title.startsWith('challenge:');
+    return (hasChallengeTag || looksChallengeTitle) ? 'Desafío' : 'UGC';
+  }
+
+  String? _firstNonEmpty(Iterable<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
+    }
+    return null;
+  }
+
+  String? _categoryFromBirthday(dynamic birthday) {
+    if (birthday == null) return null;
+    try {
+      final birth = DateTime.parse(birthday.toString());
+      final now = DateTime.now();
+      int age = now.year - birth.year;
+      if (now.month < birth.month ||
+          (now.month == birth.month && now.day < birth.day)) {
+        age--;
+      }
+      if (age <= 12) return 'U12';
+      if (age <= 14) return 'U14';
+      if (age <= 16) return 'U16';
+      if (age <= 19) return 'U19';
+      return 'Senior';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _buildScoutOverlayChip({
+    required IconData icon,
+    required String label,
+    Color? backgroundColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: backgroundColor ?? Colors.white.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: Colors.white),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              height: 1.0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoutVideoContextOverlay(dynamic rawUserData) {
+    if (!_isScoutViewer) return const SizedBox.shrink();
+
+    final userData = rawUserData is Map
+        ? Map<String, dynamic>.from(rawUserData)
+        : <String, dynamic>{};
+
+    final category = _firstNonEmpty([
+          userData['category'],
+          userData['categoria'],
+          _categoryFromBirthday(
+            userData['birthday'] ?? userData['birth_date'],
+          ),
+        ]) ??
+        '';
+
+    final position = _firstNonEmpty([
+          userData['position'],
+          userData['posicion'],
+          userData['posição'],
+        ]) ??
+        '';
+
+    final city = _firstNonEmpty([
+          userData['city'],
+          userData['ciudad'],
+          userData['location'],
+          userData['lugar'],
+        ]) ??
+        '';
+
+    final country = _firstNonEmpty([
+          userData['country'],
+          userData['pais'],
+          userData['country_name'],
+        ]) ??
+        '';
+
+    final location = [city, country].where((p) => p.isNotEmpty).join(' · ');
+    final videoKind = _videoKindLabel();
+
+    final chips = <Widget>[
+      _buildScoutOverlayChip(
+        icon:
+            videoKind == 'Desafío' ? Icons.track_changes : Icons.ondemand_video,
+        label: videoKind,
+        backgroundColor: videoKind == 'Desafío'
+            ? const Color(0xFF7C2D12).withOpacity(0.85)
+            : const Color(0xFF1E3A8A).withOpacity(0.85),
+      ),
+      if (category.isNotEmpty)
+        _buildScoutOverlayChip(icon: Icons.category_outlined, label: category),
+      if (position.isNotEmpty)
+        _buildScoutOverlayChip(icon: Icons.shield_outlined, label: position),
+      if (location.isNotEmpty)
+        _buildScoutOverlayChip(
+            icon: Icons.location_on_outlined, label: location),
+    ];
+
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.36),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.16)),
+      ),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: chips,
+      ),
+    );
+  }
+
+  bool _isRouteCurrent() => ModalRoute.of(context)?.isCurrent ?? false;
+
+  bool _canAutoPlay() {
+    final isActiveInstance = FeedWidget.activeInstanceId == null ||
+        FeedWidget.activeInstanceId == widget.parentInstanceId;
+    return widget.isCurrentVideo &&
+        widget.isParentVisible &&
+        !_isPaused &&
+        _isRouteCurrent() &&
+        isActiveInstance;
+  }
+
+  bool _canManuallyPlay() {
+    final isActiveInstance = FeedWidget.activeInstanceId == null ||
+        FeedWidget.activeInstanceId == widget.parentInstanceId;
+    return widget.isCurrentVideo &&
+        widget.isParentVisible &&
+        _isRouteCurrent() &&
+        isActiveInstance;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -608,10 +1284,14 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
   }
 
   void _onShouldPauseAll() {
-    if (_controller != null && _isInitialized) {
-      _controller!.pause();
-      _controller!.setVolume(0.0);
-      if (mounted) setState(() => _isPausedBySystem = true);
+    if (_controller != null) {
+      try {
+        _controller!.pause();
+        _controller!.setVolume(0.0);
+      } catch (_) {}
+    }
+    if (mounted && !_isPausedBySystem) {
+      setState(() => _isPausedBySystem = true);
     }
   }
 
@@ -638,20 +1318,23 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
       setState(() => _isSaved = widget.videoData['is_saved'] ?? false);
     }
 
-    if (!widget.isParentVisible) {
+    if (!_canAutoPlay()) {
       if (_controller!.value.isPlaying) {
         _controller!.pause();
-        _controller!.setVolume(0.0);
-        if (mounted) setState(() => _isPausedBySystem = true);
       }
-    } else if (widget.isCurrentVideo && widget.isParentVisible && !_isPaused) {
-      if (_isPausedBySystem || !_controller!.value.isPlaying) {
-        _controller!.play();
-        _controller!.setVolume(FeedWidget.globalMuted ? 0.0 : 1.0);
-        if (mounted) setState(() => _isPausedBySystem = false);
+      _controller!.setVolume(0.0);
+      if (mounted && !_isPausedBySystem) {
+        setState(() => _isPausedBySystem = true);
       }
-    } else if (!widget.isCurrentVideo) {
-      _controller!.pause();
+      return;
+    }
+
+    if (_isPausedBySystem || !_controller!.value.isPlaying) {
+      _controller!.play();
+      _controller!.setVolume(FeedWidget.globalMuted ? 0.0 : 1.0);
+      if (mounted && _isPausedBySystem) {
+        setState(() => _isPausedBySystem = false);
+      }
     }
   }
 
@@ -814,12 +1497,36 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
       if (!mounted) return;
       _controller!.setLooping(true);
       _controller!.setVolume(FeedWidget.globalMuted ? 0.0 : 1.0);
+      _controllerListener = () {
+        final controller = _controller;
+        if (controller == null || !_isInitialized) return;
+        final value = controller.value;
+        if (!value.isInitialized || value.duration <= Duration.zero) return;
+        final reachedEnd = value.position >=
+            value.duration - const Duration(milliseconds: 150);
+        if (reachedEnd &&
+            !_isPaused &&
+            !_isPausedBySystem &&
+            !value.isPlaying &&
+            _canAutoPlay()) {
+          controller.seekTo(Duration.zero);
+          controller.play();
+        }
+      };
+      _controller!.addListener(_controllerListener!);
+      final canAutoPlay = _canAutoPlay();
       setState(() {
         _isInitialized = true;
         _hasError = false;
         _isLoading = false;
+        _isPausedBySystem = !canAutoPlay;
       });
-      if (widget.isCurrentVideo && widget.isParentVisible) _controller!.play();
+      if (canAutoPlay) {
+        _controller!.play();
+      } else {
+        _controller!.pause();
+        _controller!.setVolume(0.0);
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -852,10 +1559,25 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
     setState(() {
       if (_controller!.value.isPlaying) {
         _controller!.pause();
+        _controller!.setVolume(0.0);
         _isPaused = true;
+        _isPausedBySystem = false;
       } else {
+        if (!_canManuallyPlay()) {
+          _controller!.pause();
+          _controller!.setVolume(0.0);
+          _isPausedBySystem = true;
+          return;
+        }
+        final duration = _controller!.value.duration;
+        final position = _controller!.value.position;
+        if (duration > Duration.zero &&
+            position >= duration - const Duration(milliseconds: 200)) {
+          _controller!.seekTo(Duration.zero);
+        }
         _controller!.play();
         _isPaused = false;
+        _isPausedBySystem = false;
         _controller!.setVolume(FeedWidget.globalMuted ? 0.0 : 1.0);
       }
     });
@@ -900,6 +1622,9 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
     FeedWidget.shouldPauseAll.removeListener(_onShouldPauseAll);
     WidgetsBinding.instance.removeObserver(this);
     _likeAnimController.dispose();
+    if (_controller != null && _controllerListener != null) {
+      _controller!.removeListener(_controllerListener!);
+    }
     _controller?.dispose();
     super.dispose();
   }
@@ -974,6 +1699,13 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                       Colors.transparent,
                       Colors.black.withOpacity(0.8)
                     ])))),
+            if (_isScoutViewer)
+              Positioned(
+                left: 16,
+                right: 80,
+                bottom: 158,
+                child: _buildScoutVideoContextOverlay(userData),
+              ),
             // Info
             Positioned(
                 left: 16,
@@ -983,11 +1715,22 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(children: [
-                        Text('@$userName',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16)),
+                        GestureDetector(
+                          onTap: () {
+                            final uid =
+                                widget.videoData['user_id']?.toString() ?? '';
+                            if (uid.isNotEmpty) {
+                              context.pushNamed(
+                                  'perfil_profesional_solicitar_Contato',
+                                  queryParameters: {'userId': uid});
+                            }
+                          },
+                          child: Text('@$userName',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16)),
+                        ),
                         if (!_isOwnVideo) ...[
                           const SizedBox(width: 8),
                           GestureDetector(
@@ -1013,11 +1756,22 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                 right: 12,
                 bottom: 120,
                 child: Column(children: [
-                  CircleAvatar(
-                      backgroundImage:
-                          userPhoto != null ? NetworkImage(userPhoto) : null,
-                      child:
-                          userPhoto == null ? const Icon(Icons.person) : null),
+                  GestureDetector(
+                    onTap: () {
+                      final uid = widget.videoData['user_id']?.toString() ?? '';
+                      if (uid.isNotEmpty) {
+                        context.pushNamed(
+                            'perfil_profesional_solicitar_Contato',
+                            queryParameters: {'userId': uid});
+                      }
+                    },
+                    child: CircleAvatar(
+                        backgroundImage:
+                            userPhoto != null ? NetworkImage(userPhoto) : null,
+                        child: userPhoto == null
+                            ? const Icon(Icons.person)
+                            : null),
+                  ),
                   const SizedBox(height: 20),
                   _buildSideBtn(Icons.thumb_up, _isLiked,
                       _formatCount(_likesCount), _toggleLike),
@@ -1053,16 +1807,19 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.5),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.play_arrow,
-                        color: Colors.white,
-                        size: 50,
+                    GestureDetector(
+                      onTap: _togglePlayPause,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.play_arrow,
+                          color: Colors.white,
+                          size: 50,
+                        ),
                       ),
                     ),
                   ],

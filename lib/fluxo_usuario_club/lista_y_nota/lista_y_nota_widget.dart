@@ -1,5 +1,4 @@
 import '/backend/supabase/supabase.dart';
-import '/backend/supabase/supabase_util.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import 'package:flutter/material.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -24,7 +23,6 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
 
   bool _isLoading = true;
   String? _clubId;
-  String? _currentUserId;
   String? _clubName;
 
   List<Map<String, dynamic>> _listas = [];
@@ -110,35 +108,32 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   // ============ DATA LOADING ============
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
+
+    _clubId = currentUserUid;
+
+    // Carregar nome do club (não bloqueia o resto se falhar)
     try {
-      _currentUserId = currentUserUid;
-      _clubId = currentUserUid;
-
-      if (_clubId == null || _clubId!.isEmpty) {
-        final userResponse = await SupaFlow.client
-            .from('users')
-            .select('club_id')
-            .eq('user_id', _currentUserId!)
-            .maybeSingle();
-        _clubId = userResponse?['club_id']?.toString();
-      }
-
-      if (_clubId != null && _clubId!.isNotEmpty) {
-        final clubResponse = await SupaFlow.client
-            .from('clubs')
-            .select('name')
-            .eq('id', _clubId!)
-            .maybeSingle();
-        if (validSupabaseQuery(clubResponse)) {
-          setState(() {
-            _clubName = clubResponse?['name'];
-          });
-        }
-        await _loadListas();
+      final clubResponse = await SupaFlow.client
+          .from('clubs')
+          .select('nombre')
+          .eq('owner_id', _clubId!)
+          .maybeSingle();
+      if (clubResponse != null && clubResponse['nombre'] != null) {
+        _clubName = clubResponse['nombre'];
       }
     } catch (e) {
-      debugPrint('❌ Error cargando datos: $e');
+      debugPrint('Club name not found: $e');
     }
+
+    // Carregar listas
+    if (_clubId != null && _clubId!.isNotEmpty) {
+      try {
+        await _loadListas();
+      } catch (e) {
+        debugPrint('Error cargando listas: $e');
+      }
+    }
+
     if (mounted) setState(() => _isLoading = false);
   }
 
@@ -163,12 +158,19 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
         }
       }
 
+      // Atualizar _selectedLista com dados frescos
       if (_selectedLista != null) {
+        final updated =
+            _listas.where((l) => l['id'] == _selectedLista!['id']).toList();
+        if (updated.isNotEmpty) {
+          _selectedLista = updated.first;
+        }
         await _loadJugadoresEnLista(_selectedLista!['id'].toString());
       }
     } catch (e) {
       debugPrint('❌ Error cargando listas: $e');
     }
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadJugadoresEnLista(String listaId) async {
@@ -185,7 +187,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           final jugadorResponse = await SupaFlow.client
               .from('users')
               .select(
-                  'user_id, name, lastname, position, birth_date, country, photo_url')
+                  'user_id, name, lastname, posicion, birthday, country_id, photo_url')
               .eq('user_id', item['jugador_id'])
               .maybeSingle();
           if (jugadorResponse != null) item['jugador'] = jugadorResponse;
@@ -195,6 +197,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     } catch (e) {
       debugPrint('❌ Error cargando jugadores: $e');
     }
+    if (mounted) setState(() {});
   }
 
   void _filterJugadores() {
@@ -208,8 +211,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           if (jugador == null) return false;
           final name = '${jugador['name'] ?? ''} ${jugador['lastname'] ?? ''}'
               .toLowerCase();
-          final position = (jugador['position'] ?? '').toString().toLowerCase();
-          return name.contains(query) || position.contains(query);
+          final posicion = (jugador['posicion'] ?? '').toString().toLowerCase();
+          return name.contains(query) || posicion.contains(query);
         }).toList();
       }
     });
@@ -222,6 +225,137 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     });
     await _loadJugadoresEnLista(lista['id'].toString());
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchCandidatePlayersForClub() async {
+    if (_clubId == null || _clubId!.isEmpty) return [];
+
+    try {
+      final convocatoriasResponse = await SupaFlow.client
+          .from('convocatorias')
+          .select('id')
+          .eq('club_id', _clubId!)
+          .limit(250);
+      final convocatoriaIds = (convocatoriasResponse as List)
+          .map((row) => row['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      if (convocatoriaIds.isEmpty) return [];
+
+      final posts = <Map<String, dynamic>>[];
+      Future<void> loadPosts(String table) async {
+        try {
+          final response = await SupaFlow.client
+              .from(table)
+              .select('player_id, jugador_id, convocatoria_id')
+              .inFilter('convocatoria_id', convocatoriaIds)
+              .order('created_at', ascending: false)
+              .limit(600);
+          posts.addAll(List<Map<String, dynamic>>.from(response));
+        } catch (_) {}
+      }
+
+      await Future.wait([
+        loadPosts('postulaciones'),
+        loadPosts('aplicaciones_convocatoria'),
+      ]);
+
+      final ids = posts
+          .map((row) =>
+              row['player_id']?.toString() ??
+              row['jugador_id']?.toString() ??
+              '')
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      if (ids.isEmpty) return [];
+
+      List<Map<String, dynamic>> users;
+      try {
+        final response = await SupaFlow.client
+            .from('users')
+            .select(
+                'user_id, name, lastname, username, posicion, city, birthday, country_id, photo_url, userType')
+            .inFilter('user_id', ids)
+            .inFilter('userType',
+                ['jugador', 'jogador', 'player', 'athlete', 'atleta']);
+        users = List<Map<String, dynamic>>.from(response);
+      } catch (_) {
+        final response = await SupaFlow.client
+            .from('users')
+            .select(
+                'user_id, name, lastname, username, posicion, city, birthday, country_id, photo_url, usertype')
+            .inFilter('user_id', ids)
+            .inFilter('usertype',
+                ['jugador', 'jogador', 'player', 'athlete', 'atleta']);
+        users = List<Map<String, dynamic>>.from(response);
+      }
+
+      return users;
+    } catch (e) {
+      debugPrint('Error candidate players for club lists: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchSavedPlayersForClub() async {
+    if (_clubId == null || _clubId!.isEmpty) return [];
+
+    try {
+      final ids = <String>{};
+
+      try {
+        final saved = await SupaFlow.client
+            .from('jugadores_guardados')
+            .select('jugador_id')
+            .eq('scout_id', _clubId!)
+            .limit(600);
+        for (final row in (saved as List)) {
+          final id = row['jugador_id']?.toString() ?? '';
+          if (id.isNotEmpty) ids.add(id);
+        }
+      } catch (_) {}
+
+      try {
+        final saved = await SupaFlow.client
+            .from('jugadores_guardados')
+            .select('jugador_id')
+            .eq('club_id', _clubId!)
+            .limit(600);
+        for (final row in (saved as List)) {
+          final id = row['jugador_id']?.toString() ?? '';
+          if (id.isNotEmpty) ids.add(id);
+        }
+      } catch (_) {}
+
+      if (ids.isEmpty) return [];
+
+      List<Map<String, dynamic>> users;
+      try {
+        final response = await SupaFlow.client
+            .from('users')
+            .select(
+                'user_id, name, lastname, username, posicion, city, birthday, country_id, photo_url, userType')
+            .inFilter('user_id', ids.toList())
+            .inFilter('userType',
+                ['jugador', 'jogador', 'player', 'athlete', 'atleta']);
+        users = List<Map<String, dynamic>>.from(response);
+      } catch (_) {
+        final response = await SupaFlow.client
+            .from('users')
+            .select(
+                'user_id, name, lastname, username, posicion, city, birthday, country_id, photo_url, usertype')
+            .inFilter('user_id', ids.toList())
+            .inFilter('usertype',
+                ['jugador', 'jogador', 'player', 'athlete', 'atleta']);
+        users = List<Map<String, dynamic>>.from(response);
+      }
+
+      return users;
+    } catch (e) {
+      debugPrint('Error saved players for club lists: $e');
+      return [];
+    }
   }
 
   // ============ MENU & MODALS ============
@@ -263,7 +397,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                                 child: const Icon(Icons.settings,
                                     color: Colors.white, size: 24)),
                             const SizedBox(width: 12),
-                            Text('Panel del Club',
+                            Text('Menu do Club',
                                 style: GoogleFonts.inter(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -282,7 +416,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                             _buildDrawerItem(
                                 context,
                                 Icons.dashboard_outlined,
-                                'Dashboard',
+                                'Início',
                                 false,
                                 () => context
                                     .pushNamed(DashboardClubWidget.routeName)),
@@ -303,7 +437,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                             _buildDrawerItem(
                                 context,
                                 Icons.list_alt_outlined,
-                                'Listas y Notas',
+                                'Listas',
                                 true,
                                 () => context
                                     .pushNamed(ListaYNotaWidget.routeName)),
@@ -311,7 +445,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                             _buildDrawerItem(
                                 context,
                                 Icons.settings_outlined,
-                                'Configuración',
+                                'Configuração',
                                 false,
                                 () => context
                                     .pushNamed(ConfiguracinWidget.routeName)),
@@ -459,7 +593,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
             onTap: () => _showClubMenu(context),
             child: Icon(Icons.menu, color: Colors.black, size: 24 * scale)),
         SizedBox(height: 16 * scale),
-        Text('Listas y Notas',
+        Text('Listas',
             style: GoogleFonts.inter(
                 fontSize:
                     _responsive(context, mobile: 20, tablet: 24, desktop: 28) *
@@ -713,8 +847,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     final jugador = item['jugador'] as Map<String, dynamic>?;
     final name =
         '${jugador?['name'] ?? ''} ${jugador?['lastname'] ?? ''}'.trim();
-    final position = jugador?['position'] ?? '';
-    final age = _calculateAge(jugador?['birth_date']);
+    final position = jugador?['posicion'] ?? '';
+    final age = _calculateAge(jugador?['birthday']);
     final photo = jugador?['photo_url'];
     final rating = item['calificacion'] ?? 0;
 
@@ -788,14 +922,23 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
               _buildTextField(ctx, 'Descripción', descCtrl, maxLines: 3),
             ], () async {
               if (nombreCtrl.text.isEmpty) return;
-              await SupaFlow.client.from('listas_club').insert({
+              final inserted =
+                  await SupaFlow.client.from('listas_club').insert({
                 'club_id': _clubId,
                 'nombre': nombreCtrl.text,
                 'descripcion': descCtrl.text,
                 'created_at': DateTime.now().toIso8601String()
-              });
+              }).select();
               Navigator.pop(ctx);
-              _loadListas();
+              await _loadListas();
+              // Auto-select the newly created list
+              if (inserted.isNotEmpty && mounted) {
+                final newList =
+                    _listas.where((l) => l['id'] == inserted[0]['id']).toList();
+                if (newList.isNotEmpty) {
+                  _selectLista(newList.first);
+                }
+              }
             }, 'Crear Lista'));
   }
 
@@ -847,13 +990,61 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                 ]));
   }
 
-  void _showAddJugadorModal() {
-    if (_selectedLista == null) return;
+  void _showAddJugadorModal() async {
+    if (_selectedLista == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona una lista primero')),
+      );
+      return;
+    }
+
+    final candidatePlayers = await _fetchCandidatePlayersForClub();
+    final savedPlayers = await _fetchSavedPlayersForClub();
+
     final searchCtrl = TextEditingController();
     List<Map<String, dynamic>> results = [];
     Map<String, dynamic>? selected;
     int rating = 0;
     final notaCtrl = TextEditingController();
+    String source = 'candidatos';
+
+    List<Map<String, dynamic>> currentSourcePlayers() {
+      if (source == 'guardados') return savedPlayers;
+      if (source == 'todos') {
+        final map = <String, Map<String, dynamic>>{};
+        for (final row in [...candidatePlayers, ...savedPlayers]) {
+          final uid = row['user_id']?.toString() ?? '';
+          if (uid.isEmpty) continue;
+          map[uid] = row;
+        }
+        return map.values.toList();
+      }
+      return candidatePlayers;
+    }
+
+    void runSearch(StateSetter setStates, String value) {
+      final query = value.trim().toLowerCase();
+      final base = currentSourcePlayers();
+
+      if (query.length < 2) {
+        setStates(() => results = base.take(8).toList());
+        return;
+      }
+
+      final localResults = base.where((player) {
+        final name =
+            '${player['name'] ?? ''} ${player['lastname'] ?? ''}'.toLowerCase();
+        final username = (player['username'] ?? '').toString().toLowerCase();
+        final position = (player['posicion'] ?? '').toString().toLowerCase();
+        final city = (player['city'] ?? '').toString().toLowerCase();
+        return name.contains(query) ||
+            username.contains(query) ||
+            position.contains(query) ||
+            city.contains(query);
+      }).toList();
+
+      setStates(() => results = localResults.take(12).toList());
+    }
 
     showModalBottomSheet(
         context: context,
@@ -861,6 +1052,43 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
         backgroundColor: Colors.transparent,
         builder: (ctx) => StatefulBuilder(builder: (ctx, setStates) {
               return _buildModalContent(ctx, 'Agregar Jugador', [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Candidatos'),
+                      selected: source == 'candidatos',
+                      onSelected: (_) {
+                        setStates(() {
+                          source = 'candidatos';
+                        });
+                        runSearch(setStates, searchCtrl.text);
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Guardados'),
+                      selected: source == 'guardados',
+                      onSelected: (_) {
+                        setStates(() {
+                          source = 'guardados';
+                        });
+                        runSearch(setStates, searchCtrl.text);
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Todos'),
+                      selected: source == 'todos',
+                      onSelected: (_) {
+                        setStates(() {
+                          source = 'todos';
+                        });
+                        runSearch(setStates, searchCtrl.text);
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 TextField(
                     controller: searchCtrl,
                     decoration: InputDecoration(
@@ -870,17 +1098,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                         fillColor: Colors.grey[100],
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8))),
-                    onChanged: (v) async {
-                      if (v.length < 2) return;
-                      final res = await SupaFlow.client
-                          .from('users')
-                          .select()
-                          .eq('userType', 'jugador')
-                          .or('name.ilike.%$v%,lastname.ilike.%$v%')
-                          .limit(5);
-                      setStates(
-                          () => results = List<Map<String, dynamic>>.from(res));
-                    }),
+                    onChanged: (v) => runSearch(setStates, v)),
                 if (results.isNotEmpty && selected == null)
                   ...results.map((j) => ListTile(
                         leading: CircleAvatar(
@@ -893,6 +1111,14 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                           results = [];
                         }),
                       )),
+                if (results.isEmpty && selected == null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(
+                      'Sem resultados para esta origem de busca.',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                    ),
+                  ),
                 if (selected != null)
                   ListTile(
                     leading: CircleAvatar(
@@ -970,7 +1196,6 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                 await SupaFlow.client.from('listas_jugadores').update({
                   'calificacion': rating,
                   'nota': notaCtrl.text,
-                  'updated_at': DateTime.now().toIso8601String()
                 }).eq('id', item['id']);
                 Navigator.pop(ctx);
                 _loadJugadoresEnLista(_selectedLista!['id'].toString());

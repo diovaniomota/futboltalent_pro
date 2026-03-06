@@ -12,15 +12,48 @@ class FFAppState extends ChangeNotifier {
     return _instance;
   }
 
-  FFAppState._internal() {
-    // O listener será ativado após o initializePersistedState para evitar LateInitializationError
+  FFAppState._internal();
+
+  static String normalizeUserType(dynamic rawValue, {String fallback = ''}) {
+    final value = rawValue?.toString().trim().toLowerCase() ?? '';
+    if (value.isEmpty) return fallback;
+
+    switch (value) {
+      case 'jugador':
+      case 'jogador':
+      case 'player':
+      case 'athlete':
+      case 'atleta':
+        return 'jugador';
+      case 'profesional':
+      case 'profissional':
+      case 'professional':
+      case 'scout':
+      case 'scouter':
+      case 'scouting':
+      case 'oleador':
+      case 'ojeador':
+        return 'profesional';
+      case 'club':
+      case 'clube':
+      case 'club_staff':
+      case 'club-staff':
+      case 'staff':
+        return 'club';
+      case 'admin':
+      case 'administrador':
+      case 'administrator':
+        return 'admin';
+      default:
+        return value;
+    }
   }
 
   void _setupAuthListener() {
     jwtTokenStream.listen((token) {
       if (token != null) {
         debugPrint(
-            '🔔 FFAppState: Sessão ativa/revalidada, sincronizando userType...');
+            '🔔 FFAppState: Token atualizado, sincronizando userType...');
         syncUserType();
       }
     });
@@ -30,55 +63,65 @@ class FFAppState extends ChangeNotifier {
     _instance = FFAppState._internal();
   }
 
+  // Retorna o UID do usuário autenticado, usando o SDK do Supabase diretamente
+  // (não depende do stream customizado que só fica pronto após runApp)
+  String get _currentUid =>
+      SupaFlow.client.auth.currentUser?.id ?? currentUserUid;
+
   Future initializePersistedState() async {
     try {
       prefs = await SharedPreferences.getInstance();
-      _userType =
-          (prefs.getString('ff_userType') ?? _userType).trim().toLowerCase();
-      debugPrint('📦 FFAppState: Estado carregado: "$_userType"');
+      _userType = normalizeUserType(
+        prefs.getString('ff_userType') ?? _userType,
+      );
+      debugPrint('📦 FFAppState: Cache carregado: "$_userType"');
 
-      // Inicia listener de auth agora que prefs está pronto
       _setupAuthListener();
 
-      // Sincronização automática para garantir consistência com o DB
-      if (currentUserUid.isNotEmpty) {
-        if (_userType.isEmpty) {
-          // Se não tem cache, aguarda o sync para não mostrar UI errada
-          await syncUserType();
-        } else {
-          // Se tem cache, mostra o cache mas sincroniza em background para atualizar se mudou no DB
-          syncUserType();
-        }
+      final uid = _currentUid;
+      debugPrint('👤 FFAppState: UID atual: "$uid"');
+
+      if (uid.isNotEmpty) {
+        // Sempre sincroniza do banco para garantir valor atualizado
+        await syncUserType();
       }
     } catch (e) {
-      // Falha silenciosa ou log de erro mínimo em produção
+      debugPrint('❌ FFAppState: Erro no initializePersistedState: $e');
     }
   }
 
   Future syncUserType() async {
-    if (currentUserUid.isEmpty) {
-      debugPrint('⚠️ FFAppState: Tentativa de sync sem usuário logado.');
+    final uid = _currentUid;
+    if (uid.isEmpty) {
+      debugPrint('⚠️ FFAppState: Sem usuário logado para sync.');
       return;
     }
+
     try {
       final response = await SupaFlow.client
           .from('users')
           .select('userType')
-          .eq('user_id', currentUserUid)
+          .eq('user_id', uid)
           .maybeSingle();
 
+      debugPrint('🔍 FFAppState: sync resposta = $response');
+
       if (response != null && response['userType'] != null) {
-        final String rawType = response['userType'].toString();
-        final String sanitizedType = rawType.trim().toLowerCase();
-        debugPrint(
-            '✅ FFAppState: Sucesso no sync! Bruto: "$rawType" -> Sanitizado: "$sanitizedType"');
-        userType = sanitizedType;
-      } else {
-        debugPrint(
-            '⚠️ FFAppState: Resposta do banco vazia para userType. Mantendo atual: "$_userType"');
+        final String sanitizedType = normalizeUserType(response['userType']);
+        if (sanitizedType.isNotEmpty) {
+          debugPrint('✅ FFAppState: userType = "$sanitizedType"');
+          userType = sanitizedType;
+          return;
+        }
+      }
+
+      // Fallback: se não encontrou userType válido e o atual está vazio
+      if (_userType.isEmpty) {
+        debugPrint('🔄 FFAppState: Usando fallback "jugador"');
+        userType = 'jugador';
       }
     } catch (e) {
-      debugPrint('❌ FFAppState: Erro no sync do userType: $e');
+      debugPrint('❌ FFAppState: Erro no sync: $e');
       if (_userType.isEmpty) userType = 'jugador';
     }
   }
@@ -91,16 +134,23 @@ class FFAppState extends ChangeNotifier {
   String _userType = '';
   String get userType => _userType;
   set userType(String value) {
-    final sanitizedValue = value.trim().toLowerCase();
+    final sanitizedValue = normalizeUserType(value);
     _userType = sanitizedValue;
 
-    // Tenta persistir apenas se prefs estiver inicializado
     try {
       prefs.setString('ff_userType', sanitizedValue);
     } catch (e) {
-      // Ignora erro de persistência se ocorrer
+      // prefs pode não estar pronto ainda
     }
 
+    debugPrint('📝 FFAppState: userType -> "$sanitizedValue"');
+    notifyListeners();
+  }
+
+  String _authBlockMessage = '';
+  String get authBlockMessage => _authBlockMessage;
+  set authBlockMessage(String value) {
+    _authBlockMessage = value;
     notifyListeners();
   }
 

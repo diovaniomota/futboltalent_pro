@@ -1,5 +1,4 @@
 import '/backend/supabase/supabase.dart';
-import '/backend/supabase/supabase_util.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
@@ -26,7 +25,6 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
 
   bool _isLoading = true;
   List<Map<String, dynamic>> _convocatorias = [];
-  String? _currentUserId;
   String? _clubId;
   String? _clubName;
 
@@ -53,41 +51,26 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
+    _clubId = currentUserUid;
+
+    // Carregar nome do club (não bloqueia o resto se falhar)
     try {
-      _currentUserId = currentUserUid;
-      _clubId = currentUserUid;
-
-      // Se não tiver clubId definido (caso mude a logica de auth), buscar
-      if (_clubId == null || _clubId!.isEmpty) {
-        final userResponse = await SupaFlow.client
-            .from('users')
-            .select('club_id')
-            .eq('user_id', _currentUserId!)
-            .maybeSingle();
-
-        _clubId = userResponse?['club_id']?.toString();
-      }
-
-      // Load Club Name
-      if (_clubId != null && _clubId!.isNotEmpty) {
-        final clubResponse = await SupaFlow.client
-            .from('clubs')
-            .select('name')
-            .eq('id', _clubId!)
-            .maybeSingle();
-        if (validSupabaseQuery(clubResponse)) {
-          setState(() {
-            _clubName = clubResponse?['name'];
-          });
-        }
-      }
-
-      if (_clubId != null && _clubId!.isNotEmpty) {
-        await _loadConvocatorias();
-        await _loadStats();
+      final clubResponse = await SupaFlow.client
+          .from('clubs')
+          .select('nombre')
+          .eq('owner_id', _clubId!)
+          .maybeSingle();
+      if (clubResponse != null && clubResponse['nombre'] != null) {
+        _clubName = clubResponse['nombre'];
       }
     } catch (e) {
-      debugPrint('Error cargando datos: $e');
+      debugPrint('Club name not found: $e');
+    }
+
+    // Carregar convocatorias e stats
+    if (_clubId != null && _clubId!.isNotEmpty) {
+      await _loadConvocatorias();
+      await _loadStats();
     }
 
     if (mounted) {
@@ -252,7 +235,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               ),
                               const SizedBox(width: 12),
                               Text(
-                                'Panel del Club',
+                                'Menu do Club',
                                 style: GoogleFonts.inter(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -276,7 +259,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.dashboard_outlined,
-                                  'Dashboard',
+                                  'Início',
                                   false,
                                   () async => context.pushNamed(
                                       DashboardClubWidget.routeName)),
@@ -297,7 +280,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.list_alt_outlined,
-                                  'Listas y Notas',
+                                  'Listas',
                                   false,
                                   () async => context
                                       .pushNamed(ListaYNotaWidget.routeName)),
@@ -305,7 +288,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.settings_outlined,
-                                  'Configuración',
+                                  'Configuração',
                                   false,
                                   () async => context
                                       .pushNamed(ConfiguracinWidget.routeName)),
@@ -921,8 +904,10 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
       _tituloController.text = data['titulo'] ?? '';
       _posicionController.text = data['posicion'] ?? '';
       _descripcionController.text = data['descripcion'] ?? '';
-      _edadMinController.text = data['edad_min']?.toString() ?? '';
-      _edadMaxController.text = data['edad_max']?.toString() ?? '';
+      _edadMinController.text =
+          (data['edad_minima'] ?? data['edad_min'])?.toString() ?? '';
+      _edadMaxController.text =
+          (data['edad_maxima'] ?? data['edad_max'])?.toString() ?? '';
       _categoria = data['categoria'] ?? 'Sub-17';
       _tipo = data['tipo'] ?? 'Abierta';
       if (data['fecha_cierre'] != null) {
@@ -953,8 +938,8 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
         'descripcion': _descripcionController.text.trim(),
         'categoria': _categoria,
         'tipo': _tipo,
-        'edad_min': int.tryParse(_edadMinController.text) ?? 0,
-        'edad_max': int.tryParse(_edadMaxController.text) ?? 99,
+        'edad_minima': int.tryParse(_edadMinController.text) ?? 0,
+        'edad_maxima': int.tryParse(_edadMaxController.text) ?? 99,
         'fecha_cierre': _fechaCierre.toIso8601String(),
         'estado': 'activa',
         'updated_at': DateTime.now().toIso8601String(),

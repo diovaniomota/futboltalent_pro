@@ -1,13 +1,20 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
-import '/flutter_flow/flutter_flow_widgets.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
+import 'package:video_compress/video_compress.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io';
 import 'cursos_ejercicios_model.dart';
 export 'cursos_ejercicios_model.dart';
 
@@ -34,13 +41,13 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
 
   // Data
   Map<String, dynamic>? _userProgress;
-  Map<String, dynamic>? _currentLevel;
   List<Map<String, dynamic>> _courses = [];
   List<Map<String, dynamic>> _exercises = [];
   List<Map<String, dynamic>> _allItems = [];
   List<Map<String, dynamic>> _filteredItems = [];
-  Map<String, String> _userCourseStatus = {};
-  Map<String, String> _userExerciseStatus = {};
+  final Map<String, String> _userCourseStatus = {};
+  final Map<String, String> _userExerciseStatus = {};
+  final Map<String, _ChallengeAttempt> _attemptByItemKey = {};
 
   final List<String> _filters = [
     'Todos',
@@ -99,10 +106,17 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
         _errorMessage = null;
       });
 
+      if (currentUserUid.isNotEmpty) {
+        await GamificationService.recalculateUserProgress(
+          userId: currentUserUid,
+        );
+      }
+
       await Future.wait([
         _loadUserProgress(),
         _loadCourses(),
         _loadExercises(),
+        _loadSavedAttempts(),
       ]);
 
       _combineAndFilterItems();
@@ -124,34 +138,20 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
 
       if (progressResponse != null) {
         _userProgress = progressResponse;
-        if (_userProgress!['current_level_id'] != null) {
-          final levelResponse = await SupaFlow.client
-              .from('levels')
-              .select()
-              .eq('id', _userProgress!['current_level_id'])
-              .maybeSingle();
-          _currentLevel = levelResponse;
-        }
       } else {
         await SupaFlow.client.from('user_progress').insert({
           'user_id': currentUserUid,
           'total_xp': 0,
-          'current_level_id': 1,
+          'current_level_id': GamificationService.levelIdFromPoints(0),
           'courses_completed': 0,
           'exercises_completed': 0
         });
         _userProgress = {
           'total_xp': 0,
-          'current_level_id': 1,
+          'current_level_id': GamificationService.levelIdFromPoints(0),
           'courses_completed': 0,
           'exercises_completed': 0
         };
-        final levelResponse = await SupaFlow.client
-            .from('levels')
-            .select()
-            .eq('id', 1)
-            .maybeSingle();
-        _currentLevel = levelResponse;
       }
     } catch (e) {
       debugPrint('Error loading user progress: $e');
@@ -195,6 +195,360 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       }
     } catch (e) {
       debugPrint('Error loading exercises: $e');
+    }
+  }
+
+  String get _attemptsStorageKey => 'challenge_attempts_$currentUserUid';
+
+  String _itemKey(Map<String, dynamic> item) => '${item['type']}:${item['id']}';
+
+  bool _hasAttemptForItem(Map<String, dynamic> item) {
+    return _attemptByItemKey.containsKey(_itemKey(item));
+  }
+
+  Future<void> _loadSavedAttempts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_attemptsStorageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final parsed = jsonDecode(raw);
+        if (parsed is Map<String, dynamic>) {
+          for (final entry in parsed.entries) {
+            if (entry.value is Map<String, dynamic>) {
+              _attemptByItemKey[entry.key] = _ChallengeAttempt.fromJson(
+                entry.value as Map<String, dynamic>,
+              );
+            } else if (entry.value is Map) {
+              _attemptByItemKey[entry.key] = _ChallengeAttempt.fromJson(
+                Map<String, dynamic>.from(entry.value as Map),
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading saved attempts: $e');
+    }
+
+    try {
+      final rows = await SupaFlow.client
+          .from('user_challenge_attempts')
+          .select('item_id, item_type, video_id, video_url, submitted_at')
+          .eq('user_id', currentUserUid)
+          .eq('status', 'submitted');
+      for (final row in rows) {
+        final itemId = (row['item_id'] ?? '').toString();
+        final itemType = (row['item_type'] ?? '').toString();
+        if (itemId.isEmpty || itemType.isEmpty) continue;
+        final key = '$itemType:$itemId';
+        _attemptByItemKey[key] = _ChallengeAttempt(
+          itemId: itemId,
+          itemType: itemType,
+          profileVideoId: row['video_id']?.toString(),
+          videoUrl: (row['video_url'] ?? '').toString(),
+          localPath: null,
+          submittedAt:
+              DateTime.tryParse((row['submitted_at'] ?? '').toString()) ??
+                  DateTime.now(),
+        );
+      }
+      await _persistAttempts();
+    } catch (e) {
+      debugPrint('Server attempts fetch unavailable: $e');
+    }
+
+    // Fallback: rebuild attempts from user's videos tagged as challenge uploads.
+    try {
+      final videos = await SupaFlow.client
+          .from('videos')
+          .select('id, user_id, description, video_url, created_at')
+          .eq('user_id', currentUserUid)
+          .order('created_at', ascending: false)
+          .limit(300);
+      final tagExp = RegExp(r'\[challenge_ref:(course|exercise):([^\]]+)\]');
+      for (final row in (videos as List)) {
+        final description = row['description']?.toString() ?? '';
+        final match = tagExp.firstMatch(description);
+        if (match == null) continue;
+        final itemType = match.group(1)?.trim() ?? '';
+        final itemId = match.group(2)?.trim() ?? '';
+        if (itemType.isEmpty || itemId.isEmpty) continue;
+        final key = '$itemType:$itemId';
+        _attemptByItemKey[key] ??= _ChallengeAttempt(
+          itemId: itemId,
+          itemType: itemType,
+          profileVideoId: row['id']?.toString(),
+          videoUrl: row['video_url']?.toString() ?? '',
+          localPath: null,
+          submittedAt:
+              DateTime.tryParse((row['created_at'] ?? '').toString()) ??
+                  DateTime.now(),
+        );
+      }
+      await _persistAttempts();
+    } catch (e) {
+      debugPrint('Challenge-tagged videos fallback unavailable: $e');
+    }
+  }
+
+  Future<void> _persistAttempts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode({
+        for (final entry in _attemptByItemKey.entries)
+          entry.key: entry.value.toJson(),
+      });
+      await prefs.setString(_attemptsStorageKey, encoded);
+    } catch (e) {
+      debugPrint('Error saving attempts local cache: $e');
+    }
+  }
+
+  Future<void> _syncAttemptForItem(Map<String, dynamic> item) async {
+    final itemId = item['id']?.toString() ?? '';
+    final itemType = item['type']?.toString() ?? '';
+    if (itemId.isEmpty || itemType.isEmpty) return;
+    final key = '$itemType:$itemId';
+
+    try {
+      final row = await SupaFlow.client
+          .from('user_challenge_attempts')
+          .select('video_id, video_url, submitted_at')
+          .eq('user_id', currentUserUid)
+          .eq('item_id', itemId)
+          .eq('item_type', itemType)
+          .eq('status', 'submitted')
+          .maybeSingle();
+      if (row != null) {
+        _attemptByItemKey[key] = _ChallengeAttempt(
+          itemId: itemId,
+          itemType: itemType,
+          profileVideoId: row['video_id']?.toString(),
+          videoUrl: row['video_url']?.toString() ?? '',
+          localPath: _attemptByItemKey[key]?.localPath,
+          submittedAt:
+              DateTime.tryParse((row['submitted_at'] ?? '').toString()) ??
+                  DateTime.now(),
+        );
+        await _persistAttempts();
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback by scanning tagged videos for this challenge key.
+    try {
+      final videos = await SupaFlow.client
+          .from('videos')
+          .select('id, description, video_url, created_at')
+          .eq('user_id', currentUserUid)
+          .order('created_at', ascending: false)
+          .limit(200);
+      final token = '[challenge_ref:$itemType:$itemId]';
+      for (final row in (videos as List)) {
+        final description = row['description']?.toString() ?? '';
+        if (!description.contains(token)) continue;
+        _attemptByItemKey[key] = _ChallengeAttempt(
+          itemId: itemId,
+          itemType: itemType,
+          profileVideoId: row['id']?.toString(),
+          videoUrl: row['video_url']?.toString() ?? '',
+          localPath: _attemptByItemKey[key]?.localPath,
+          submittedAt:
+              DateTime.tryParse((row['created_at'] ?? '').toString()) ??
+                  DateTime.now(),
+        );
+        await _persistAttempts();
+        break;
+      }
+    } catch (_) {}
+  }
+
+  Future<_ChallengeAttempt?> _recordAttemptVideo(
+    Map<String, dynamic> item,
+  ) async {
+    _showSnack(
+      'Se abrirá la cámara para grabar tu intento.',
+      background: const Color(0xFF0D3B66),
+    );
+
+    try {
+      final picker = ImagePicker();
+      final video = await picker.pickVideo(
+        source: ImageSource.camera,
+        maxDuration: const Duration(minutes: 3),
+      );
+
+      if (video == null) {
+        _showSnack(
+          'No se grabó ningún video. El desafío sigue pendiente.',
+          background: Colors.orange,
+        );
+        return null;
+      }
+
+      final itemId = item['id'].toString();
+      final itemType = (item['type'] ?? 'exercise').toString();
+      final challengeRef = '[challenge_ref:$itemType:$itemId]';
+      var uploadExt = _fileExtension(video.name);
+      Uint8List bytes;
+      // Keep the original camera file for local preview.
+      // Compressed files live in temporary cache and may be deleted later.
+      String? localVideoPath = kIsWeb ? null : video.path;
+
+      if (kIsWeb) {
+        bytes = await video.readAsBytes();
+      } else {
+        try {
+          final compressed = await VideoCompress.compressVideo(
+            video.path,
+            quality: VideoQuality.MediumQuality,
+            deleteOrigin: false,
+            includeAudio: true,
+          );
+          final compressedPath = compressed?.file?.path;
+          if (compressedPath != null && compressedPath.isNotEmpty) {
+            uploadExt = _fileExtension(compressedPath);
+            bytes = await File(compressedPath).readAsBytes();
+          } else {
+            bytes = await File(video.path).readAsBytes();
+          }
+        } catch (e) {
+          debugPrint('Challenge video compression failed, using original: $e');
+          bytes = await File(video.path).readAsBytes();
+        }
+      }
+
+      final fileName =
+          'challenge_attempts/$currentUserUid/${itemType}_${itemId}_${DateTime.now().millisecondsSinceEpoch}.$uploadExt';
+
+      await SupaFlow.client.storage.from('Videos').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: _videoContentTypeFromExtension(uploadExt),
+              upsert: true,
+            ),
+          );
+
+      final publicUrl = SupaFlow.client.storage.from('Videos').getPublicUrl(
+            fileName,
+          );
+
+      String? profileVideoId;
+      try {
+        await SupaFlow.client.from('videos').insert({
+          'user_id': currentUserUid,
+          'video_url': publicUrl,
+          'title': 'Desafío: ${item['title'] ?? itemType}',
+          'description':
+              'Video enviado al intentar un desafío de entrenamiento. $challengeRef',
+          'is_public': true,
+          'likes_count': 0,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+        try {
+          final lookup = await SupaFlow.client
+              .from('videos')
+              .select('id')
+              .eq('user_id', currentUserUid)
+              .eq('video_url', publicUrl)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
+          profileVideoId = lookup?['id']?.toString();
+        } catch (_) {}
+      } catch (e) {
+        debugPrint('Error registering challenge video in videos table: $e');
+        _showSnack(
+          'No se pudo registrar el video en tu perfil. Intentá de nuevo.',
+          background: Colors.red,
+        );
+        return null;
+      }
+
+      final attempt = _ChallengeAttempt(
+        itemId: itemId,
+        itemType: itemType,
+        profileVideoId: profileVideoId,
+        videoUrl: publicUrl,
+        localPath: localVideoPath,
+        submittedAt: DateTime.now(),
+      );
+
+      _attemptByItemKey[_itemKey(item)] = attempt;
+      await _persistAttempts();
+
+      try {
+        await SupaFlow.client.from('user_challenge_attempts').upsert(
+          {
+            'user_id': currentUserUid,
+            'item_id': itemId,
+            'item_type': itemType,
+            'video_id': profileVideoId,
+            'video_url': publicUrl,
+            'status': 'submitted',
+            'submitted_at': attempt.submittedAt.toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          onConflict: 'user_id,item_id,item_type',
+        );
+      } catch (e) {
+        debugPrint('Optional server sync for attempts unavailable: $e');
+      }
+
+      await GamificationService.recalculateUserProgress(userId: currentUserUid);
+
+      _showSnack(
+        'Intento enviado. Ya aparece en tu perfil y en Explorer (si es público).',
+        background: const Color(0xFF48BB78),
+      );
+      return attempt;
+    } catch (e) {
+      debugPrint('Error recording attempt video: $e');
+      _showSnack(
+        'No se pudo subir el video. Revisá permisos e intentá de nuevo.',
+        background: Colors.red,
+      );
+      return null;
+    } finally {
+      if (!kIsWeb) {
+        try {
+          await VideoCompress.deleteAllCache();
+        } catch (_) {}
+      }
+    }
+  }
+
+  void _showSnack(
+    String message, {
+    required Color background,
+  }) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: background,
+      ),
+    );
+  }
+
+  String _fileExtension(String fileName) {
+    final dot = fileName.lastIndexOf('.');
+    if (dot < 0 || dot >= fileName.length - 1) return 'mp4';
+    return fileName.substring(dot + 1).toLowerCase();
+  }
+
+  String _videoContentTypeFromExtension(String ext) {
+    switch (ext) {
+      case 'mov':
+        return 'video/quicktime';
+      case 'webm':
+        return 'video/webm';
+      case 'mkv':
+        return 'video/x-matroska';
+      case 'mp4':
+      default:
+        return 'video/mp4';
     }
   }
 
@@ -255,6 +609,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final isCourse = item['type'] == 'course';
     final status = item['status'] ?? 'not_started';
     final itemId = item['id'].toString();
+    var startedNow = false;
 
     if (status == 'not_started') {
       try {
@@ -283,6 +638,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
             });
           }
           _userCourseStatus[itemId] = 'in_progress';
+          startedNow = true;
         } else {
           final existing = await SupaFlow.client
               .from('user_exercises')
@@ -304,11 +660,16 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
             });
           }
           _userExerciseStatus[itemId] = 'in_progress';
+          startedNow = true;
         }
       } catch (e) {
         debugPrint('Error: $e');
       }
     }
+    if (startedNow) {
+      await GamificationService.recalculateUserProgress(userId: currentUserUid);
+    }
+    await _syncAttemptForItem(item);
     _showVideoModal(item);
   }
 
@@ -317,143 +678,320 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final videoUrl = item['video_url']?.toString() ?? '';
     final title =
         item['title'] ?? (item['type'] == 'course' ? 'Curso' : 'Ejercicio');
-    final xpReward = item['xp_reward'] ?? (item['type'] == 'course' ? 100 : 50);
+    final pointsReward = GamificationService.challengeCompletedPoints;
     final isCourse = item['type'] == 'course';
     final itemId = item['id'].toString();
+    final itemKey = _itemKey(item);
     final imageUrl = item['thumbnail_url'] ??
         item['image_url'] ??
         item['placeholder_image'] ??
         '';
+    _ChallengeAttempt? modalAttempt = _attemptByItemKey[itemKey];
+    bool isSendingAttempt = false;
+    String uploadStateMessage = modalAttempt != null
+        ? 'Video enviado para este desafío. Ya figura en tu perfil.'
+        : 'Todavía no enviaste video.';
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        height: MediaQuery.of(ctx).size.height * 0.85,
-        decoration: const BoxDecoration(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Container(
+          height: MediaQuery.of(ctx).size.height * 0.88,
+          decoration: const BoxDecoration(
             color: Color(0xFF1A1A2E),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        child: Column(
-          children: [
-            Container(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              Container(
                 margin: EdgeInsets.only(top: 12 * scale),
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                    color: Colors.white30,
-                    borderRadius: BorderRadius.circular(2))),
-            Expanded(
-              child: Stack(
-                children: [
-                  if (imageUrl.isNotEmpty)
-                    Positioned.fill(
+                  color: Colors.white30,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    if (imageUrl.isNotEmpty)
+                      Positioned.fill(
                         child: ClipRRect(
-                            borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(24)),
-                            child: CachedNetworkImage(
-                                imageUrl: imageUrl,
-                                fit: BoxFit.cover,
-                                color: Colors.black.withOpacity(0.4),
-                                colorBlendMode: BlendMode.darken))),
-                  Positioned.fill(
-                    child: Padding(
-                      padding: EdgeInsets.all(20 * scale),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Align(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(24),
+                          ),
+                          child: CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            fit: BoxFit.cover,
+                            color: Colors.black.withOpacity(0.45),
+                            colorBlendMode: BlendMode.darken,
+                          ),
+                        ),
+                      ),
+                    Positioned.fill(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.all(20 * scale),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Align(
                               alignment: Alignment.topRight,
                               child: GestureDetector(
-                                  onTap: () => Navigator.pop(ctx),
-                                  child: Container(
-                                      padding: EdgeInsets.all(8 * scale),
-                                      decoration: BoxDecoration(
-                                          color: Colors.black26,
-                                          borderRadius:
-                                              BorderRadius.circular(20)),
-                                      child: Icon(Icons.close,
-                                          color: Colors.white,
-                                          size: 24 * scale)))),
-                          const Spacer(),
-                          Container(
+                                onTap: () => Navigator.pop(ctx),
+                                child: Container(
+                                  padding: EdgeInsets.all(8 * scale),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black26,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Icon(
+                                    Icons.close,
+                                    color: Colors.white,
+                                    size: 24 * scale,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: 10 * scale),
+                            Container(
                               padding: EdgeInsets.symmetric(
-                                  horizontal: 12 * scale, vertical: 6 * scale),
+                                horizontal: 12 * scale,
+                                vertical: 6 * scale,
+                              ),
                               decoration: BoxDecoration(
-                                  color: isCourse
-                                      ? const Color(0xFF0D3B66)
-                                      : const Color(0xFF48BB78),
-                                  borderRadius: BorderRadius.circular(20)),
-                              child: Text(isCourse ? 'CURSO' : 'EJERCICIO',
-                                  style: GoogleFonts.inter(
-                                      color: Colors.white,
-                                      fontSize: 12 * scale,
-                                      fontWeight: FontWeight.w600))),
-                          SizedBox(height: 12 * scale),
-                          Text(title,
-                              style: GoogleFonts.inter(
-                                  color: Colors.white,
-                                  fontSize: 28 * scale,
-                                  fontWeight: FontWeight.bold)),
-                          SizedBox(height: 8 * scale),
-                          Row(children: [
-                            Icon(Icons.bolt,
-                                color: const Color(0xFFFFD700),
-                                size: 20 * scale),
-                            SizedBox(width: 4 * scale),
-                            Text('+$xpReward XP',
+                                color: isCourse
+                                    ? const Color(0xFF0D3B66)
+                                    : const Color(0xFF48BB78),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                isCourse ? 'CURSO' : 'EJERCICIO',
                                 style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 12 * scale,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: 12 * scale),
+                            Text(
+                              title,
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 28 * scale,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(height: 8 * scale),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.bolt,
+                                  color: const Color(0xFFFFD700),
+                                  size: 20 * scale,
+                                ),
+                                SizedBox(width: 4 * scale),
+                                Text(
+                                  '+$pointsReward pts al completar',
+                                  style: GoogleFonts.inter(
                                     color: const Color(0xFFFFD700),
                                     fontSize: 16 * scale,
-                                    fontWeight: FontWeight.w600))
-                          ]),
-                          SizedBox(height: 24 * scale),
-                          if (videoUrl.isNotEmpty)
-                            GestureDetector(
-                                onTap: () async {
-                                  await launchURL(videoUrl);
-                                },
-                                child: Container(
-                                    width: double.infinity,
-                                    padding: EdgeInsets.symmetric(
-                                        vertical: 16 * scale),
-                                    decoration: BoxDecoration(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 18 * scale),
+                            Text(
+                              'Tutorial dentro del app',
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 16 * scale,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            SizedBox(height: 8 * scale),
+                            if (videoUrl.isNotEmpty)
+                              _InlineVideoPlayer(
+                                videoUrl: videoUrl,
+                                localPath: null,
+                                autoplay: false,
+                              )
+                            else
+                              Container(
+                                width: double.infinity,
+                                padding: EdgeInsets.all(14 * scale),
+                                decoration: BoxDecoration(
+                                  color: Colors.white12,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'Este desafío no tiene tutorial cargado.',
+                                  style: GoogleFonts.inter(
+                                    color: Colors.white,
+                                    fontSize: 13 * scale,
+                                  ),
+                                ),
+                              ),
+                            SizedBox(height: 14 * scale),
+                            Container(
+                              width: double.infinity,
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 12 * scale,
+                                vertical: 10 * scale,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isSendingAttempt
+                                    ? const Color(0xFF1E40AF)
+                                    : (modalAttempt != null
+                                        ? const Color(0xFF0F9D58)
+                                        : Colors.white12),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSendingAttempt
+                                      ? const Color(0xFF60A5FA)
+                                      : (modalAttempt != null
+                                          ? const Color(0xFF86EFAC)
+                                          : Colors.white24),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  if (isSendingAttempt)
+                                    SizedBox(
+                                      width: 14 * scale,
+                                      height: 14 * scale,
+                                      child: const CircularProgressIndicator(
                                         color: Colors.white,
-                                        borderRadius:
-                                            BorderRadius.circular(12)),
-                                    child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(Icons.play_circle_filled,
-                                              color: const Color(0xFF0D3B66),
-                                              size: 28 * scale),
-                                          SizedBox(width: 12 * scale),
-                                          Text('Ver Video',
-                                              style: GoogleFonts.inter(
-                                                  color:
-                                                      const Color(0xFF0D3B66),
-                                                  fontSize: 18 * scale,
-                                                  fontWeight: FontWeight.w600))
-                                        ]))),
-                          SizedBox(height: 12 * scale),
-                          _CompletarButton(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  else
+                                    Icon(
+                                      modalAttempt != null
+                                          ? Icons.check_circle
+                                          : Icons.info_outline,
+                                      color: Colors.white,
+                                      size: 18 * scale,
+                                    ),
+                                  SizedBox(width: 8 * scale),
+                                  Expanded(
+                                    child: Text(
+                                      uploadStateMessage,
+                                      style: GoogleFonts.inter(
+                                        color: Colors.white,
+                                        fontSize: 13 * scale,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: 10 * scale),
+                            if (modalAttempt != null) ...[
+                              Text(
+                                'Tu intento enviado',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 16 * scale,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              SizedBox(height: 8 * scale),
+                              _InlineVideoPlayer(
+                                videoUrl: modalAttempt!.videoUrl,
+                                localPath: modalAttempt!.localPath,
+                                autoplay: false,
+                              ),
+                              SizedBox(height: 8 * scale),
+                            ],
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: isSendingAttempt
+                                    ? null
+                                    : () async {
+                                        setModalState(() {
+                                          isSendingAttempt = true;
+                                          uploadStateMessage =
+                                              'Subiendo video... esto puede tardar unos segundos.';
+                                        });
+                                        safeSetState(() {});
+
+                                        final attempt =
+                                            await _recordAttemptVideo(item);
+                                        setModalState(
+                                          () {
+                                            isSendingAttempt = false;
+                                            if (attempt != null) {
+                                              modalAttempt = attempt;
+                                              uploadStateMessage =
+                                                  'Video enviado correctamente. Ya puede verse en tu perfil y Explorer.';
+                                            } else {
+                                              uploadStateMessage =
+                                                  'No se pudo enviar el video. Intentá nuevamente.';
+                                            }
+                                          },
+                                        );
+                                        safeSetState(() {});
+                                      },
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize:
+                                      Size(double.infinity, 52 * scale),
+                                  side: const BorderSide(color: Colors.white54),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                icon: isSendingAttempt
+                                    ? SizedBox(
+                                        width: 16 * scale,
+                                        height: 16 * scale,
+                                        child: const CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Icon(
+                                        Icons.videocam_rounded,
+                                        color: Colors.white,
+                                        size: 20 * scale,
+                                      ),
+                                label: Text(
+                                  'Tentar Desafío',
+                                  style: GoogleFonts.inter(
+                                    color: Colors.white,
+                                    fontSize: 15 * scale,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: 12 * scale),
+                            _CompletarButton(
                               itemId: itemId,
                               isCourse: isCourse,
                               userId: currentUserUid,
-                              xpReward: xpReward,
+                              pointsReward: pointsReward,
+                              canComplete: modalAttempt != null,
                               onComplete: () {
                                 Navigator.pop(ctx);
                                 _loadData();
-                              }),
-                        ],
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -547,8 +1085,9 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
 
   Widget _buildHeader(BuildContext context) {
     final scale = _scaleFactor(context);
-    final totalXp = _userProgress?['total_xp'] ?? 0;
-    final levelName = _currentLevel?['name'] ?? 'Principiante';
+    final totalXpRaw = _userProgress?['total_xp'] ?? 0;
+    final totalPoints = GamificationService.toInt(totalXpRaw);
+    final levelName = GamificationService.levelNameFromPoints(totalPoints);
     final horizontalPadding =
         _responsive(context, mobile: 16, tablet: 24, desktop: 32);
 
@@ -578,7 +1117,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                       Icon(Icons.bolt,
                           color: const Color(0xFFFFD700), size: 16 * scale),
                       SizedBox(width: 4 * scale),
-                      Text('$totalXp XP',
+                      Text('$totalPoints pts',
                           style: GoogleFonts.inter(
                               color: Colors.white,
                               fontSize: 14 * scale,
@@ -717,8 +1256,9 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final isCourse = item['type'] == 'course';
     final status = item['status'] ?? 'not_started';
     final isCompleted = status == 'completed';
+    final hasAttempt = _hasAttemptForItem(item);
     final title = item['title'] ?? (isCourse ? 'Curso' : 'Ejercicio');
-    final xpReward = item['xp_reward'] ?? (isCourse ? 100 : 50);
+    final pointsReward = GamificationService.challengeCompletedPoints;
     final imageUrl = item['thumbnail_url'] ??
         item['image_url'] ??
         item['placeholder_image'] ??
@@ -829,6 +1369,27 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis),
                         SizedBox(height: 8 * scale),
+                        if (hasAttempt) ...[
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.check_circle_outline,
+                                color: const Color(0xFF86EFAC),
+                                size: 14 * scale,
+                              ),
+                              SizedBox(width: 4 * scale),
+                              Text(
+                                'Video enviado',
+                                style: GoogleFonts.inter(
+                                  color: const Color(0xFFBBF7D0),
+                                  fontSize: 12 * scale,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 6 * scale),
+                        ],
                         Row(children: [
                           Text(statusText,
                               style: GoogleFonts.inter(
@@ -847,7 +1408,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                     color: const Color(0xFFFFD700),
                                     size: 14 * scale),
                                 SizedBox(width: 2 * scale),
-                                Text('+$xpReward XP',
+                                Text('+$pointsReward pts',
                                     style: GoogleFonts.inter(
                                         color: Colors.white,
                                         fontSize: 12 * scale,
@@ -887,13 +1448,15 @@ class _CompletarButton extends StatefulWidget {
   final String itemId;
   final bool isCourse;
   final String userId;
-  final int xpReward;
+  final int pointsReward;
+  final bool canComplete;
   final VoidCallback onComplete;
   const _CompletarButton(
       {required this.itemId,
       required this.isCourse,
       required this.userId,
-      required this.xpReward,
+      required this.pointsReward,
+      required this.canComplete,
       required this.onComplete});
   @override
   State<_CompletarButton> createState() => _CompletarButtonState();
@@ -925,7 +1488,7 @@ class _CompletarButtonState extends State<_CompletarButton> {
                 'status': 'completed',
                 'completed_at': DateTime.now().toIso8601String(),
                 'progress_percent': 100,
-                'xp_earned': widget.xpReward
+                'xp_earned': widget.pointsReward
               })
               .eq('user_id', widget.userId)
               .eq('course_id', widget.itemId);
@@ -936,10 +1499,10 @@ class _CompletarButtonState extends State<_CompletarButton> {
             'status': 'completed',
             'completed_at': DateTime.now().toIso8601String(),
             'progress_percent': 100,
-            'xp_earned': widget.xpReward
+            'xp_earned': widget.pointsReward
           });
         }
-        await _updateUserProgress(isExercise: false);
+        await _updateUserProgress();
       } else {
         final existing = await SupaFlow.client
             .from('user_exercises')
@@ -960,7 +1523,7 @@ class _CompletarButtonState extends State<_CompletarButton> {
               .update({
                 'status': 'completed',
                 'last_completed_at': DateTime.now().toIso8601String(),
-                'total_xp_earned': widget.xpReward
+                'total_xp_earned': widget.pointsReward
               })
               .eq('user_id', widget.userId)
               .eq('exercise_id', widget.itemId);
@@ -970,15 +1533,15 @@ class _CompletarButtonState extends State<_CompletarButton> {
             'exercise_id': widget.itemId,
             'status': 'completed',
             'last_completed_at': DateTime.now().toIso8601String(),
-            'total_xp_earned': widget.xpReward
+            'total_xp_earned': widget.pointsReward
           });
         }
-        await _updateUserProgress(isExercise: true);
+        await _updateUserProgress();
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(widget.isCourse
-              ? '¡Curso completado! +${widget.xpReward} XP'
-              : '¡Ejercicio completado! +${widget.xpReward} XP'),
+              ? '¡Curso completado! +${widget.pointsReward} pts'
+              : '¡Ejercicio completado! +${widget.pointsReward} pts'),
           backgroundColor: const Color(0xFF48BB78)));
       widget.onComplete();
     } catch (e) {
@@ -990,50 +1553,9 @@ class _CompletarButtonState extends State<_CompletarButton> {
     }
   }
 
-  Future<void> _updateUserProgress({required bool isExercise}) async {
+  Future<void> _updateUserProgress() async {
     try {
-      final currentProgress = await SupaFlow.client
-          .from('user_progress')
-          .select()
-          .eq('user_id', widget.userId)
-          .maybeSingle();
-      if (currentProgress != null) {
-        final newXp = (currentProgress['total_xp'] ?? 0) + widget.xpReward;
-        final newCoursesCompleted = isExercise
-            ? (currentProgress['courses_completed'] ?? 0)
-            : (currentProgress['courses_completed'] ?? 0) + 1;
-        final newExercisesCompleted = isExercise
-            ? (currentProgress['exercises_completed'] ?? 0) + 1
-            : (currentProgress['exercises_completed'] ?? 0);
-        int newLevelId = 1;
-        if (newXp >= 10000)
-          newLevelId = 6;
-        else if (newXp >= 6000)
-          newLevelId = 5;
-        else if (newXp >= 3500)
-          newLevelId = 4;
-        else if (newXp >= 1750)
-          newLevelId = 3;
-        else if (newXp >= 500) newLevelId = 2;
-        await SupaFlow.client.from('user_progress').update({
-          'total_xp': newXp,
-          'courses_completed': newCoursesCompleted,
-          'exercises_completed': newExercisesCompleted,
-          'current_level_id': newLevelId,
-          'last_activity_date': DateTime.now().toIso8601String().split('T')[0],
-          'updated_at': DateTime.now().toIso8601String()
-        }).eq('user_id', widget.userId);
-      } else {
-        int newLevelId = widget.xpReward >= 500 ? 2 : 1;
-        await SupaFlow.client.from('user_progress').insert({
-          'user_id': widget.userId,
-          'total_xp': widget.xpReward,
-          'courses_completed': isExercise ? 0 : 1,
-          'exercises_completed': isExercise ? 1 : 0,
-          'current_level_id': newLevelId,
-          'last_activity_date': DateTime.now().toIso8601String().split('T')[0]
-        });
-      }
+      await GamificationService.recalculateUserProgress(userId: widget.userId);
     } catch (e) {
       debugPrint('Error updating user progress: $e');
     }
@@ -1042,7 +1564,8 @@ class _CompletarButtonState extends State<_CompletarButton> {
   @override
   Widget build(BuildContext context) {
     return ElevatedButton(
-        onPressed: _isLoading ? null : _markAsCompleted,
+        onPressed:
+            (_isLoading || !widget.canComplete) ? null : _markAsCompleted,
         style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF48BB78),
             disabledBackgroundColor: Colors.grey,
@@ -1055,10 +1578,492 @@ class _CompletarButtonState extends State<_CompletarButton> {
                 height: 24,
                 child: CircularProgressIndicator(
                     color: Colors.white, strokeWidth: 2))
-            : Text('Marcar como Completado',
+            : Text(
+                widget.canComplete
+                    ? 'Marcar como Completado'
+                    : 'Subí un video para completar',
                 style: GoogleFonts.inter(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w600)));
+  }
+}
+
+class _ChallengeAttempt {
+  const _ChallengeAttempt({
+    required this.itemId,
+    required this.itemType,
+    required this.profileVideoId,
+    required this.videoUrl,
+    required this.localPath,
+    required this.submittedAt,
+  });
+
+  final String itemId;
+  final String itemType;
+  final String? profileVideoId;
+  final String videoUrl;
+  final String? localPath;
+  final DateTime submittedAt;
+
+  Map<String, dynamic> toJson() => {
+        'item_id': itemId,
+        'item_type': itemType,
+        'profile_video_id': profileVideoId,
+        'video_url': videoUrl,
+        'local_path': localPath,
+        'submitted_at': submittedAt.toIso8601String(),
+      };
+
+  factory _ChallengeAttempt.fromJson(Map<String, dynamic> json) {
+    return _ChallengeAttempt(
+      itemId: (json['item_id'] ?? '').toString(),
+      itemType: (json['item_type'] ?? '').toString(),
+      profileVideoId: json['profile_video_id']?.toString(),
+      videoUrl: (json['video_url'] ?? '').toString(),
+      localPath: json['local_path']?.toString(),
+      submittedAt: DateTime.tryParse((json['submitted_at'] ?? '').toString()) ??
+          DateTime.now(),
+    );
+  }
+}
+
+class _InlineVideoPlayer extends StatefulWidget {
+  const _InlineVideoPlayer({
+    required this.videoUrl,
+    required this.localPath,
+    this.autoplay = false,
+  });
+
+  final String? videoUrl;
+  final String? localPath;
+  final bool autoplay;
+
+  @override
+  State<_InlineVideoPlayer> createState() => _InlineVideoPlayerState();
+}
+
+class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
+  VideoPlayerController? _controller;
+  bool _loading = true;
+  String? _error;
+  String? _fallbackUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  @override
+  void didUpdateWidget(covariant _InlineVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videoUrl != widget.videoUrl ||
+        oldWidget.localPath != widget.localPath) {
+      _disposeController();
+      _initialize();
+    }
+  }
+
+  Future<void> _initialize() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+        _fallbackUrl = null;
+      });
+    } else {
+      _loading = true;
+      _error = null;
+      _fallbackUrl = null;
+    }
+
+    try {
+      final localPath = (widget.localPath ?? '').trim();
+      final url = (widget.videoUrl ?? '').trim();
+
+      bool initialized = false;
+
+      if (!kIsWeb && localPath.isNotEmpty) {
+        final file = File(localPath);
+        if (await file.exists()) {
+          initialized = await _tryInitializeController(
+            VideoPlayerController.file(file),
+          );
+        }
+      }
+
+      if (!initialized && url.isNotEmpty) {
+        final candidates = _buildVideoCandidates(url);
+        for (final candidate in candidates) {
+          final uri = Uri.tryParse(candidate);
+          if (uri == null || uri.toString().isEmpty) continue;
+          initialized = await _tryInitializeController(
+            VideoPlayerController.networkUrl(
+              uri,
+              videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+              httpHeaders: const {
+                'User-Agent':
+                    'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+              },
+            ),
+          );
+          if (initialized) break;
+        }
+        if (!initialized && candidates.isNotEmpty) {
+          _fallbackUrl = candidates.first;
+        }
+      }
+
+      if (!initialized) {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _error = 'No se pudo reproducir este video.';
+          });
+        }
+        return;
+      }
+
+      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      debugPrint('Error loading inline video: $e');
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'No se pudo reproducir este video.';
+        });
+      }
+    }
+  }
+
+  Future<bool> _tryInitializeController(
+      VideoPlayerController controller) async {
+    try {
+      _disposeController();
+      _controller = controller;
+      await _controller!.initialize();
+      await _controller!.setLooping(true);
+      if (widget.autoplay) {
+        await _controller!.play();
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Error initializing inline video source: $e');
+      try {
+        await controller.dispose();
+      } catch (_) {}
+      if (identical(_controller, controller)) {
+        _controller = null;
+      }
+      return false;
+    }
+  }
+
+  List<String> _buildVideoCandidates(String raw) {
+    final input = raw.trim();
+    if (input.isEmpty) return const [];
+
+    final seen = <String>{};
+    final result = <String>[];
+    void add(String? value) {
+      final v = (value ?? '').trim();
+      if (v.isEmpty || seen.contains(v)) return;
+      seen.add(v);
+      result.add(v);
+    }
+
+    add(input);
+    final uri = Uri.tryParse(input);
+    if (uri == null) return result;
+
+    final host = uri.host.toLowerCase();
+
+    if (host.contains('drive.google.com')) {
+      String? id;
+      final segments = uri.pathSegments;
+      final fileIndex = segments.indexOf('d');
+      if (fileIndex >= 0 && fileIndex + 1 < segments.length) {
+        id = segments[fileIndex + 1];
+      }
+      id ??= uri.queryParameters['id'];
+      if ((id ?? '').isNotEmpty) {
+        add('https://drive.google.com/uc?export=download&id=$id');
+        add('https://drive.google.com/uc?export=view&id=$id');
+      }
+    }
+
+    if (host.contains('dropbox.com')) {
+      final swappedHost = uri.replace(host: 'dl.dropboxusercontent.com');
+      add(swappedHost.toString());
+      final forcedRaw = uri.replace(
+        queryParameters: {
+          ...uri.queryParameters,
+          'raw': '1',
+          'dl': '1',
+        },
+      );
+      add(forcedRaw.toString());
+    }
+
+    if (host.contains('onedrive.live.com') || host.contains('1drv.ms')) {
+      add(uri.replace(queryParameters: {
+        ...uri.queryParameters,
+        'download': '1',
+      }).toString());
+    }
+
+    return result;
+  }
+
+  Future<void> _openInAppWebView() async {
+    final url = (_fallbackUrl ?? widget.videoUrl ?? '').trim();
+    if (url.isEmpty) return;
+    if (kIsWeb) {
+      try {
+        await launchURL(url);
+      } catch (_) {}
+      return;
+    }
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => _VideoFallbackWebViewDialog(url: url),
+    );
+  }
+
+  @override
+  void dispose() {
+    _disposeController();
+    super.dispose();
+  }
+
+  void _disposeController() {
+    _controller?.dispose();
+    _controller = null;
+  }
+
+  void _togglePlay() {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+    setState(() {
+      if (c.value.isPlaying) {
+        c.pause();
+      } else {
+        c.play();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = MediaQuery.of(context).size.width < 360 ? 0.9 : 1.0;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        color: Colors.black,
+        child: AspectRatio(
+          aspectRatio: (_controller != null && _controller!.value.isInitialized)
+              ? _controller!.value.aspectRatio
+              : 16 / 9,
+          child: _loading
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+              : (_error != null || _controller == null)
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              _error ?? 'No disponible.',
+                              style: GoogleFonts.inter(
+                                color: Colors.white70,
+                                fontSize: 13 * scale,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            if ((_fallbackUrl ?? '').isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              OutlinedButton.icon(
+                                onPressed: _openInAppWebView,
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Colors.white54),
+                                ),
+                                icon: const Icon(
+                                  Icons.open_in_new,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                  'Abrir reproductor interno',
+                                  style: GoogleFonts.inter(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    )
+                  : Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        VideoPlayer(_controller!),
+                        Positioned(
+                          right: 10,
+                          bottom: 10,
+                          child: GestureDetector(
+                            onTap: _togglePlay,
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              child: Icon(
+                                _controller!.value.isPlaying
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoFallbackWebViewDialog extends StatefulWidget {
+  const _VideoFallbackWebViewDialog({required this.url});
+
+  final String url;
+
+  @override
+  State<_VideoFallbackWebViewDialog> createState() =>
+      _VideoFallbackWebViewDialogState();
+}
+
+class _VideoFallbackWebViewDialogState
+    extends State<_VideoFallbackWebViewDialog> {
+  late final WebViewController _controller;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  void _initialize() {
+    final uri = Uri.tryParse(widget.url.trim());
+    if (uri == null || uri.toString().isEmpty) {
+      setState(() {
+        _loading = false;
+        _error = 'URL de video inválida.';
+      });
+      return;
+    }
+
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.black)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) {
+            if (!mounted) return;
+            setState(() {
+              _loading = true;
+              _error = null;
+            });
+          },
+          onPageFinished: (_) {
+            if (!mounted) return;
+            setState(() => _loading = false);
+          },
+          onWebResourceError: (err) {
+            if (!mounted) return;
+            setState(() {
+              _loading = false;
+              _error = err.description.isNotEmpty
+                  ? err.description
+                  : 'No se pudo abrir este video.';
+            });
+          },
+        ),
+      )
+      ..loadRequest(uri);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+      child: SizedBox(
+        width: double.infinity,
+        height: MediaQuery.of(context).size.height * 0.74,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Reproductor interno',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (_error == null) WebViewWidget(controller: _controller),
+                  if (_loading)
+                    const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  if (_error != null)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

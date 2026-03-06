@@ -44,3 +44,11 @@ export '/fluxo_usuario_club/configuracin/configuracin_widget.dart'
 export '/feed_no_autenticado/login/login_widget.dart' show LoginWidget;
 export '/feed_no_autenticado/criar_club/criar_club_widget.dart'
     show CriarClubWidget;
+export '/fluxo_admin/admin_dashboard/admin_dashboard_widget.dart'
+    show AdminDashboardWidget;
+export '/fluxo_admin/admin_usuarios/admin_usuarios_widget.dart'
+    show AdminUsuariosWidget;
+export '/fluxo_admin/admin_videos/admin_videos_widget.dart'
+    show AdminVideosWidget;
+export '/fluxo_admin/admin_desafios/admin_desafios_widget.dart'
+    show AdminDesafiosWidget;

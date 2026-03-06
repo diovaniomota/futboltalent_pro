@@ -67,6 +67,15 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   bool _isRegistering = false;
   bool _isSavingProfile = false;
 
+  // Country dropdown
+  List<Map<String, dynamic>> _countries = [];
+  String? _selectedCountryId;
+
+  // Guardian controllers (Tab 4 - menores)
+  final TextEditingController _guardianNameController = TextEditingController();
+  final TextEditingController _guardianEmailController = TextEditingController();
+  String _guardianRelationship = 'padre';
+
   // ============ RESPONSIVE HELPERS ============
   double _responsive(
     BuildContext context, {
@@ -92,7 +101,8 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   void initState() {
     super.initState();
     _model = createModel(context, () => EmpiezaComecarModel());
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
+    _loadCountries();
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
   }
 
@@ -114,7 +124,37 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     _dataNascimentoFocusNode.dispose();
     _paisFocusNode.dispose();
     _cidadeFocusNode.dispose();
+    _guardianNameController.dispose();
+    _guardianEmailController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadCountries() async {
+    try {
+      final response = await SupaFlow.client.from('countrys').select().order('name');
+      if (mounted) {
+        setState(() => _countries = List<Map<String, dynamic>>.from(response ?? []));
+      }
+    } catch (e) {
+      debugPrint('Error loading countries: $e');
+    }
+  }
+
+  Future<void> _signInWithProvider(OAuthProvider provider) async {
+    setState(() => _isRegistering = true);
+    try {
+      final success = await SupaFlow.client.auth.signInWithOAuth(
+        provider,
+        redirectTo: 'io.supabase.futboltalentpro://login-callback/',
+      );
+      if (!success) {
+        _showSnackBar('Error al iniciar sesión con ${provider.name}');
+      }
+    } catch (e) {
+      _showSnackBar('Error: ${e.toString()}');
+    } finally {
+      if (mounted) setState(() => _isRegistering = false);
+    }
   }
 
   void _goToNextTab() {
@@ -179,7 +219,43 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     }
   }
 
-  Future<void> _saveProfileAndFinish() async {
+  int _calculateAge(DateTime birthday) {
+    final now = DateTime.now();
+    int age = now.year - birthday.year;
+    if (now.month < birthday.month ||
+        (now.month == birthday.month && now.day < birthday.day)) {
+      age--;
+    }
+    return age;
+  }
+
+  DateTime? _parseBirthday() {
+    try {
+      final parts = _dataNascimentoController.text.split('/');
+      if (parts.length == 3) {
+        final day = int.parse(parts[0]);
+        final month = int.parse(parts[1]);
+        final year = int.parse(parts[2]);
+
+        // Validate ranges
+        if (year < 1920 || year > DateTime.now().year) return null;
+        if (month < 1 || month > 12) return null;
+        if (day < 1 || day > 31) return null;
+
+        final date = DateTime(year, month, day);
+        // Verify the date is valid (e.g., not Feb 30)
+        if (date.month != month || date.day != day) return null;
+
+        return date;
+      }
+    } catch (e) {
+      debugPrint('Erro ao converter data: $e');
+    }
+    return null;
+  }
+
+  /// Tab 3 "Siguiente" - valida dados e se menor, vai para Tab 4 (guardian)
+  void _onProfileNext() {
     if (_nameController.text.trim().isEmpty) {
       _showSnackBar('Por favor ingresa tu nombre');
       return;
@@ -189,38 +265,217 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       return;
     }
 
+    final birthday = _parseBirthday();
+    if (birthday == null) {
+      _showSnackBar('Fecha de nacimiento inválida. Usa el formato DD/MM/AAAA con un año entre 1920 y ${DateTime.now().year}');
+      return;
+    }
+
+    final age = _calculateAge(birthday);
+    if (age < 5 || age > 100) {
+      _showSnackBar('La edad debe estar entre 5 y 100 años');
+      return;
+    }
+
+    if (age < 18) {
+      // Menor: ir para Tab 4 (responsável)
+      _goToNextTab();
+    } else {
+      // Maior: salvar direto
+      _saveProfileAndFinish();
+    }
+  }
+
+  /// Salva perfil + guardian se menor
+  Future<void> _saveProfileAndFinish() async {
     setState(() => _isSavingProfile = true);
 
     try {
-      DateTime? birthday;
-      try {
-        final parts = _dataNascimentoController.text.split('/');
-        if (parts.length == 3) {
-          birthday = DateTime(
-            int.parse(parts[2]),
-            int.parse(parts[1]),
-            int.parse(parts[0]),
-          );
-        }
-      } catch (e) {
-        debugPrint('Erro ao converter data: $e');
+      final uid = currentUserUid.trim();
+      if (uid.isEmpty) {
+        _showSnackBar('Sesión inválida. Inicia sesión nuevamente.');
+        return;
       }
 
-      await SupaFlow.client.from('users').insert({
+      final birthday = _parseBirthday();
+      final age = birthday != null ? _calculateAge(birthday) : 99;
+      final isMinor = age < 18;
+
+      // Se menor, validar guardian
+      if (isMinor) {
+        if (_guardianNameController.text.trim().isEmpty) {
+          _showSnackBar('Es necesario el nombre del adulto responsable');
+          setState(() => _isSavingProfile = false);
+          return;
+        }
+        if (_guardianEmailController.text.trim().isEmpty) {
+          _showSnackBar('Es necesario el email del adulto responsable');
+          setState(() => _isSavingProfile = false);
+          return;
+        }
+      }
+
+      final userType = (widget.selectedUserType ?? 'jugador').trim().toLowerCase();
+      final nowIso = DateTime.now().toIso8601String();
+
+      final userPayload = {
         'name': _nameController.text.trim(),
         'birthday': birthday?.toIso8601String(),
-        'country_id': 1,
+        'country_id':
+            _selectedCountryId != null ? int.tryParse(_selectedCountryId!) ?? 1 : 1,
         'city': _cidadeController.text.trim(),
-        'userType': widget.selectedUserType,
-        'user_id': currentUserUid,
+        'userType': userType,
+        'user_id': uid,
         'username': _nameController.text.trim(),
         'lastname': '',
         'role_id': 1,
-        'created_at': DateTime.now().toIso8601String(),
-      });
+        'created_at': nowIso,
+        'is_minor': isMinor,
+        // Só deve ser true após salvar guardian com sucesso.
+        'has_guardian': false,
+      };
 
-      if (widget.selectedUserType == 'club') {
-        context.goNamed('dashboardClub');
+      final fallbackPayload = {
+        ...userPayload,
+        'usertype': userType,
+      }..remove('userType');
+
+      Future<void> persistUsersPayload(Map<String, dynamic> payload) async {
+        final updatePayload = Map<String, dynamic>.from(payload)
+          ..remove('created_at')
+          ..remove('user_id');
+
+        try {
+          await SupaFlow.client.from('users').upsert(
+            payload,
+            onConflict: 'user_id',
+          );
+          return;
+        } catch (upsertError) {
+          // Alguns ambientes têm conflito na PK (users_pkey) mesmo com user_id.
+          final msg = upsertError.toString().toLowerCase();
+          if (!msg.contains('users_pkey') && !msg.contains('duplicate key')) {
+            rethrow;
+          }
+        }
+
+        // Fallback defensivo: atualiza por user_id ou id se o registro já existe.
+        try {
+          await SupaFlow.client
+              .from('users')
+              .update(updatePayload)
+              .eq('user_id', uid);
+          return;
+        } catch (_) {}
+
+        try {
+          await SupaFlow.client
+              .from('users')
+              .update(updatePayload)
+              .eq('id', uid);
+          return;
+        } catch (_) {}
+
+        // Última tentativa explícita de insert.
+        await SupaFlow.client.from('users').insert(payload);
+      }
+
+      try {
+        await persistUsersPayload(userPayload);
+      } catch (_) {
+        await persistUsersPayload(fallbackPayload);
+      }
+
+      // guardians.player_id references public.players.id, so players row must
+      // exist before inserting guardian data.
+      if (userType == 'jugador' ||
+          userType == 'jogador' ||
+          userType == 'player' ||
+          userType == 'athlete' ||
+          userType == 'atleta') {
+        Future<bool> playerExists() async {
+          try {
+            final existing = await SupaFlow.client
+                .from('players')
+                .select('id')
+                .eq('id', uid)
+                .maybeSingle();
+            return existing != null;
+          } catch (_) {
+            return false;
+          }
+        }
+
+        if (!await playerExists()) {
+          try {
+            await SupaFlow.client.from('players').insert(
+              {
+                'id': uid,
+                'created_at': nowIso,
+              },
+            );
+          } catch (insertPlayerError) {
+            final msg = insertPlayerError.toString().toLowerCase();
+            if (!msg.contains('duplicate key')) {
+              try {
+                await SupaFlow.client.from('players').upsert(
+                  {
+                    'id': uid,
+                    'created_at': nowIso,
+                  },
+                  onConflict: 'id',
+                );
+              } catch (_) {
+                // Última validação: se ainda não existe, falha explicitamente.
+                if (!await playerExists()) rethrow;
+              }
+            }
+          }
+        }
+      }
+
+      // Se menor, salvar guardian
+      if (isMinor) {
+        final guardianPayload = {
+          'name': _guardianNameController.text.trim(),
+          'relationship': _guardianRelationship,
+          'email': _guardianEmailController.text.trim(),
+          'player_id': uid,
+        };
+        try {
+          await SupaFlow.client.from('guardians').insert(guardianPayload);
+        } catch (guardianInsertError) {
+          final msg = guardianInsertError.toString().toLowerCase();
+          if (msg.contains('duplicate key') ||
+              msg.contains('unique') ||
+              msg.contains('guardians_player_id')) {
+            await SupaFlow.client
+                .from('guardians')
+                .update(guardianPayload)
+                .eq('player_id', uid);
+          } else {
+            rethrow;
+          }
+        }
+
+        // Marca guardian somente após sucesso no insert/update.
+        try {
+          await SupaFlow.client
+              .from('users')
+              .update({'has_guardian': true})
+              .eq('user_id', uid);
+        } catch (_) {
+          await SupaFlow.client
+              .from('users')
+              .update({'has_guardian': true})
+              .eq('id', uid);
+        }
+      }
+
+      FFAppState().userType = userType;
+
+      if (userType == 'club') {
+        context.goNamed('dashboard_club');
       } else {
         context.goNamed('feed');
       }
@@ -271,6 +526,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                   Tab(text: '                        '),
                   Tab(text: '                          '),
                   Tab(text: '                        '),
+                  Tab(text: '                        '),
                 ],
               ),
 
@@ -283,6 +539,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                     _buildTab1Intro(context),
                     _buildTab2Register(context),
                     _buildTab3Profile(context),
+                    _buildTab4Guardian(context),
                   ],
                 ),
               ),
@@ -508,13 +765,16 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           const Divider(thickness: 2, color: Colors.black),
           SizedBox(height: 30 * scale),
           _buildSocialButton(context, 'Registrarse con Google',
-              FontAwesomeIcons.google, buttonWidth),
+              FontAwesomeIcons.google, buttonWidth,
+              onPressed: () => _signInWithProvider(OAuthProvider.google)),
           SizedBox(height: 10 * scale),
           _buildSocialButton(
-              context, 'Registrarse con Apple', Icons.apple, buttonWidth),
+              context, 'Registrarse con Apple', Icons.apple, buttonWidth,
+              onPressed: () => _signInWithProvider(OAuthProvider.apple)),
           SizedBox(height: 10 * scale),
           _buildSocialButton(
-              context, 'Registrarse con TikTok', Icons.tiktok, buttonWidth),
+              context, 'Registrarse con TikTok', Icons.tiktok, buttonWidth,
+              onPressed: () => _showSnackBar('TikTok login próximamente')),
           SizedBox(height: 40 * scale),
           _buildPrimaryButton(
             context: context,
@@ -550,13 +810,14 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   }
 
   Widget _buildSocialButton(
-      BuildContext context, String text, IconData icon, double width) {
+      BuildContext context, String text, IconData icon, double width,
+      {VoidCallback? onPressed}) {
     final scale = _scaleFactor(context);
     return SizedBox(
       width: width,
       height: 50 * scale,
       child: ElevatedButton.icon(
-        onPressed: () => _showSnackBar('Login social en desarrollo'),
+        onPressed: onPressed,
         icon: Icon(icon,
             size: icon == Icons.apple ? 28 * scale : 15 * scale,
             color: const Color(0xFF444444)),
@@ -622,15 +883,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             suffixIcon: const Icon(Icons.calendar_month),
           ),
           SizedBox(height: 15 * scale),
-          _buildTextField(
-            context: context,
-            label: 'País',
-            hint: 'Selecciona el país',
-            controller: _paisController,
-            focusNode: _paisFocusNode,
-            width: double.infinity,
-            suffixIcon: const Icon(Icons.keyboard_arrow_down),
-          ),
+          _buildCountryDropdown(context),
           SizedBox(height: 15 * scale),
           _buildTextField(
             context: context,
@@ -668,7 +921,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                 width: buttonWidth,
                 height: 43 * scale,
                 child: ElevatedButton(
-                  onPressed: _isSavingProfile ? null : _saveProfileAndFinish,
+                  onPressed: _isSavingProfile ? null : _onProfileNext,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0D3B66),
                     elevation: 0,
@@ -687,6 +940,218 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           SizedBox(height: 40),
         ],
       ),
+    );
+  }
+
+  // ===== TAB 4: RESPONSÁVEL (menores) =====
+  Widget _buildTab4Guardian(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final buttonWidth =
+        _responsive(context, mobile: 145, tablet: 157, desktop: 180);
+
+    final relationships = [
+      {'value': 'padre', 'label': 'Padre'},
+      {'value': 'madre', 'label': 'Madre'},
+      {'value': 'tutor', 'label': 'Tutor Legal'},
+      {'value': 'representante', 'label': 'Representante Legal'},
+    ];
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.symmetric(
+          horizontal:
+              _responsive(context, mobile: 20, tablet: 40, desktop: 60)),
+      child: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: 20 * scale),
+            child: Text(
+              'Adulto Responsable',
+              style: GoogleFonts.inter(
+                fontSize:
+                    _responsive(context, mobile: 24, tablet: 28, desktop: 32) *
+                        scale,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF0D3B66),
+              ),
+            ),
+          ),
+          SizedBox(height: 12 * scale),
+          Container(
+            padding: EdgeInsets.all(16 * scale),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF3CD),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFFFD93D)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: const Color(0xFF856404), size: 24 * scale),
+                SizedBox(width: 12 * scale),
+                Expanded(
+                  child: Text(
+                    'Por ser menor de 18 años, es obligatorio registrar un adulto responsable.',
+                    style: GoogleFonts.inter(
+                      fontSize: 13 * scale,
+                      color: const Color(0xFF856404),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 24 * scale),
+          _buildTextField(
+            context: context,
+            label: 'Nombre del responsable',
+            hint: 'Nombre completo',
+            controller: _guardianNameController,
+            focusNode: FocusNode(),
+            width: double.infinity,
+          ),
+          SizedBox(height: 15 * scale),
+          // Relationship dropdown
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: EdgeInsets.only(bottom: 8 * scale),
+                child: Text('Relación',
+                    style: GoogleFonts.inter(
+                        fontSize: 13 * scale,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black)),
+              ),
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(horizontal: 16 * scale),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: const Color(0xFFA0AEC0)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _guardianRelationship,
+                    isExpanded: true,
+                    items: relationships
+                        .map((r) => DropdownMenuItem<String>(
+                            value: r['value'],
+                            child: Text(r['label']!,
+                                style: GoogleFonts.inter(fontSize: 13 * scale))))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) setState(() => _guardianRelationship = v);
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 15 * scale),
+          _buildTextField(
+            context: context,
+            label: 'Email del responsable',
+            hint: 'email@ejemplo.com',
+            controller: _guardianEmailController,
+            focusNode: FocusNode(),
+            keyboardType: TextInputType.emailAddress,
+            width: double.infinity,
+          ),
+          SizedBox(height: 60 * scale),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: buttonWidth,
+                height: 43 * scale,
+                child: ElevatedButton(
+                  onPressed: _goToPreviousTab,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2B6CB0),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: Text('Anterior',
+                      style: GoogleFonts.inter(
+                          fontSize: 14 * scale,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white)),
+                ),
+              ),
+              SizedBox(width: 20 * scale),
+              SizedBox(
+                width: buttonWidth,
+                height: 43 * scale,
+                child: ElevatedButton(
+                  onPressed: _isSavingProfile ? null : _saveProfileAndFinish,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D3B66),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: Text(_isSavingProfile ? 'Guardando...' : 'Finalizar',
+                      style: GoogleFonts.inter(
+                          fontSize: 14 * scale,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCountryDropdown(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final fontSize = 13 * scale;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(bottom: 8 * scale),
+          child: Text('País',
+              style: GoogleFonts.inter(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black)),
+        ),
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(horizontal: 16 * scale),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: const Color(0xFFA0AEC0)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedCountryId,
+              hint: Text('Selecciona el país',
+                  style: GoogleFonts.inter(
+                      fontSize: fontSize, color: const Color(0xFF2F3336))),
+              isExpanded: true,
+              icon: const Icon(Icons.keyboard_arrow_down),
+              items: _countries
+                  .map((c) => DropdownMenuItem<String>(
+                      value: c['id'].toString(),
+                      child: Text(c['name']?.toString() ?? '',
+                          style: GoogleFonts.inter(fontSize: fontSize))))
+                  .toList(),
+              onChanged: (v) => setState(() {
+                _selectedCountryId = v;
+                _paisController.text = _countries
+                    .firstWhere((c) => c['id'].toString() == v)['name']
+                    ?.toString() ?? '';
+              }),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

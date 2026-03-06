@@ -1,6 +1,6 @@
 import '/backend/supabase/supabase.dart';
+import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
-import '/flutter_flow/flutter_flow_widgets.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import 'package:provider/provider.dart';
@@ -9,7 +9,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_compress/video_compress.dart';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'crear_publicacin_de_video_model.dart';
 export 'crear_publicacin_de_video_model.dart';
@@ -183,6 +182,16 @@ class _CrearPublicacinDeVideoWidgetState
 
     setState(() => _isPublishing = true);
     try {
+      var isFirstVideo = false;
+      try {
+        final existingVideos = await SupaFlow.client
+            .from('videos')
+            .select('id')
+            .eq('user_id', user.id)
+            .limit(1);
+        isFirstVideo = (existingVideos as List).isEmpty;
+      } catch (_) {}
+
       await SupaFlow.client.from('videos').insert({
         'user_id': user.id,
         'video_url': _uploadedVideoUrl,
@@ -193,19 +202,25 @@ class _CrearPublicacinDeVideoWidgetState
         'likes_count': 0,
         'created_at': DateTime.now().toIso8601String(),
       });
+      await GamificationService.recalculateUserProgress(userId: user.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('¡Video publicado con éxito!'),
+        final gained = GamificationService.videoUploadPoints +
+            (isFirstVideo ? GamificationService.firstVideoBonusPoints : 0);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('¡Video publicado con éxito! +$gained pts'),
             backgroundColor: Colors.green));
         await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) context.goNamed('feed');
+        if (mounted) {
+          context.goNamed('feed');
+        }
       }
     } catch (e) {
       debugPrint('❌ Erro publicar: $e');
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Error al publicar: ${e.toString()}'),
             backgroundColor: Colors.red));
+      }
     } finally {
       if (mounted) setState(() => _isPublishing = false);
     }

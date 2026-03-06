@@ -89,9 +89,9 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
   Future<void> _loadHistory(String uid) async {
     try {
       final lists = await SupaFlow.client
-          .from('listas_club')
+          .from('listas')
           .select('id')
-          .eq('club_id', uid);
+          .eq('profesional_id', uid);
       final lids = (lists as List).map((e) => e['id']).toList();
       if (lids.isEmpty) return;
 
@@ -211,9 +211,13 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                                       mainAxisAlignment:
                                           MainAxisAlignment.spaceBetween,
                                       children: [
-                                        _iconBtn(Icons.settings, () {}),
+                                        _iconBtn(Icons.settings, () {
+                                          context.pushNamed(EditarPerfilWidget.routeName);
+                                        }),
                                         Row(children: [
-                                          _iconBtn(Icons.notifications, () {}),
+                                          _iconBtn(Icons.notifications, () {
+                                            // TODO: notifications page
+                                          }),
                                           const SizedBox(width: 12),
                                           _iconBtn(Icons.logout, () async {
                                             print('Logout button pressed');

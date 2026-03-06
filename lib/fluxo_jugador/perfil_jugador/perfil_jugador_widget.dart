@@ -1,12 +1,12 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:video_player/video_player.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'perfil_jugador_model.dart';
 export 'perfil_jugador_model.dart';
@@ -30,8 +30,11 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   bool _isLoading = true;
   Map<String, dynamic>? _userData;
   List<Map<String, dynamic>> _videos = [];
+  List<Map<String, dynamic>> _completedChallenges = [];
   List<Map<String, dynamic>> _savedVideos = [];
+  List<Map<String, dynamic>> _contactRequests = [];
   int _userRanking = 0;
+  int _pendingContactRequests = 0;
 
   @override
   void initState() {
@@ -63,12 +66,31 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           .eq('user_id', uid)
           .maybeSingle();
 
+      await GamificationService.recalculateUserProgress(userId: uid);
+
+      Map<String, dynamic>? progressResponse;
+      try {
+        progressResponse = await SupaFlow.client
+            .from('user_progress')
+            .select('total_xp, courses_completed, exercises_completed')
+            .eq('user_id', uid)
+            .maybeSingle();
+      } catch (_) {}
+
+      final mergedUserData = <String, dynamic>{
+        ...(userResponse ?? <String, dynamic>{}),
+        ...(progressResponse ?? <String, dynamic>{}),
+      };
+
       // Carregar vídeos do usuário (meus vídeos publicados)
       final videosResponse = await SupaFlow.client
           .from('videos')
           .select()
           .eq('user_id', uid)
+          .eq('is_public', true)
           .order('created_at', ascending: false);
+      final videos = List<Map<String, dynamic>>.from(videosResponse);
+      final completedChallenges = await _buildCompletedChallenges(videos);
 
       // Carregar vídeos salvos/curtidos (guardados)
       List<Map<String, dynamic>> savedVideos = [];
@@ -85,6 +107,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
               .from('videos')
               .select()
               .inFilter('id', videoIds)
+              .eq('is_public', true)
               .order('created_at', ascending: false);
 
           savedVideos = List<Map<String, dynamic>>.from(savedVideosResponse);
@@ -94,32 +117,20 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       }
 
       // Calcular ranking do usuário (com tratamento de erro)
-      int ranking = 0;
-      try {
-        final allUsersResponse = await SupaFlow.client
-            .from('users')
-            .select('user_id')
-            .order('created_at', ascending: true);
+      int ranking = await _loadCategoryRanking(uid, mergedUserData);
 
-        final allUsers = List<Map<String, dynamic>>.from(
-          allUsersResponse as List,
-        );
-        for (int i = 0; i < allUsers.length; i++) {
-          if (allUsers[i]['user_id'] == uid) {
-            ranking = i + 1;
-            break;
-          }
-        }
-      } catch (e) {
-        debugPrint('Erro ao calcular ranking: $e');
-        ranking = 1; // Default
-      }
+      final requests = await _loadContactRequests(uid);
 
       if (mounted) {
         setState(() {
-          _userData = userResponse;
-          _videos = List<Map<String, dynamic>>.from(videosResponse);
+          _userData = mergedUserData;
+          _videos = videos;
+          _completedChallenges = completedChallenges;
           _savedVideos = savedVideos;
+          _contactRequests = requests;
+          _pendingContactRequests = requests
+              .where((r) => _normalizeContactRequestStatus(r) == 'pending')
+              .length;
           _userRanking = ranking;
           _isLoading = false;
         });
@@ -128,6 +139,783 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       debugPrint('Erro ao carregar dados: $e');
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Map<String, String>? _parseChallengeRef(String description) {
+    final match = RegExp(r'\[challenge_ref:(course|exercise):([^\]]+)\]')
+        .firstMatch(description);
+    if (match == null) return null;
+    return {
+      'type': (match.group(1) ?? '').trim(),
+      'id': (match.group(2) ?? '').trim(),
+    };
+  }
+
+  String _normalizeChallengeTitle(String rawTitle, String fallbackType) {
+    final title = rawTitle.trim();
+    if (title.isEmpty) {
+      return fallbackType == 'course' ? 'Curso' : 'Ejercicio';
+    }
+
+    final lower = title.toLowerCase();
+    if (lower.startsWith('desafío:')) {
+      final normalized = title.substring('desafío:'.length).trim();
+      return normalized.isEmpty ? 'Desafío' : normalized;
+    }
+    if (lower.startsWith('desafio:')) {
+      final normalized = title.substring('desafio:'.length).trim();
+      return normalized.isEmpty ? 'Desafío' : normalized;
+    }
+    return title;
+  }
+
+  int? _readInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse(value.toString());
+  }
+
+  Future<int> _loadCategoryRanking(
+    String uid,
+    Map<String, dynamic>? currentUserData,
+  ) async {
+    try {
+      final progressRows = await SupaFlow.client
+          .from('user_progress')
+          .select('user_id, total_xp')
+          .order('total_xp', ascending: false);
+      final ordered = List<Map<String, dynamic>>.from(progressRows);
+      if (ordered.isEmpty) return 1;
+
+      final myYear = GamificationService.birthYearFromUser(currentUserData);
+      if (myYear == null) {
+        for (int i = 0; i < ordered.length; i++) {
+          if (ordered[i]['user_id']?.toString() == uid) return i + 1;
+        }
+        return 1;
+      }
+
+      final ids = ordered
+          .map((r) => r['user_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      if (ids.isEmpty) return 1;
+
+      final usersRows = await SupaFlow.client
+          .from('users')
+          .select('user_id, birthday, birth_date')
+          .inFilter('user_id', ids);
+      final yearByUser = <String, int?>{};
+      for (final row in (usersRows as List)) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final id = map['user_id']?.toString() ?? '';
+        if (id.isEmpty) continue;
+        yearByUser[id] = GamificationService.birthYearFromUser(map);
+      }
+
+      final categoryRows = ordered.where((row) {
+        final id = row['user_id']?.toString() ?? '';
+        return id.isNotEmpty && yearByUser[id] == myYear;
+      }).toList()
+        ..sort((a, b) => GamificationService.toInt(
+              b['total_xp'],
+            ).compareTo(
+              GamificationService.toInt(a['total_xp']),
+            ));
+
+      for (int i = 0; i < categoryRows.length; i++) {
+        if (categoryRows[i]['user_id']?.toString() == uid) return i + 1;
+      }
+      return 1;
+    } catch (e) {
+      debugPrint('Erro ao calcular ranking por categoria: $e');
+      return 1;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _buildCompletedChallenges(
+    List<Map<String, dynamic>> videos,
+  ) async {
+    final completed = <Map<String, dynamic>>[];
+    final courseIds = <String>{};
+    final exerciseIds = <String>{};
+
+    for (final video in videos) {
+      final description = video['description']?.toString() ?? '';
+      final ref = _parseChallengeRef(description);
+      if (ref == null) continue;
+
+      final type = ref['type'] ?? '';
+      final itemId = ref['id'] ?? '';
+      if (type.isEmpty || itemId.isEmpty) continue;
+
+      if (type == 'course') {
+        courseIds.add(itemId);
+      } else {
+        exerciseIds.add(itemId);
+      }
+
+      completed.add({
+        'video_id': video['id']?.toString(),
+        'video_url': video['video_url']?.toString() ?? '',
+        'created_at': video['created_at']?.toString() ?? '',
+        'item_type': type,
+        'item_id': itemId,
+        'title': _normalizeChallengeTitle(
+          video['title']?.toString() ?? '',
+          type,
+        ),
+        'status': 'Completado',
+        'points': null,
+      });
+    }
+
+    final courseMap = <String, Map<String, dynamic>>{};
+    final exerciseMap = <String, Map<String, dynamic>>{};
+
+    if (courseIds.isNotEmpty) {
+      try {
+        final response = await SupaFlow.client
+            .from('courses')
+            .select('id, title')
+            .inFilter('id', courseIds.toList());
+        for (final row in (response as List)) {
+          final map = Map<String, dynamic>.from(row);
+          final id = map['id']?.toString() ?? '';
+          if (id.isNotEmpty) courseMap[id] = map;
+        }
+      } catch (e) {
+        debugPrint('Erro ao carregar cursos dos desafios: $e');
+      }
+    }
+
+    if (exerciseIds.isNotEmpty) {
+      try {
+        final response = await SupaFlow.client
+            .from('exercises')
+            .select('id, title')
+            .inFilter('id', exerciseIds.toList());
+        for (final row in (response as List)) {
+          final map = Map<String, dynamic>.from(row);
+          final id = map['id']?.toString() ?? '';
+          if (id.isNotEmpty) exerciseMap[id] = map;
+        }
+      } catch (e) {
+        debugPrint('Erro ao carregar exercícios dos desafios: $e');
+      }
+    }
+
+    for (final challenge in completed) {
+      final type = challenge['item_type']?.toString() ?? '';
+      final itemId = challenge['item_id']?.toString() ?? '';
+      if (itemId.isEmpty) continue;
+
+      final source = type == 'course' ? courseMap[itemId] : exerciseMap[itemId];
+      if (source == null) continue;
+
+      final title = source['title']?.toString().trim() ?? '';
+      if (title.isNotEmpty) {
+        challenge['title'] = title;
+      }
+
+      challenge['points'] = GamificationService.challengeCompletedPoints;
+    }
+
+    return completed;
+  }
+
+  String _normalizeContactRequestStatus(Map<String, dynamic> request) {
+    return request['status']?.toString().toLowerCase().trim() ?? 'pending';
+  }
+
+  String _contactRequestStatusLabel(Map<String, dynamic> request) {
+    final status = _normalizeContactRequestStatus(request);
+    switch (status) {
+      case 'accepted':
+      case 'aceptado':
+      case 'aprobado':
+        return 'Aprovado';
+      case 'rejected':
+      case 'rechazado':
+      case 'recusado':
+        return 'Recusado';
+      default:
+        return 'Pendente';
+    }
+  }
+
+  Color _contactRequestStatusColor(Map<String, dynamic> request) {
+    final status = _normalizeContactRequestStatus(request);
+    switch (status) {
+      case 'accepted':
+      case 'aceptado':
+      case 'aprobado':
+        return const Color(0xFF15803D);
+      case 'rejected':
+      case 'rechazado':
+      case 'recusado':
+        return const Color(0xFFB91C1C);
+      default:
+        return const Color(0xFF0D3B66);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadContactRequests(
+      String playerId) async {
+    try {
+      final response = await SupaFlow.client
+          .from('contact_requests')
+          .select()
+          .eq('to_user_id', playerId)
+          .order('created_at', ascending: false)
+          .limit(60);
+
+      final rows = List<Map<String, dynamic>>.from(response);
+      if (rows.isEmpty) return [];
+
+      final fromIds = rows
+          .map((r) => r['from_user_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      final usersMap = <String, Map<String, dynamic>>{};
+      if (fromIds.isNotEmpty) {
+        try {
+          final usersRes = await SupaFlow.client
+              .from('users')
+              .select('user_id, name, lastname, userType, club, photo_url')
+              .inFilter('user_id', fromIds);
+          for (final row in (usersRes as List)) {
+            final map = Map<String, dynamic>.from(row);
+            final id = map['user_id']?.toString() ?? '';
+            if (id.isNotEmpty) usersMap[id] = map;
+          }
+        } catch (_) {}
+      }
+
+      for (final request in rows) {
+        final fromId = request['from_user_id']?.toString() ?? '';
+        request['from_user_data'] = usersMap[fromId];
+      }
+
+      return rows;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  String _formatRequestDate(dynamic rawDate) {
+    if (rawDate == null) return '';
+    final parsed = DateTime.tryParse(rawDate.toString());
+    if (parsed == null) return '';
+    return '${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year}';
+  }
+
+  Future<bool> _updateContactRequestStatus(
+    String requestId,
+    String status,
+  ) async {
+    if (requestId.isEmpty || currentUserUid.isEmpty) return false;
+    try {
+      dynamic updatedRow;
+      try {
+        updatedRow = await SupaFlow.client
+            .from('contact_requests')
+            .update({
+              'status': status,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', requestId)
+            .eq('to_user_id', currentUserUid)
+            .select('id')
+            .maybeSingle();
+      } catch (_) {
+        updatedRow = await SupaFlow.client
+            .from('contact_requests')
+            .update({
+              'status': status,
+            })
+            .eq('id', requestId)
+            .eq('to_user_id', currentUserUid)
+            .select('id')
+            .maybeSingle();
+      }
+
+      if (updatedRow == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Não foi possível atualizar. Verifique permissões no banco.',
+              ),
+            ),
+          );
+        }
+        return false;
+      }
+
+      final refreshed = await _loadContactRequests(currentUserUid);
+      if (mounted) {
+        setState(() {
+          _contactRequests = refreshed;
+          _pendingContactRequests = refreshed
+              .where((r) => _normalizeContactRequestStatus(r) == 'pending')
+              .length;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              status == 'accepted'
+                  ? 'Solicitação aprovada'
+                  : 'Solicitação recusada',
+            ),
+            backgroundColor: status == 'accepted'
+                ? const Color(0xFF15803D)
+                : const Color(0xFFB91C1C),
+          ),
+        );
+      }
+      return true;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível atualizar a solicitação'),
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<String?> _showRequestDetail(Map<String, dynamic> request) async {
+    final requester = request['from_user_data'] as Map<String, dynamic>? ??
+        <String, dynamic>{};
+    final requesterName =
+        '${requester['name'] ?? ''} ${requester['lastname'] ?? ''}'.trim();
+    final role = requester['userType']?.toString() ?? 'profesional';
+    final club = requester['club']?.toString() ?? '';
+    final createdAt = _formatRequestDate(request['created_at']);
+    final status = _normalizeContactRequestStatus(request);
+    final reqId = request['id']?.toString() ?? '';
+    final requesterId = request['from_user_id']?.toString() ?? '';
+
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        bool actionLoading = false;
+
+        return StatefulBuilder(
+          builder: (ctx, setDetailState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD1D5DB),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Solicitud de contacto',
+                    style: GoogleFonts.inter(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF111827),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    requesterName.isNotEmpty ? requesterName : 'Scout',
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF1F2937),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    [
+                      role,
+                      if (club.isNotEmpty) club,
+                      if (createdAt.isNotEmpty) 'Enviada em $createdAt',
+                    ].join(' • '),
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: const Color(0xFF6B7280),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color:
+                          _contactRequestStatusColor(request).withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      _contactRequestStatusLabel(request),
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _contactRequestStatusColor(request),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (status == 'pending')
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: actionLoading
+                                ? null
+                                : () async {
+                                    setDetailState(() => actionLoading = true);
+                                    final ok =
+                                        await _updateContactRequestStatus(
+                                      reqId,
+                                      'rejected',
+                                    );
+                                    if (!ctx.mounted) return;
+                                    if (ok) {
+                                      Navigator.pop(ctx, 'rejected');
+                                    } else {
+                                      setDetailState(
+                                          () => actionLoading = false);
+                                    }
+                                  },
+                            child: actionLoading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Recusar'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: actionLoading
+                                ? null
+                                : () async {
+                                    setDetailState(() => actionLoading = true);
+                                    final ok =
+                                        await _updateContactRequestStatus(
+                                      reqId,
+                                      'accepted',
+                                    );
+                                    if (!ctx.mounted) return;
+                                    if (ok) {
+                                      Navigator.pop(ctx, 'accepted');
+                                    } else {
+                                      setDetailState(
+                                          () => actionLoading = false);
+                                    }
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0D3B66),
+                            ),
+                            child: const Text(
+                              'Aprovar',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D3B66),
+                        ),
+                        child: const Text(
+                          'Entendido',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  if (requesterId.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: actionLoading
+                            ? null
+                            : () {
+                                Navigator.pop(ctx);
+                                context.pushNamed(
+                                  'perfil_profesional_solicitar_Contato',
+                                  queryParameters: {'userId': requesterId},
+                                );
+                              },
+                        child: const Text('Ver perfil de quem solicitou'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showContactRequestsSheet() async {
+    if (currentUserUid.isEmpty) return;
+
+    final refreshed = await _loadContactRequests(currentUserUid);
+    if (mounted) {
+      setState(() {
+        _contactRequests = refreshed;
+        _pendingContactRequests = refreshed
+            .where((r) => _normalizeContactRequestStatus(r) == 'pending')
+            .length;
+      });
+    }
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        List<Map<String, dynamic>> localRequests =
+            List<Map<String, dynamic>>.from(_contactRequests);
+        bool isRefreshing = false;
+
+        Future<void> refresh(StateSetter setSheetState) async {
+          setSheetState(() => isRefreshing = true);
+          final latest = await _loadContactRequests(currentUserUid);
+          if (!mounted) return;
+          setState(() {
+            _contactRequests = latest;
+            _pendingContactRequests = latest
+                .where((r) => _normalizeContactRequestStatus(r) == 'pending')
+                .length;
+          });
+          setSheetState(() {
+            localRequests = latest;
+            isRefreshing = false;
+          });
+        }
+
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) => FractionallySizedBox(
+            heightFactor: 0.78,
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1D5DB),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 10, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Notificações de contato',
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF111827),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: isRefreshing
+                              ? null
+                              : () => refresh(setSheetState),
+                          icon: const Icon(Icons.refresh),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: isRefreshing
+                        ? const Center(child: CircularProgressIndicator())
+                        : localRequests.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Text(
+                                    'Você ainda não recebeu solicitações de contato.',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      color: const Color(0xFF6B7280),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.all(12),
+                                itemCount: localRequests.length,
+                                itemBuilder: (_, index) {
+                                  final request = localRequests[index];
+                                  final from = request['from_user_data']
+                                          as Map<String, dynamic>? ??
+                                      <String, dynamic>{};
+                                  final fromName =
+                                      '${from['name'] ?? ''} ${from['lastname'] ?? ''}'
+                                          .trim();
+                                  final statusLabel =
+                                      _contactRequestStatusLabel(request);
+                                  final statusColor =
+                                      _contactRequestStatusColor(request);
+                                  final dateLabel =
+                                      _formatRequestDate(request['created_at']);
+
+                                  return InkWell(
+                                    onTap: () async {
+                                      final updatedStatus =
+                                          await _showRequestDetail(request);
+                                      if (updatedStatus != null) {
+                                        await refresh(setSheetState);
+                                      }
+                                    },
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      margin: const EdgeInsets.only(bottom: 10),
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: const Color(0xFFE5E7EB),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 22,
+                                            backgroundColor:
+                                                const Color(0xFFEAF2FF),
+                                            backgroundImage: (from['photo_url']
+                                                        ?.toString()
+                                                        .isNotEmpty ??
+                                                    false)
+                                                ? NetworkImage(
+                                                    from['photo_url']
+                                                        .toString(),
+                                                  )
+                                                : null,
+                                            child: (from['photo_url']
+                                                        ?.toString()
+                                                        .isNotEmpty ??
+                                                    false)
+                                                ? null
+                                                : const Icon(
+                                                    Icons.person,
+                                                    color: Color(0xFF0D3B66),
+                                                  ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  fromName.isNotEmpty
+                                                      ? fromName
+                                                      : 'Scout',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                    color:
+                                                        const Color(0xFF111827),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  dateLabel.isNotEmpty
+                                                      ? 'Solicitou contato em $dateLabel'
+                                                      : 'Solicitou contato',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 12,
+                                                    color:
+                                                        const Color(0xFF6B7280),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  statusColor.withOpacity(0.08),
+                                              borderRadius:
+                                                  BorderRadius.circular(99),
+                                            ),
+                                            child: Text(
+                                              statusLabel,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: statusColor,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   String _formatBirthDate(String? birthDate) {
@@ -142,12 +930,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   }
 
   String _getLevelName(int xp) {
-    if (xp >= 10000) return 'Leyenda';
-    if (xp >= 6000) return 'Elite';
-    if (xp >= 3500) return 'Pro';
-    if (xp >= 1750) return 'Semi Pro';
-    if (xp >= 500) return 'Amateur';
-    return 'Principiante';
+    return GamificationService.levelNameFromPoints(xp);
   }
 
   int _calculateAge(String? birthDate) {
@@ -195,7 +978,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
         'color': const Color(0xFF2196F3),
       },
       {
-        'unlocked': xpInt >= 500,
+        'unlocked': xpInt >= 300,
         'icon': Icons.star,
         'color': const Color(0xFFFF9800),
       },
@@ -226,26 +1009,36 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     );
   }
 
-  Widget _buildStatColumn(String value, String label) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: GoogleFonts.inter(
-            color: const Color(0xFF444444),
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
+  Widget _buildStatColumn(String value, String label, {bool compact = false}) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(minWidth: compact ? 68 : 76),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              color: const Color(0xFF444444),
+              fontSize: compact ? 18 : 20,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            color: const Color(0xFF444444),
-            fontSize: 14,
+          const SizedBox(height: 4),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              color: const Color(0xFF444444),
+              fontSize: compact ? 13 : 14,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -306,16 +1099,190 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(5),
-      child: Wrap(
-        spacing: 5,
-        runSpacing: 5,
-        children: _videos.asMap().entries.map((entry) {
-          return _VideoCard(
-            videoUrl: entry.value['video_url'] ?? '',
-            onTap: () => _openVideoFeed(entry.key, _videos),
-          );
-        }).toList(),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_completedChallenges.isNotEmpty) ...[
+            Text(
+              'Desafíos completados',
+              style: GoogleFonts.inter(
+                color: const Color(0xFF0D3B66),
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${_completedChallenges.length} desafío(s) finalizado(s)',
+              style: GoogleFonts.inter(
+                color: const Color(0xFF6B7280),
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ..._completedChallenges.map(_buildCompletedChallengeCard),
+            const SizedBox(height: 14),
+            Text(
+              'Todos os videos',
+              style: GoogleFonts.inter(
+                color: const Color(0xFF444444),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          Wrap(
+            spacing: 5,
+            runSpacing: 5,
+            children: _videos.asMap().entries.map((entry) {
+              return _VideoCard(
+                videoUrl: entry.value['video_url'] ?? '',
+                onTap: () => _openVideoFeed(entry.key, _videos),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompletedChallengeCard(Map<String, dynamic> challenge) {
+    final title = challenge['title']?.toString() ?? 'Desafío';
+    final status = challenge['status']?.toString() ?? 'Completado';
+    final points = _readInt(challenge['points']);
+    final createdAt = challenge['created_at']?.toString() ?? '';
+    final videoId = challenge['video_id']?.toString() ?? '';
+    final fallbackUrl = challenge['video_url']?.toString() ?? '';
+
+    var selectedIndex = -1;
+    if (videoId.isNotEmpty) {
+      selectedIndex =
+          _videos.indexWhere((v) => v['id']?.toString() == videoId.toString());
+    }
+    if (selectedIndex < 0 && fallbackUrl.isNotEmpty) {
+      selectedIndex =
+          _videos.indexWhere((v) => v['video_url']?.toString() == fallbackUrl);
+    }
+
+    final submittedLabel = () {
+      final parsed = DateTime.tryParse(createdAt);
+      if (parsed == null) return 'Video enviado';
+      return 'Enviado el ${DateFormat('dd/MM/yyyy').format(parsed)}';
+    }();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              color: const Color(0xFF111827),
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDBEAFE),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.videocam_rounded,
+                      size: 14,
+                      color: Color(0xFF1D4ED8),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      submittedLabel,
+                      style: GoogleFonts.inter(
+                        color: const Color(0xFF1E3A8A),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  status,
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF166534),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (points != null && points > 0)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '+$points pts',
+                    style: GoogleFonts.inter(
+                      color: const Color(0xFF92400E),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 38,
+            child: OutlinedButton.icon(
+              onPressed: selectedIndex >= 0
+                  ? () => _openVideoFeed(selectedIndex, _videos)
+                  : null,
+              icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+              label: Text(
+                'Ver video enviado',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF0D3B66),
+                side: const BorderSide(color: Color(0xFF0D3B66)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -625,6 +1592,10 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
         '';
     final followers =
         _userData?['followers_count'] ?? _userData?['seguidores'] ?? 0;
+    final screenSize = MediaQuery.sizeOf(context);
+    final isCompactProfile = screenSize.width < 390;
+    final tabViewHeight =
+        (screenSize.height * 0.52).clamp(380.0, 560.0).toDouble();
 
     return GestureDetector(
       onTap: () {
@@ -703,22 +1674,59 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                     GestureDetector(
                                       behavior: HitTestBehavior.opaque,
                                       onTap: () {
-                                        debugPrint('🔵 Notificações clicado!');
-                                        context.pushNamed('notificaciones');
+                                        _showContactRequestsSheet();
                                       },
-                                      child: Container(
-                                        width: 35,
-                                        height: 35,
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFD9D9D9),
-                                          borderRadius: BorderRadius.circular(
-                                            18,
+                                      child: Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          Container(
+                                            width: 35,
+                                            height: 35,
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFD9D9D9),
+                                              borderRadius:
+                                                  BorderRadius.circular(
+                                                18,
+                                              ),
+                                            ),
+                                            child: const Icon(
+                                              Icons.notifications_rounded,
+                                              size: 24,
+                                            ),
                                           ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.notifications_rounded,
-                                          size: 24,
-                                        ),
+                                          if (_pendingContactRequests > 0)
+                                            Positioned(
+                                              right: -3,
+                                              top: -3,
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 5,
+                                                        vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                      const Color(0xFFDC2626),
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  border: Border.all(
+                                                    color: Colors.white,
+                                                    width: 1.2,
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  _pendingContactRequests > 9
+                                                      ? '9+'
+                                                      : _pendingContactRequests
+                                                          .toString(),
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                     ),
                                     const SizedBox(width: 10),
@@ -852,55 +1860,95 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                           // Nome
                           Text(
                             name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.inter(
                               color: const Color(0xFF444444),
-                              fontSize: 26,
+                              fontSize: isCompactProfile ? 22 : 26,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           const SizedBox(height: 10),
 
                           // Username e Stats
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Username e seguidores
-                              Column(
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final isNarrowStats = constraints.maxWidth < 390;
+                              final userInfo = Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     '@$username',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: GoogleFonts.inter(
                                       color: const Color(0xFF444444),
-                                      fontSize: 14,
+                                      fontSize: isCompactProfile ? 13 : 14,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
                                     '${_formatNumber(followers)} seguidores',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: GoogleFonts.inter(
                                       color: const Color(0xFF444444),
-                                      fontSize: 14,
+                                      fontSize: isCompactProfile ? 13 : 14,
                                     ),
                                   ),
                                 ],
-                              ),
+                              );
 
-                              // Stats: Nivel, Ranking, Puntos
-                              Row(
+                              final stats = Wrap(
+                                spacing: isNarrowStats ? 10 : 14,
+                                runSpacing: 8,
+                                alignment: isNarrowStats
+                                    ? WrapAlignment.start
+                                    : WrapAlignment.end,
                                 children: [
-                                  _buildStatColumn(level, 'Nivel'),
-                                  const SizedBox(width: 15),
+                                  _buildStatColumn(
+                                    level,
+                                    'Nivel',
+                                    compact: isCompactProfile,
+                                  ),
                                   _buildStatColumn(
                                     '#${_userRanking > 0 ? _userRanking : '-'}',
                                     'Ranking',
+                                    compact: isCompactProfile,
                                   ),
-                                  const SizedBox(width: 15),
-                                  _buildStatColumn(xpInt.toString(), 'Puntos'),
+                                  _buildStatColumn(
+                                    xpInt.toString(),
+                                    'Puntos',
+                                    compact: isCompactProfile,
+                                  ),
                                 ],
-                              ),
-                            ],
+                              );
+
+                              if (isNarrowStats) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    userInfo,
+                                    const SizedBox(height: 12),
+                                    stats,
+                                  ],
+                                );
+                              }
+
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: userInfo),
+                                  const SizedBox(width: 12),
+                                  Flexible(
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: stats,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
 
                           const SizedBox(height: 25),
@@ -914,11 +1962,15 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                 size: 24,
                               ),
                               const SizedBox(width: 10),
-                              Text(
-                                position,
-                                style: GoogleFonts.inter(
-                                  color: const Color(0xFF444444),
-                                  fontSize: 14,
+                              Expanded(
+                                child: Text(
+                                  position,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    color: const Color(0xFF444444),
+                                    fontSize: 14,
+                                  ),
                                 ),
                               ),
                             ],
@@ -934,11 +1986,15 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                 size: 24,
                               ),
                               const SizedBox(width: 10),
-                              Text(
-                                dominantFoot,
-                                style: GoogleFonts.inter(
-                                  color: const Color(0xFF444444),
-                                  fontSize: 14,
+                              Expanded(
+                                child: Text(
+                                  dominantFoot,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    color: const Color(0xFF444444),
+                                    fontSize: 14,
+                                  ),
                                 ),
                               ),
                             ],
@@ -955,11 +2011,15 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                   size: 24,
                                 ),
                                 const SizedBox(width: 10),
-                                Text(
-                                  location,
-                                  style: GoogleFonts.inter(
-                                    color: const Color(0xFF444444),
-                                    fontSize: 14,
+                                Expanded(
+                                  child: Text(
+                                    location,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      color: const Color(0xFF444444),
+                                      fontSize: 14,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -1020,7 +2080,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
 
                     // ===== TAB BAR VIEW =====
                     SizedBox(
-                      height: 450,
+                      height: tabViewHeight,
                       child: TabBarView(
                         controller: _tabController,
                         children: [

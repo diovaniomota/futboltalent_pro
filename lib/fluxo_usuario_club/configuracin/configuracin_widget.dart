@@ -99,35 +99,64 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     setState(() => _isLoading = true);
     try {
       _currentUserId = currentUserUid;
-      _clubId = currentUserUid;
 
-      if (_clubId == null || _clubId!.isEmpty) {
-        final userResponse = await SupaFlow.client
-            .from('users')
-            .select('club_id')
-            .eq('user_id', _currentUserId!)
-            .maybeSingle();
-        _clubId = userResponse?['club_id']?.toString();
+      if (_currentUserId == null || _currentUserId!.isEmpty) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
       }
 
-      if (_clubId != null && _clubId!.isNotEmpty) {
-        final clubResponse = await SupaFlow.client
-            .from('clubs')
-            .select()
-            .eq('id', _clubId!)
-            .maybeSingle();
-        if (clubResponse != null) {
-          _clubData = clubResponse;
-          _nombreController.text = clubResponse['nombre'] ?? '';
-          _nombreCortoController.text = clubResponse['nombre_corto'] ?? '';
-          _paisController.text = clubResponse['pais'] ?? '';
-          _ligaController.text = clubResponse['liga'] ?? '';
-          _descripcionController.text = clubResponse['descripcion'] ?? '';
-          _sitioWebController.text = clubResponse['sitio_web'] ?? '';
-          _logoUrl = clubResponse['logo_url'];
+      // Buscar o club pelo owner_id (auth UID)
+      var clubResponse = await SupaFlow.client
+          .from('clubs')
+          .select()
+          .eq('owner_id', _currentUserId!)
+          .maybeSingle();
+
+      // Se não encontrou, criar um club básico para este usuário
+      if (clubResponse == null) {
+        try {
+          final userName = await SupaFlow.client
+              .from('users')
+              .select('name')
+              .eq('user_id', _currentUserId!)
+              .maybeSingle();
+          final defaultName = userName?['name'] ?? 'Mi Club';
+
+          await SupaFlow.client.from('clubs').insert({
+            'nombre': 'Club de $defaultName',
+            'owner_id': _currentUserId,
+            'is_active': true,
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          });
+
+          clubResponse = await SupaFlow.client
+              .from('clubs')
+              .select()
+              .eq('owner_id', _currentUserId!)
+              .maybeSingle();
+        } catch (e) {
+          debugPrint('Error creando club: $e');
         }
-        await _loadStaff(_clubId!);
-        await _loadStats(_clubId!);
+      }
+
+      if (clubResponse != null) {
+        _clubData = clubResponse;
+        _clubId = clubResponse['id']?.toString();
+        _nombreController.text = clubResponse['nombre'] ?? '';
+        _nombreCortoController.text = clubResponse['nombre_corto'] ?? '';
+        _paisController.text = clubResponse['pais'] ?? '';
+        _ligaController.text = clubResponse['liga'] ?? '';
+        _descripcionController.text = clubResponse['descripcion'] ?? '';
+        _sitioWebController.text = clubResponse['sitio_web'] ?? '';
+        _logoUrl = clubResponse['logo_url'];
+
+        // Stats usam auth UID (como convocatorias/listas usam auth UID como club_id)
+        await _loadStats(_currentUserId!);
+        // Staff usa o ID real do club na tabela clubs
+        if (_clubId != null) {
+          await _loadStaff(_clubId!);
+        }
       }
     } catch (e) {
       debugPrint('Error cargando datos: $e');
@@ -139,47 +168,52 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     try {
       final response = await SupaFlow.client
           .from('club_staff')
-          .select('*, users(*)')
+          .select('*, users!club_staff_user_id_fkey(*)')
           .eq('club_id', clubId)
           .order('created_at', ascending: true);
       _staffMembers = List<Map<String, dynamic>>.from(response);
       _staffCount = _staffMembers.length;
     } catch (e) {
-      // Fallback
-      final usersResponse = await SupaFlow.client
-          .from('users')
-          .select()
-          .eq('club_id', clubId)
-          .neq('user_id', _currentUserId ?? '');
-      _staffMembers = List<Map<String, dynamic>>.from(usersResponse)
-          .map((u) => {'user_data': u, 'cargo': u['cargo'] ?? 'Staff'})
-          .toList();
-      _staffCount = _staffMembers.length;
+      debugPrint('Error cargando staff con join: $e');
+      // Fallback: buscar staff sem join
+      try {
+        final staffResponse = await SupaFlow.client
+            .from('club_staff')
+            .select()
+            .eq('club_id', clubId);
+        _staffMembers = List<Map<String, dynamic>>.from(staffResponse);
+        _staffCount = _staffMembers.length;
+      } catch (e2) {
+        debugPrint('Error cargando staff fallback: $e2');
+        _staffMembers = [];
+        _staffCount = 0;
+      }
     }
+    if (mounted) setState(() {});
   }
 
-  Future<void> _loadStats(String clubId) async {
+  Future<void> _loadStats(String authUid) async {
     try {
+      // Convocatorias usam auth UID como club_id
       final convocatoriasResponse = await SupaFlow.client
           .from('convocatorias')
           .select('id')
-          .eq('club_id', clubId)
-          .eq('estado', 'activa');
-      final clubResponse = await SupaFlow.client
-          .from('clubs')
-          .select('max_convocatorias, max_staff')
-          .eq('id', clubId)
-          .maybeSingle();
+          .eq('club_id', authUid)
+          .eq('is_active', true);
+
+      // Limites vêm do registro do club (usa _clubData que já foi carregado)
       if (mounted) {
         setState(() {
           _convocatoriasActivas = (convocatoriasResponse as List).length;
-          if (clubResponse != null) {
-            _maxConvocatorias = clubResponse['max_convocatorias'] ?? 20;
-            _maxStaff = clubResponse['max_staff'] ?? 10;
+          if (_clubData != null) {
+            _maxConvocatorias = _clubData!['max_convocatorias'] ?? 20;
+            _maxStaff = _clubData!['max_staff'] ?? 10;
           }
         });
       }
-    } catch (e) {}
+    } catch (e) {
+      debugPrint('Error cargando stats: $e');
+    }
   }
 
   Future<void> _saveChanges() async {
@@ -221,10 +255,11 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       final bytes = await image.readAsBytes();
       final fileName =
           'club_${_clubData!['id']}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      await SupaFlow.client.storage.from('clubs').uploadBinary(fileName, bytes,
+      await SupaFlow.client.storage.from('logos clubs').uploadBinary(
+          fileName, bytes,
           fileOptions: const FileOptions(contentType: 'image/jpeg'));
       final publicUrl =
-          SupaFlow.client.storage.from('clubs').getPublicUrl(fileName);
+          SupaFlow.client.storage.from('logos clubs').getPublicUrl(fileName);
       await SupaFlow.client
           .from('clubs')
           .update({'logo_url': publicUrl}).eq('id', _clubData!['id']);
@@ -248,7 +283,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
 
   // ============ DIALOGS ============
   void _showInviteDialog() {
-    final emailCtrl = TextEditingController();
+    final usernameCtrl = TextEditingController();
     final cargoCtrl = TextEditingController();
     showDialog(
         context: context,
@@ -256,10 +291,10 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                 title: const Text('Invitar Nuevo Miembro'),
                 content: Column(mainAxisSize: MainAxisSize.min, children: [
                   TextField(
-                      controller: emailCtrl,
+                      controller: usernameCtrl,
                       decoration: const InputDecoration(
-                          labelText: 'Email',
-                          hintText: 'correo@ejemplo.com',
+                          labelText: 'Username',
+                          hintText: 'nombre_usuario',
                           border: OutlineInputBorder())),
                   const SizedBox(height: 10),
                   TextField(
@@ -276,7 +311,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                   ElevatedButton(
                       onPressed: () async {
                         Navigator.pop(ctx);
-                        await _inviteStaff(emailCtrl.text, cargoCtrl.text);
+                        await _inviteStaff(usernameCtrl.text, cargoCtrl.text);
                       },
                       style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0D3B66)),
@@ -285,17 +320,24 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                 ]));
   }
 
-  Future<void> _inviteStaff(String email, String cargo) async {
-    if (email.trim().isEmpty || _clubData == null) return;
-    if (_staffCount >= _maxStaff) return;
+  Future<void> _inviteStaff(String username, String cargo) async {
+    if (username.trim().isEmpty || _clubData == null) return;
+    if (_staffCount >= _maxStaff) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Límite de staff alcanzado'),
+            backgroundColor: Colors.orange));
+      }
+      return;
+    }
     setState(() => _isSaving = true);
     try {
       final userResponse = await SupaFlow.client
           .from('users')
-          .select('user_id')
-          .eq('email', email.trim())
+          .select('user_id, name')
+          .eq('username', username.trim())
           .maybeSingle();
-      if (userResponse == null) throw 'Usuario no encontrado';
+      if (userResponse == null) throw 'Usuario no encontrado con ese username';
       final targetId = userResponse['user_id'];
 
       final existing = await SupaFlow.client
@@ -304,7 +346,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
           .eq('club_id', _clubData!['id'])
           .eq('user_id', targetId)
           .maybeSingle();
-      if (existing != null) throw 'Usuario ya es staff';
+      if (existing != null) throw 'Este usuario ya es parte del staff';
 
       await SupaFlow.client.from('club_staff').insert({
         'club_id': _clubData!['id'],
@@ -314,10 +356,10 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         'created_at': DateTime.now().toIso8601String()
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Invitación enviada'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('${userResponse['name']} añadido al staff'),
             backgroundColor: Colors.green));
-        _loadStaff(_clubData!['id']);
+        await _loadStaff(_clubData!['id']);
       }
     } catch (e) {
       if (mounted) {
@@ -329,9 +371,9 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
   }
 
   void _showEditStaffDialog(Map<String, dynamic> staff) {
-    final userData = staff['user_data'] ?? staff['users'] ?? staff;
-    final cargoCtrl =
-        TextEditingController(text: staff['cargo'] ?? userData['cargo'] ?? '');
+    final userData = staff['users'] ?? staff;
+    final staffName = userData['name'] ?? 'Miembro';
+    final cargoCtrl = TextEditingController(text: staff['cargo'] ?? '');
     showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -340,7 +382,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(userData['name'] ?? 'Miembro',
+                      Text(staffName,
                           style: const TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 16),
                       TextField(
@@ -382,9 +424,11 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Cargo actualizado'), backgroundColor: Colors.green));
-        _loadStaff(_clubData!['id']);
+        if (_clubData != null) await _loadStaff(_clubData!['id']);
       }
-    } catch (e) {}
+    } catch (e) {
+      debugPrint('Error actualizando cargo: $e');
+    }
     if (mounted) setState(() => _isSaving = false);
   }
 
@@ -395,9 +439,11 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Miembro eliminado'), backgroundColor: Colors.green));
-        _loadStaff(_clubData!['id']);
+        if (_clubData != null) await _loadStaff(_clubData!['id']);
       }
-    } catch (e) {}
+    } catch (e) {
+      debugPrint('Error eliminando staff: $e');
+    }
     if (mounted) setState(() => _isSaving = false);
   }
 
@@ -438,7 +484,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                               child: const Icon(Icons.settings,
                                   color: Colors.white)),
                           const SizedBox(width: 12),
-                          const Text('Panel del Club',
+                          const Text('Menu do Club',
                               style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -455,7 +501,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                           _buildDrawerItem(
                               context,
                               Icons.dashboard_outlined,
-                              'Dashboard',
+                              'Início',
                               false,
                               () => context
                                   .pushNamed(DashboardClubWidget.routeName)),
@@ -476,7 +522,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                           _buildDrawerItem(
                               context,
                               Icons.list_alt_outlined,
-                              'Listas y Notas',
+                              'Listas',
                               false,
                               () => context
                                   .pushNamed(ListaYNotaWidget.routeName)),
@@ -484,7 +530,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                           _buildDrawerItem(
                               context,
                               Icons.settings_outlined,
-                              'Configuración',
+                              'Configuração',
                               true,
                               () => context
                                   .pushNamed(ConfiguracinWidget.routeName)),
@@ -641,7 +687,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
           onTap: () => _showClubMenu(context),
           child: Icon(Icons.menu, color: Colors.black, size: 24 * scale)),
       SizedBox(height: 16 * scale),
-      Text('Configuración',
+      Text('Configuração',
           style: GoogleFonts.inter(
               fontSize: 24 * scale,
               fontWeight: FontWeight.bold,
@@ -745,14 +791,24 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         const SizedBox(height: 10),
         if (_staffMembers.isEmpty)
           const Text('No hay staff', style: TextStyle(color: Colors.grey)),
-        ..._staffMembers.map((s) => ListTile(
-              title: Text(
-                  s['user_data']?['name'] ?? s['users']?['name'] ?? 'Miembro'),
-              subtitle: Text(s['cargo'] ?? 'Staff'),
-              trailing: TextButton(
-                  child: const Text('Editar'),
-                  onPressed: () => _showEditStaffDialog(s)),
-            )),
+        ..._staffMembers.map((s) {
+          final userData = s['users'];
+          final name = userData?['name'] ?? 'Miembro';
+          return ListTile(
+            leading: CircleAvatar(
+              backgroundColor: const Color(0xFFE0E0E0),
+              child: Text(
+                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            title: Text(name),
+            subtitle: Text(s['cargo'] ?? 'Staff'),
+            trailing: TextButton(
+                child: const Text('Editar'),
+                onPressed: () => _showEditStaffDialog(s)),
+          );
+        }),
         const SizedBox(height: 10),
         OutlinedButton(
             onPressed: _showInviteDialog, child: const Text('Invitar Miembro'))
@@ -771,10 +827,13 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
           const Text('Estado de la Cuenta',
               style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
-          _buildStatusRow(context, 'Plan', 'Profesional'),
+          _buildStatusRow(
+              context, 'Plan', _clubData?['subscription_plan'] ?? 'Básico'),
           _buildStatusRow(context, 'Convocatorias',
               '$_convocatoriasActivas/$_maxConvocatorias'),
           _buildStatusRow(context, 'Staff', '$_staffCount/$_maxStaff'),
+          _buildStatusRow(
+              context, 'Miembro desde', _formatDate(_clubData?['created_at'])),
         ]));
   }
 

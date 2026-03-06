@@ -199,7 +199,28 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
             .replaceAll(' ', '_')
             .replaceAll(RegExp(r'[^a-z0-9_]'), '');
         userData['created_at'] = DateTime.now().toIso8601String();
-        await SupaFlow.client.from('users').insert(userData);
+        try {
+          await SupaFlow.client.from('users').insert(userData);
+        } catch (e) {
+          final msg = e.toString().toLowerCase();
+          if (msg.contains('users_pkey') || msg.contains('duplicate key')) {
+            final updatePayload = Map<String, dynamic>.from(userData)
+              ..remove('created_at');
+            try {
+              await SupaFlow.client
+                  .from('users')
+                  .update(updatePayload)
+                  .eq('user_id', currentUserUid);
+            } catch (_) {
+              await SupaFlow.client
+                  .from('users')
+                  .update(updatePayload)
+                  .eq('id', currentUserUid);
+            }
+          } else {
+            rethrow;
+          }
+        }
       }
 
       // Update Club
@@ -233,6 +254,33 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
         await SupaFlow.client.from('clubes').insert(clubData);
       }
 
+      // Also create/update in 'clubs' table (used by all club screens)
+      final existingClubs = await SupaFlow.client
+          .from('clubs')
+          .select()
+          .eq('owner_id', currentUserUid)
+          .maybeSingle();
+      final clubsData = {
+        'nombre': _clubNameController.text,
+        'nombre_corto': _clubNameController.text,
+        'pais': _countryController.text,
+        'liga': _leagueController.text.isNotEmpty ? _leagueController.text : '',
+        'descripcion': _aboutClubController.text.isNotEmpty
+            ? _aboutClubController.text
+            : '',
+        'sitio_web': sitioWeb.isNotEmpty ? sitioWeb : '',
+        'logo_url': _logoUrl,
+        'owner_id': currentUserUid,
+      };
+      if (existingClubs != null) {
+        await SupaFlow.client
+            .from('clubs')
+            .update(clubsData)
+            .eq('owner_id', currentUserUid);
+      } else {
+        await SupaFlow.client.from('clubs').insert(clubsData);
+      }
+
       if (mounted) {
         showDialog(
           context: context,
@@ -240,7 +288,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
           builder: (context) => _ValidationPendingDialog(
             onContinue: () {
               Navigator.pop(context);
-              context.goNamed('dashboardClub');
+              context.goNamed('dashboard_club');
             },
           ),
         );

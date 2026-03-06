@@ -1,5 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import 'package:flutter/material.dart';
@@ -27,7 +28,8 @@ class _RankingWidgetState extends State<RankingWidget> {
   String? _errorMessage;
   List<Map<String, dynamic>> _rankingData = [];
   Map<String, dynamic>? _currentUserProgress;
-  Map<String, dynamic>? _currentUserLevel;
+  String _currentUserLevelName = 'Aficionado';
+  int? _rankingCategoryYear;
   String _sortBy = 'puntos';
 
   @override
@@ -52,54 +54,71 @@ class _RankingWidgetState extends State<RankingWidget> {
         });
       }
 
+      if (currentUserUid.isNotEmpty) {
+        await GamificationService.recalculateUserProgress(
+            userId: currentUserUid);
+      }
+
       final response = await SupaFlow.client
           .from('user_progress')
-          .select('*, levels:current_level_id (id, name, order_index)')
+          .select()
           .order('total_xp', ascending: false);
 
-      _rankingData = List<Map<String, dynamic>>.from(response);
+      final allRows = List<Map<String, dynamic>>.from(response);
 
-      for (int i = 0; i < _rankingData.length; i++) {
-        final userId = _rankingData[i]['user_id'];
+      for (int i = 0; i < allRows.length; i++) {
+        final userId = allRows[i]['user_id'];
         try {
           final userResponse = await SupaFlow.client
               .from('users')
-              .select('user_id, name, posicion, country, photo_url')
+              .select(
+                  'user_id, name, posicion, country, photo_url, birthday, birth_date')
               .eq('user_id', userId)
               .maybeSingle();
 
           if (userResponse != null) {
-            _rankingData[i]['users'] = userResponse;
+            allRows[i]['users'] = userResponse;
           }
         } catch (e) {
           debugPrint('Error loading user data for $userId: $e');
         }
       }
 
-      for (var item in _rankingData) {
+      for (var item in allRows) {
         if (item['user_id'] == currentUserUid) {
           _currentUserProgress = item;
-          _currentUserLevel = item['levels'];
           break;
         }
       }
 
       if (_currentUserProgress == null) {
-        try {
-          final levelResponse = await SupaFlow.client
-              .from('levels')
-              .select()
-              .eq('id', 1)
-              .maybeSingle();
-          _currentUserLevel = levelResponse ?? {'name': 'Principiante'};
-        } catch (e) {
-          _currentUserLevel = {'name': 'Principiante'};
-        }
         _currentUserProgress = {
           'total_xp': 0,
           'courses_completed': 0,
           'exercises_completed': 0,
         };
+      }
+
+      final currentPoints =
+          GamificationService.toInt(_currentUserProgress?['total_xp']);
+      _currentUserLevelName = GamificationService.levelNameFromPoints(
+        currentPoints,
+      );
+
+      final currentCategoryYear = GamificationService.birthYearFromUser(
+        _currentUserProgress?['users'] as Map<String, dynamic>?,
+      );
+      _rankingCategoryYear = currentCategoryYear;
+
+      if (currentCategoryYear != null) {
+        _rankingData = allRows.where((row) {
+          final year = GamificationService.birthYearFromUser(
+            row['users'] as Map<String, dynamic>?,
+          );
+          return year == currentCategoryYear;
+        }).toList();
+      } else {
+        _rankingData = allRows;
       }
 
       _sortRanking();
@@ -240,11 +259,22 @@ class _RankingWidgetState extends State<RankingWidget> {
               ),
               const SizedBox(height: 4),
               Text(
-                _currentUserLevel?['name'] ?? 'Principiante',
+                _currentUserLevelName,
                 style: GoogleFonts.inter(
                   color: const Color(0xFF0D3B66),
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _rankingCategoryYear != null
+                    ? 'Categoría ${_rankingCategoryYear!}'
+                    : 'Ranking general',
+                style: GoogleFonts.inter(
+                  color: const Color(0xFF64748B),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -306,7 +336,9 @@ class _RankingWidgetState extends State<RankingWidget> {
           ),
           const SizedBox(height: 16),
           Text(
-            'No hay jugadores en el ranking',
+            _rankingCategoryYear != null
+                ? 'No hay jugadores en tu categoría'
+                : 'No hay jugadores en el ranking',
             style: GoogleFonts.inter(
               color: const Color(0xFF718096),
               fontSize: 16,
@@ -315,7 +347,9 @@ class _RankingWidgetState extends State<RankingWidget> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Completa cursos y ejercicios para aparecer aquí',
+            _rankingCategoryYear != null
+                ? 'Aún no hay datos para el año $_rankingCategoryYear'
+                : 'Completa desafíos y sube videos para aparecer aquí',
             style: GoogleFonts.inter(
               color: const Color(0xFFA0AEC0),
               fontSize: 14,
@@ -519,9 +553,11 @@ class _RankingWidgetState extends State<RankingWidget> {
           const SizedBox(width: 8),
           GestureDetector(
             onTap: () {
-              context.pushNamed('perfilJugador', queryParameters: {
-                'userId': item['user_id'],
-              });
+              final uid = item['user_id']?.toString() ?? '';
+              if (uid.isNotEmpty) {
+                context.pushNamed('perfil_profesional_solicitar_Contato',
+                    queryParameters: {'userId': uid});
+              }
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

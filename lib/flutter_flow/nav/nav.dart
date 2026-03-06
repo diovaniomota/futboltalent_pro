@@ -79,6 +79,13 @@ class AppStateNotifier extends ChangeNotifier {
   }
 }
 
+Widget _homeForUserType() {
+  final userType = FFAppState.normalizeUserType(FFAppState().userType);
+  if (userType == 'admin') return AdminDashboardWidget();
+  if (userType == 'club') return DashboardClubWidget();
+  return FeedWidget();
+}
+
 GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
       initialLocation: '/',
       debugLogDiagnostics: true,
@@ -86,13 +93,13 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
       navigatorKey: appNavigatorKey,
       observers: [routeObserver],
       errorBuilder: (context, state) =>
-          appStateNotifier.loggedIn ? FeedWidget() : LoginWidget(),
+          appStateNotifier.loggedIn ? _homeForUserType() : LoginWidget(),
       routes: [
         FFRoute(
           name: '_initialize',
           path: '/',
           builder: (context, _) =>
-              appStateNotifier.loggedIn ? FeedWidget() : LoginWidget(),
+              appStateNotifier.loggedIn ? _homeForUserType() : LoginWidget(),
         ),
         FFRoute(
           name: Onboardign1Widget.routeName,
@@ -239,6 +246,26 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
           name: CriarClubWidget.routeName,
           path: CriarClubWidget.routePath,
           builder: (context, params) => CriarClubWidget(),
+        ),
+        FFRoute(
+          name: AdminDashboardWidget.routeName,
+          path: AdminDashboardWidget.routePath,
+          builder: (context, params) => AdminDashboardWidget(),
+        ),
+        FFRoute(
+          name: AdminUsuariosWidget.routeName,
+          path: AdminUsuariosWidget.routePath,
+          builder: (context, params) => AdminUsuariosWidget(),
+        ),
+        FFRoute(
+          name: AdminVideosWidget.routeName,
+          path: AdminVideosWidget.routePath,
+          builder: (context, params) => AdminVideosWidget(),
+        ),
+        FFRoute(
+          name: AdminDesafiosWidget.routeName,
+          path: AdminDesafiosWidget.routePath,
+          builder: (context, params) => AdminDesafiosWidget(),
         )
       ].map((r) => r.toRoute(appStateNotifier)).toList(),
     );

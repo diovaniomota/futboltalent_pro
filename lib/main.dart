@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:provider/provider.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -79,7 +81,7 @@ class MyAppScrollBehavior extends MaterialScrollBehavior {
       };
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Locale? _locale;
 
   ThemeMode _themeMode = ThemeMode.system;
@@ -100,22 +102,118 @@ class _MyAppState extends State<MyApp> {
           .map((e) => getRoute(e))
           .toList();
   late Stream<BaseAuthUser> userStream;
+  StreamSubscription<BaseAuthUser>? _userStreamSubscription;
+  Timer? _accountGuardTimer;
+  bool _isCheckingAccountGuard = false;
+  bool _isForcingLogout = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _appStateNotifier = AppStateNotifier.instance;
     _router = createRouter(_appStateNotifier);
-    userStream = futboltalentProSupabaseUserStream()
-      ..listen((user) {
-        _appStateNotifier.update(user);
-      });
+    userStream = futboltalentProSupabaseUserStream();
+    _userStreamSubscription = userStream.listen((user) {
+      _appStateNotifier.update(user);
+      _onAuthUserChanged(user);
+    });
+    _enforceAccountAccessRules();
     jwtTokenStream.listen((_) {});
     Future.delayed(
       Duration(milliseconds: 1000),
       () => _appStateNotifier.stopShowingSplashImage(),
     );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _accountGuardTimer?.cancel();
+    _userStreamSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _enforceAccountAccessRules();
+    }
+  }
+
+  void _onAuthUserChanged(BaseAuthUser user) {
+    if (user.loggedIn && (user.uid?.isNotEmpty ?? false)) {
+      _startAccountGuard();
+      _enforceAccountAccessRules();
+      return;
+    }
+    _stopAccountGuard();
+  }
+
+  void _startAccountGuard() {
+    _accountGuardTimer?.cancel();
+    _accountGuardTimer = Timer.periodic(
+      const Duration(seconds: 25),
+      (_) => _enforceAccountAccessRules(),
+    );
+  }
+
+  void _stopAccountGuard() {
+    _accountGuardTimer?.cancel();
+    _accountGuardTimer = null;
+  }
+
+  Future<void> _enforceAccountAccessRules() async {
+    if (_isCheckingAccountGuard || _isForcingLogout) return;
+    if (currentUserUid.isEmpty) return;
+    _isCheckingAccountGuard = true;
+    try {
+      final userData = await SupaFlow.client
+          .from('users')
+          .select('banned_until, is_minor, has_guardian')
+          .eq('user_id', currentUserUid)
+          .maybeSingle();
+      if (userData == null) return;
+
+      final bannedUntilRaw = userData['banned_until']?.toString();
+      final bannedUntil = bannedUntilRaw != null
+          ? DateTime.tryParse(bannedUntilRaw)?.toLocal()
+          : null;
+      if (bannedUntil != null && bannedUntil.isAfter(DateTime.now())) {
+        final formattedDate =
+            '${bannedUntil.day.toString().padLeft(2, '0')}/${bannedUntil.month.toString().padLeft(2, '0')}/${bannedUntil.year}';
+        await _forceLogoutWithMessage(
+          'Cuenta suspendida hasta $formattedDate. Contacte al administrador.',
+        );
+        return;
+      }
+
+      if (userData['is_minor'] == true && userData['has_guardian'] != true) {
+        await _forceLogoutWithMessage(
+          'Cuenta de menor sin adulto responsable. Registre nuevamente con un responsable.',
+        );
+      }
+    } catch (e) {
+      debugPrint('Account guard check failed: $e');
+    } finally {
+      _isCheckingAccountGuard = false;
+    }
+  }
+
+  Future<void> _forceLogoutWithMessage(String message) async {
+    if (_isForcingLogout) return;
+    _isForcingLogout = true;
+    try {
+      FFAppState().authBlockMessage = message;
+      await authManager.signOut();
+      _router.clearRedirectLocation();
+      _router.goNamed(LoginWidget.routeName);
+    } catch (e) {
+      debugPrint('Force logout failed: $e');
+    } finally {
+      _isForcingLogout = false;
+    }
   }
 
   void setLocale(String language) {
@@ -147,6 +245,53 @@ class _MyAppState extends State<MyApp> {
       theme: ThemeData(
         brightness: Brightness.light,
         useMaterial3: false,
+        dialogTheme: DialogThemeData(
+          elevation: 0,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          titleTextStyle: const TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF111827),
+          ),
+          contentTextStyle: const TextStyle(
+            fontSize: 16,
+            color: Color(0xFF4B5563),
+            height: 1.35,
+          ),
+        ),
+        bottomSheetTheme: const BottomSheetThemeData(
+          backgroundColor: Colors.white,
+          modalBackgroundColor: Colors.white,
+          elevation: 10,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(24),
+            ),
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF0D3B66),
+            textStyle: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 16,
+            ),
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 16,
+            ),
+          ),
+        ),
       ),
       themeMode: _themeMode,
       routerConfig: _router,

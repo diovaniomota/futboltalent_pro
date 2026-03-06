@@ -1,5 +1,4 @@
 import '/backend/supabase/supabase.dart';
-import '/backend/supabase/supabase_util.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import 'package:flutter/material.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
@@ -25,7 +24,6 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
 
   bool _isLoading = true;
   String? _clubId;
-  String? _currentUserId;
 
   // Stats
   int _convocatoriasActivas = 0;
@@ -80,41 +78,26 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
+    _clubId = currentUserUid;
+
+    // Carregar nome do club (não bloqueia o resto se falhar)
     try {
-      _currentUserId = currentUserUid; // From auth_util
-      _clubId = currentUserUid;
-
-      // Ensure clubId is loaded
-      if (_clubId == null || _clubId!.isEmpty) {
-        final userResponse = await SupaFlow.client
-            .from('users')
-            .select('club_id')
-            .eq('user_id', _currentUserId!)
-            .maybeSingle();
-
-        _clubId = userResponse?['club_id']?.toString();
-      }
-
-      // Load Club Name
-      if (_clubId != null && _clubId!.isNotEmpty) {
-        final clubResponse = await SupaFlow.client
-            .from('clubs')
-            .select('name')
-            .eq('id', _clubId!)
-            .maybeSingle();
-        if (validSupabaseQuery(clubResponse)) {
-          setState(() {
-            _clubName = clubResponse?['name'];
-          });
-        }
-      }
-
-      if (_clubId != null && _clubId!.isNotEmpty) {
-        await _loadStats();
-        await _loadPostulacionesRecientes();
+      final clubResponse = await SupaFlow.client
+          .from('clubs')
+          .select('nombre')
+          .eq('owner_id', _clubId!)
+          .maybeSingle();
+      if (clubResponse != null && clubResponse['nombre'] != null) {
+        _clubName = clubResponse['nombre'];
       }
     } catch (e) {
-      debugPrint('❌ Error cargando datos: $e');
+      debugPrint('Club name not found: $e');
+    }
+
+    // Carregar stats e postulaciones
+    if (_clubId != null && _clubId!.isNotEmpty) {
+      await _loadStats();
+      await _loadPostulacionesRecientes();
     }
 
     if (mounted) {
@@ -153,16 +136,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
         _promedioPostulaciones = _totalPostulaciones / _convocatoriasActivas;
       }
 
-      try {
-        final videosResponse = await SupaFlow.client
-            .from('postulaciones')
-            .select('id, video_id')
-            .not('video_id', 'is', null);
-
-        _totalVideos = (videosResponse as List).length;
-      } catch (e) {
-        _totalVideos = (_totalPostulaciones * 0.6).toInt();
-      }
+      _totalVideos = 0;
     } catch (e) {
       debugPrint('❌ Error cargando stats: $e');
     }
@@ -199,7 +173,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
           final jugadorResponse = await SupaFlow.client
               .from('users')
               .select(
-                  'user_id, name, lastname, position, birth_date, country, photo_url')
+                  'user_id, name, lastname, posicion, birthday, city, photo_url')
               .eq('user_id', post['jugador_id'])
               .maybeSingle();
 
@@ -236,7 +210,6 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     try {
       await SupaFlow.client.from('postulaciones').update({
         'estado': newStatus,
-        'fecha_revision': DateTime.now().toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', postulacionId);
 
@@ -337,7 +310,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                                       mobile: 10, tablet: 12, desktop: 14)),
                               Expanded(
                                 child: Text(
-                                  'Panel del Club',
+                                  'Menu do Club',
                                   style: GoogleFonts.inter(
                                     fontSize: _responsive(ctx,
                                         mobile: 16, tablet: 18, desktop: 20),
@@ -362,7 +335,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                               _buildDrawerItemCallback(
                                   context, // Use parent context for navigation
                                   Icons.dashboard_outlined,
-                                  'Dashboard',
+                                  'Início',
                                   false,
                                   () async => context.pushNamed(
                                       DashboardClubWidget.routeName)),
@@ -383,7 +356,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.list_alt_outlined,
-                                  'Listas y Notas',
+                                  'Listas',
                                   false,
                                   () async => context
                                       .pushNamed(ListaYNotaWidget.routeName)),
@@ -391,7 +364,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.settings_outlined,
-                                  'Configuración',
+                                  'Configuração',
                                   false,
                                   () async => context
                                       .pushNamed(ConfiguracinWidget.routeName)),
@@ -871,9 +844,9 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final lastname = jugador?['lastname'] ?? '';
     final fullName =
         '$name ${lastname.isNotEmpty ? lastname[0] + '.' : ''}'.trim();
-    final position = jugador?['position'] ?? '';
-    final country = jugador?['country'] ?? '';
-    final age = _calculateAge(jugador?['birth_date']);
+    final position = jugador?['posicion'] ?? '';
+    final country = jugador?['city'] ?? '';
+    final age = _calculateAge(jugador?['birthday']);
     final estado = postulacion['estado']?.toString() ?? 'pendiente';
     final jugadorId = jugador?['user_id']?.toString() ?? '';
     final postulacionId = postulacion['id'].toString();
@@ -1006,12 +979,9 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
         // Ver Perfil button
         GestureDetector(
           onTap: () {
-            // Navigation to Player Profile
             if (jugadorId.isNotEmpty) {
-              // Implement navigation to player profile if applicable
-              // context.pushNamed('PerfilJugador', pathParameters: {'id': jugadorId});
-              _showPlayerDetail(
-                  postulacion); // Fallback for now or if design requires strict modal
+              context.pushNamed('perfil_profesional_solicitar_Contato',
+                  queryParameters: {'userId': jugadorId});
             } else {
               _showPlayerDetail(postulacion);
             }
@@ -1108,7 +1078,12 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
             // Ver Perfil button
             GestureDetector(
               onTap: () {
-                _showPlayerDetail(postulacion);
+                if (jugadorId.isNotEmpty) {
+                  context.pushNamed('perfil_profesional_solicitar_Contato',
+                      queryParameters: {'userId': jugadorId});
+                } else {
+                  _showPlayerDetail(postulacion);
+                }
               },
               child: Container(
                 padding: EdgeInsets.symmetric(
@@ -1214,9 +1189,9 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final name = jugador?['name'] ?? '';
     final lastname = jugador?['lastname'] ?? '';
     final fullName = '$name $lastname'.trim();
-    final position = jugador?['position'] ?? '';
-    final country = jugador?['country'] ?? '';
-    final age = _calculateAge(jugador?['birth_date']);
+    final position = jugador?['posicion'] ?? '';
+    final country = jugador?['city'] ?? '';
+    final age = _calculateAge(jugador?['birthday']);
     final photoUrl = jugador?['photo_url'];
     final mensaje = postulacion['mensaje'] ?? '';
 
