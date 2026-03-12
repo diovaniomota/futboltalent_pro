@@ -2,6 +2,8 @@ workflows:
   ios-workflow:
     name: iOS Workflow
     environment:
+      groups:
+        - codemagic
       flutter: default
       xcode: latest
       cocoapods: default
