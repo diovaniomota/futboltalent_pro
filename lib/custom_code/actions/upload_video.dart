@@ -2,6 +2,7 @@
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/guardian/guardian_mvp_service.dart';
 import 'index.dart'; // Imports other custom actions
 import '/flutter_flow/custom_functions.dart'; // Imports custom functions
 import 'package:flutter/material.dart';
@@ -25,6 +26,27 @@ Future<bool> uploadVideo(
       return false;
     }
 
+    final moderationError = GuardianMvpService.validatePublicFields([
+      title,
+      description,
+      tags,
+    ]);
+    if (moderationError != null) {
+      debugPrint('Upload blocked by moderation: $moderationError');
+      return false;
+    }
+
+    Map<String, dynamic>? currentUserData;
+    try {
+      currentUserData = await SupaFlow.client
+          .from('users')
+          .select()
+          .eq('user_id', userId)
+          .maybeSingle();
+    } catch (_) {}
+    final moderationStatus =
+        GuardianMvpService.moderationStatusForUser(currentUserData);
+
     final file = File(videoPath);
     final bytes = await file.readAsBytes();
 
@@ -39,7 +61,7 @@ Future<bool> uploadVideo(
 
     final publicUrl = SupaFlow.client.storage.from('Videos').getPublicUrl(path);
 
-    await SupaFlow.client.from('videos').insert({
+    final payload = <String, dynamic>{
       'title': title,
       'description': description ?? '',
       'video_url': publicUrl,
@@ -47,7 +69,14 @@ Future<bool> uploadVideo(
       'is_public': isPublic,
       'created_at': DateTime.now().toIso8601String(),
       'likes_count': 0,
-    });
+      'moderation_status': moderationStatus,
+    };
+    try {
+      await SupaFlow.client.from('videos').insert(payload);
+    } catch (_) {
+      payload.remove('moderation_status');
+      await SupaFlow.client.from('videos').insert(payload);
+    }
 
     return true;
   } catch (e) {

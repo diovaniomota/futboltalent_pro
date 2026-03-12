@@ -2,6 +2,7 @@ import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import 'package:flutter/material.dart';
@@ -413,6 +414,152 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     return '${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year}';
   }
 
+  bool get _requiresGuardianCodeForContactDecisions {
+    return _userData?['is_minor'] == true;
+  }
+
+  bool get _isMinorApprovalPending {
+    return _userData?['is_minor'] == true &&
+        GuardianMvpService.normalizedGuardianStatus(_userData) !=
+            GuardianMvpService.approvedStatus;
+  }
+
+  Future<void> _activateMinorAccountWithGuardianCode(String code) async {
+    final normalizedCode = code.trim().toUpperCase();
+    if (normalizedCode.isEmpty) {
+      throw Exception('Ingresá el código del responsable.');
+    }
+
+    final guardian = await SupaFlow.client
+        .from('guardians')
+        .select('approval_code')
+        .eq('player_id', currentUserUid)
+        .maybeSingle();
+    final expectedCode =
+        guardian?['approval_code']?.toString().trim().toUpperCase() ?? '';
+    if (expectedCode.isEmpty || expectedCode != normalizedCode) {
+      throw Exception('Código del responsable inválido.');
+    }
+
+    try {
+      await GuardianMvpService.approveGuardianCode(normalizedCode);
+      return;
+    } catch (_) {}
+
+    await SupaFlow.client.from('guardians').update({
+      'status': GuardianMvpService.approvedStatus,
+      'approved_at': DateTime.now().toIso8601String(),
+    }).eq('player_id', currentUserUid);
+
+    await SupaFlow.client.from('users').update({
+      'has_guardian': true,
+      'guardian_status': GuardianMvpService.approvedStatus,
+      'visibility_status': GuardianMvpService.activeVisibility,
+    }).eq('user_id', currentUserUid);
+
+    try {
+      await SupaFlow.client.from('videos').update({
+        'moderation_status': GuardianMvpService.approvedStatus,
+      }).eq('user_id', currentUserUid);
+    } catch (_) {}
+  }
+
+  Future<bool> _promptGuardianCodeAndUpdateRequest(
+    String requestId,
+    String status,
+  ) async {
+    final codeController = TextEditingController();
+    String? localError;
+    bool isSubmitting = false;
+    var handled = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Código del responsable'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                status == 'accepted'
+                    ? 'Para aprobar esta solicitud, ingresá el código del adulto responsable.'
+                    : 'Para rechazar esta solicitud, ingresá el código del adulto responsable.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: codeController,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  hintText: 'RESP-123456',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (localError != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  localError!,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed:
+                  isSubmitting ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      setDialogState(() {
+                        isSubmitting = true;
+                        localError = null;
+                      });
+                      try {
+                        await _activateMinorAccountWithGuardianCode(
+                          codeController.text,
+                        );
+                        final ok =
+                            await _updateContactRequestStatus(requestId, status);
+                        if (!dialogContext.mounted) return;
+                        if (ok) {
+                          handled = true;
+                          Navigator.pop(dialogContext);
+                          await _loadData();
+                        } else {
+                          setDialogState(() => isSubmitting = false);
+                        }
+                      } catch (error) {
+                        setDialogState(() {
+                          isSubmitting = false;
+                          localError = error.toString().replaceFirst(
+                                'Exception: ',
+                                '',
+                              );
+                        });
+                      }
+                    },
+              child: isSubmitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(status == 'accepted' ? 'Aprobar' : 'Recusar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    codeController.dispose();
+    return handled;
+  }
+
   Future<bool> _updateContactRequestStatus(
     String requestId,
     String status,
@@ -580,7 +727,8 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (status == 'pending')
+                  if (status == 'pending' &&
+                      !_requiresGuardianCodeForContactDecisions)
                     Row(
                       children: [
                         Expanded(
@@ -641,6 +789,98 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                               style: TextStyle(color: Colors.white),
                             ),
                           ),
+                        ),
+                      ],
+                    )
+                  else if (status == 'pending' &&
+                      _requiresGuardianCodeForContactDecisions)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF7ED),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFFF59E0B),
+                            ),
+                          ),
+                          child: Text(
+                            'Como es una cuenta de menor, esta decisión requiere el código del responsable.',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF9A3412),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: actionLoading
+                                    ? null
+                                    : () async {
+                                        setDetailState(
+                                            () => actionLoading = true);
+                                        final ok =
+                                            await _promptGuardianCodeAndUpdateRequest(
+                                          reqId,
+                                          'rejected',
+                                        );
+                                        if (!ctx.mounted) return;
+                                        if (ok) {
+                                          Navigator.pop(ctx, 'rejected');
+                                        } else {
+                                          setDetailState(
+                                              () => actionLoading = false);
+                                        }
+                                      },
+                                child: actionLoading
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text('Recusar con código'),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: actionLoading
+                                    ? null
+                                    : () async {
+                                        setDetailState(
+                                            () => actionLoading = true);
+                                        final ok =
+                                            await _promptGuardianCodeAndUpdateRequest(
+                                          reqId,
+                                          'accepted',
+                                        );
+                                        if (!ctx.mounted) return;
+                                        if (ok) {
+                                          Navigator.pop(ctx, 'accepted');
+                                        } else {
+                                          setDetailState(
+                                              () => actionLoading = false);
+                                        }
+                                      },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF0D3B66),
+                                ),
+                                child: const Text(
+                                  'Aprobar con código',
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     )
@@ -1251,7 +1491,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    '+$points pts',
+                    '+$points XP',
                     style: GoogleFonts.inter(
                       color: const Color(0xFF92400E),
                       fontSize: 12,
@@ -1851,6 +2091,119 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
 
                     const SizedBox(height: 10),
 
+                    if (_isMinorApprovalPending)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(15, 0, 15, 12),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF7ED),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: const Color(0xFFF59E0B),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Cuenta protegida hasta aprobación del responsable',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF9A3412),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Podés completar el perfil y subir videos, pero no se mostrarán en Explorer ni se habilitará el contacto hasta validar el código del adulto responsable.',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  height: 1.4,
+                                  color: const Color(0xFF9A3412),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  final codeController =
+                                      TextEditingController();
+                                  try {
+                                    final code = await showDialog<String>(
+                                      context: context,
+                                      builder: (dialogContext) => AlertDialog(
+                                        title: const Text(
+                                          'Validar código del responsable',
+                                        ),
+                                        content: TextField(
+                                          controller: codeController,
+                                          textCapitalization:
+                                              TextCapitalization.characters,
+                                          decoration: const InputDecoration(
+                                            hintText: 'RESP-123456',
+                                            border: OutlineInputBorder(),
+                                          ),
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(dialogContext),
+                                            child: const Text('Cancelar'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () => Navigator.pop(
+                                              dialogContext,
+                                              codeController.text,
+                                            ),
+                                            child: const Text('Validar'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (code == null || code.trim().isEmpty) {
+                                      return;
+                                    }
+                                    await _activateMinorAccountWithGuardianCode(
+                                      code,
+                                    );
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Cuenta aprobada. El perfil del menor ya quedó activo.',
+                                        ),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                    await _loadData();
+                                  } catch (error) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          error.toString().replaceFirst(
+                                                'Exception: ',
+                                                '',
+                                              ),
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  } finally {
+                                    codeController.dispose();
+                                  }
+                                },
+                                icon: const Icon(Icons.verified_user),
+                                label: const Text(
+                                  'Validar código del responsable',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
                     // ===== NOME E INFO =====
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 15),
@@ -1918,7 +2271,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                   ),
                                   _buildStatColumn(
                                     xpInt.toString(),
-                                    'Puntos',
+                                    'XP',
                                     compact: isCompactProfile,
                                   ),
                                 ],

@@ -2,6 +2,7 @@ import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import 'package:provider/provider.dart';
@@ -435,8 +436,18 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           );
 
       String? profileVideoId;
+      Map<String, dynamic>? currentUserData;
       try {
-        await SupaFlow.client.from('videos').insert({
+        currentUserData = await SupaFlow.client
+            .from('users')
+            .select()
+            .eq('user_id', currentUserUid)
+            .maybeSingle();
+      } catch (_) {}
+      final moderationStatus =
+          GuardianMvpService.moderationStatusForUser(currentUserData);
+      try {
+        final payload = <String, dynamic>{
           'user_id': currentUserUid,
           'video_url': publicUrl,
           'title': 'Desafío: ${item['title'] ?? itemType}',
@@ -445,7 +456,14 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           'is_public': true,
           'likes_count': 0,
           'created_at': DateTime.now().toIso8601String(),
-        });
+          'moderation_status': moderationStatus,
+        };
+        try {
+          await SupaFlow.client.from('videos').insert(payload);
+        } catch (_) {
+          payload.remove('moderation_status');
+          await SupaFlow.client.from('videos').insert(payload);
+        }
         try {
           final lookup = await SupaFlow.client
               .from('videos')
@@ -499,7 +517,9 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       await GamificationService.recalculateUserProgress(userId: currentUserUid);
 
       _showSnack(
-        'Intento enviado. Ya aparece en tu perfil y en Explorer (si es público).',
+        moderationStatus == GuardianMvpService.pendingStatus
+            ? 'Intento enviado. Quedará visible cuando el responsable apruebe la cuenta.'
+            : 'Intento enviado. Ya aparece en tu perfil y en Explorer (si es público).',
         background: const Color(0xFF48BB78),
       );
       return attempt;
@@ -668,6 +688,16 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     }
     if (startedNow) {
       await GamificationService.recalculateUserProgress(userId: currentUserUid);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Participaste en el desafío. +${GamificationService.challengeParticipatedPoints} XP',
+            ),
+            backgroundColor: const Color(0xFF0D3B66),
+          ),
+        );
+      }
     }
     await _syncAttemptForItem(item);
     _showVideoModal(item);
@@ -679,6 +709,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final title =
         item['title'] ?? (item['type'] == 'course' ? 'Curso' : 'Ejercicio');
     final pointsReward = GamificationService.challengeCompletedPoints;
+    final participationReward = GamificationService.challengeParticipatedPoints;
     final isCourse = item['type'] == 'course';
     final itemId = item['id'].toString();
     final itemKey = _itemKey(item);
@@ -795,7 +826,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                 ),
                                 SizedBox(width: 4 * scale),
                                 Text(
-                                  '+$pointsReward pts al completar',
+                                  '+$pointsReward XP al completar',
                                   style: GoogleFonts.inter(
                                     color: const Color(0xFFFFD700),
                                     fontSize: 16 * scale,
@@ -803,6 +834,15 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                   ),
                                 ),
                               ],
+                            ),
+                            SizedBox(height: 6 * scale),
+                            Text(
+                              '+$participationReward XP al participar',
+                              style: GoogleFonts.inter(
+                                color: Colors.white70,
+                                fontSize: 13 * scale,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             SizedBox(height: 18 * scale),
                             Text(
@@ -1117,7 +1157,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                       Icon(Icons.bolt,
                           color: const Color(0xFFFFD700), size: 16 * scale),
                       SizedBox(width: 4 * scale),
-                      Text('$totalPoints pts',
+                      Text('$totalPoints XP',
                           style: GoogleFonts.inter(
                               color: Colors.white,
                               fontSize: 14 * scale,
@@ -1259,6 +1299,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final hasAttempt = _hasAttemptForItem(item);
     final title = item['title'] ?? (isCourse ? 'Curso' : 'Ejercicio');
     final pointsReward = GamificationService.challengeCompletedPoints;
+    final participationReward = GamificationService.challengeParticipatedPoints;
     final imageUrl = item['thumbnail_url'] ??
         item['image_url'] ??
         item['placeholder_image'] ??
@@ -1390,6 +1431,15 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                           ),
                           SizedBox(height: 6 * scale),
                         ],
+                        Text(
+                          '+$participationReward XP al intentar',
+                          style: GoogleFonts.inter(
+                            color: Colors.white70,
+                            fontSize: 12 * scale,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        SizedBox(height: 6 * scale),
                         Row(children: [
                           Text(statusText,
                               style: GoogleFonts.inter(
@@ -1408,7 +1458,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                     color: const Color(0xFFFFD700),
                                     size: 14 * scale),
                                 SizedBox(width: 2 * scale),
-                                Text('+$pointsReward pts',
+                                Text('+$pointsReward XP',
                                     style: GoogleFonts.inter(
                                         color: Colors.white,
                                         fontSize: 12 * scale,
@@ -1540,8 +1590,8 @@ class _CompletarButtonState extends State<_CompletarButton> {
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(widget.isCourse
-              ? '¡Curso completado! +${widget.pointsReward} pts'
-              : '¡Ejercicio completado! +${widget.pointsReward} pts'),
+              ? '¡Curso completado! +${widget.pointsReward} XP'
+              : '¡Ejercicio completado! +${widget.pointsReward} XP'),
           backgroundColor: const Color(0xFF48BB78)));
       widget.onComplete();
     } catch (e) {

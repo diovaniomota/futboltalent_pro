@@ -3,6 +3,8 @@ import '/backend/supabase/supabase.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/gamification/gamification_service.dart';
+import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import '/index.dart';
@@ -95,6 +97,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       ]);
       await _loadNextChallenge();
       _decorateUserData();
+      await _loadPlayerProgressData();
     } catch (e) {
       _errorMessage = 'Error al cargar Explorer';
     } finally {
@@ -154,6 +157,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                 ...u,
                 'userType': FFAppState.normalizeUserType(u['userType']),
               })
+          .where((u) => !GuardianMvpService.isLimitedProfile(u))
           .where((u) =>
               u['userType'] == 'jugador' || u['userType'] == 'profesional')
           .toList();
@@ -200,22 +204,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     try {
       final response = await SupaFlow.client
           .from('videos')
-          .select('id, user_id, title, thumbnail_url, video_url, created_at')
+          .select()
           .eq('is_public', true)
           .order('created_at', ascending: false)
           .limit(200);
 
       _videos = List<Map<String, dynamic>>.from(response);
-      _videoCountByUserId.clear();
-      _latestVideoByUserId.clear();
-
-      for (final video in _videos) {
-        final uid = video['user_id']?.toString() ?? '';
-        if (uid.isEmpty) continue;
-
-        _videoCountByUserId[uid] = (_videoCountByUserId[uid] ?? 0) + 1;
-        _latestVideoByUserId.putIfAbsent(uid, () => video);
-      }
     } catch (_) {
       _videos = [];
       _videoCountByUserId.clear();
@@ -292,11 +286,94 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   void _decorateUserData() {
+    final ownerById = <String, Map<String, dynamic>>{};
+    for (final user in _users) {
+      final uid = user['user_id']?.toString() ?? '';
+      if (uid.isEmpty) continue;
+      ownerById[uid] = user;
+    }
+
+    _videoCountByUserId.clear();
+    _latestVideoByUserId.clear();
+    _videos = _videos.where((video) {
+      final uid = video['user_id']?.toString() ?? '';
+      if (uid.isEmpty) return false;
+      final owner = ownerById[uid];
+      final visible = GuardianMvpService.isVideoVisibleToPublic(
+        video,
+        ownerData: owner,
+      );
+      if (!visible) return false;
+
+      _videoCountByUserId[uid] = (_videoCountByUserId[uid] ?? 0) + 1;
+      _latestVideoByUserId.putIfAbsent(uid, () => video);
+      return true;
+    }).toList();
+
     for (final user in _users) {
       final uid = user['user_id']?.toString() ?? '';
       if (uid.isEmpty) continue;
       user['video_count'] = _videoCountByUserId[uid] ?? 0;
       user['latest_video'] = _latestVideoByUserId[uid];
+    }
+  }
+
+  Future<void> _loadPlayerProgressData() async {
+    final playerIds = _players
+        .map((player) => player['user_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+    if (playerIds.isEmpty) return;
+
+    final progressByUserId = <String, Map<String, dynamic>>{};
+    try {
+      final progressRows = await SupaFlow.client
+          .from('user_progress')
+          .select(
+              'user_id, total_xp, current_level_id, courses_completed, exercises_completed')
+          .inFilter('user_id', playerIds);
+      for (final row in (progressRows as List)) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final uid = map['user_id']?.toString() ?? '';
+        if (uid.isNotEmpty) {
+          progressByUserId[uid] = map;
+        }
+      }
+    } catch (e) {
+      debugPrint('Explorer progress load failed: $e');
+    }
+
+    final groups = <String, List<Map<String, dynamic>>>{};
+    for (final player in _players) {
+      final uid = player['user_id']?.toString() ?? '';
+      final progress = progressByUserId[uid] ?? <String, dynamic>{};
+      final totalXp = GamificationService.toInt(progress['total_xp']);
+      final categoryKey =
+          GamificationService.resolveUserCategoryLabel(player) ?? 'general';
+
+      player['user_progress'] = progress;
+      player['total_xp'] = totalXp;
+      player['level_name'] = GamificationService.levelNameFromPoints(totalXp);
+      player['completed_challenges'] =
+          GamificationService.completedChallengesCount(progress);
+
+      groups.putIfAbsent(categoryKey, () => []).add(player);
+    }
+
+    for (final group in groups.values) {
+      group.sort((a, b) {
+        final xpCompare = GamificationService.toInt(b['total_xp']).compareTo(
+          GamificationService.toInt(a['total_xp']),
+        );
+        if (xpCompare != 0) return xpCompare;
+        return GamificationService.toInt(b['video_count']).compareTo(
+          GamificationService.toInt(a['video_count']),
+        );
+      });
+
+      for (int index = 0; index < group.length; index++) {
+        group[index]['category_ranking'] = index + 1;
+      }
     }
   }
 
@@ -1325,6 +1402,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         final hasVideo = (_videoCountByUserId[uid] ?? 0) > 0;
         final category = _categoryFromBirthday(player['birthday']);
         final year = _birthYear(player['birthday']);
+        final totalXp = GamificationService.toInt(player['total_xp']);
+        final levelName =
+            player['level_name']?.toString() ?? GamificationService.levelNameFromPoints(totalXp);
+        final rankingPosition = player['category_ranking'];
 
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
@@ -1391,6 +1472,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
+                runSpacing: 8,
                 children: [
                   _simpleBadge(
                     _isVerified(player) ? 'Verificado' : 'No verificado',
@@ -1404,6 +1486,19 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         ? const Color(0xFF0D3B66)
                         : const Color(0xFF718096),
                   ),
+                  _simpleBadge(
+                    '$totalXp XP',
+                    color: const Color(0xFF1D4ED8),
+                  ),
+                  _simpleBadge(
+                    levelName,
+                    color: const Color(0xFF0F766E),
+                  ),
+                  if (rankingPosition != null)
+                    _simpleBadge(
+                      'Ranking #$rankingPosition',
+                      color: const Color(0xFF7C3AED),
+                    ),
                 ],
               ),
               const SizedBox(height: 10),

@@ -1,12 +1,12 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
-import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/gamification/gamification_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
+import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import 'ranking_model.dart';
 export 'ranking_model.dart';
 
@@ -26,11 +26,13 @@ class _RankingWidgetState extends State<RankingWidget> {
 
   bool _isLoading = true;
   String? _errorMessage;
+  List<Map<String, dynamic>> _allRankingRows = [];
   List<Map<String, dynamic>> _rankingData = [];
   Map<String, dynamic>? _currentUserProgress;
   String _currentUserLevelName = 'Aficionado';
-  int? _rankingCategoryYear;
+  String _scope = 'categoria';
   String _sortBy = 'puntos';
+  String? _scopeValue;
 
   @override
   void initState() {
@@ -45,6 +47,22 @@ class _RankingWidgetState extends State<RankingWidget> {
     super.dispose();
   }
 
+  String get _scopeLabel {
+    switch (_scope) {
+      case 'pais':
+        return 'País';
+      case 'posicion':
+        return 'Posición';
+      case 'categoria':
+      default:
+        return 'Categoría';
+    }
+  }
+
+  String _normalizeUserType(dynamic value) {
+    return FFAppState.normalizeUserType(value?.toString() ?? '');
+  }
+
   Future<void> _loadRankingData() async {
     try {
       if (mounted) {
@@ -55,77 +73,89 @@ class _RankingWidgetState extends State<RankingWidget> {
       }
 
       if (currentUserUid.isNotEmpty) {
-        await GamificationService.recalculateUserProgress(
-            userId: currentUserUid);
+        await GamificationService.recalculateUserProgress(userId: currentUserUid);
       }
 
-      final response = await SupaFlow.client
+      final progressResponse = await SupaFlow.client
           .from('user_progress')
           .select()
           .order('total_xp', ascending: false);
 
-      final allRows = List<Map<String, dynamic>>.from(response);
+      final progressRows = List<Map<String, dynamic>>.from(progressResponse);
+      final userIds = progressRows
+          .map((row) => row['user_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
 
-      for (int i = 0; i < allRows.length; i++) {
-        final userId = allRows[i]['user_id'];
+      final usersById = <String, Map<String, dynamic>>{};
+      if (userIds.isNotEmpty) {
         try {
           final userResponse = await SupaFlow.client
               .from('users')
               .select(
-                  'user_id, name, posicion, country, photo_url, birthday, birth_date')
-              .eq('user_id', userId)
-              .maybeSingle();
-
-          if (userResponse != null) {
-            allRows[i]['users'] = userResponse;
+                  'user_id, name, lastname, username, posicion, position, country, pais, country_name, photo_url, birthday, birth_date, categoria, category, userType, usertype')
+              .inFilter('user_id', userIds);
+          for (final row in (userResponse as List)) {
+            final map = Map<String, dynamic>.from(row as Map);
+            final uid = map['user_id']?.toString() ?? '';
+            if (uid.isNotEmpty) {
+              usersById[uid] = map;
+            }
           }
         } catch (e) {
-          debugPrint('Error loading user data for $userId: $e');
+          debugPrint('Error loading ranking users: $e');
         }
       }
 
-      for (var item in allRows) {
-        if (item['user_id'] == currentUserUid) {
-          _currentUserProgress = item;
-          break;
+      final rankingRows = <Map<String, dynamic>>[];
+      for (final row in progressRows) {
+        final uid = row['user_id']?.toString() ?? '';
+        if (uid.isEmpty) continue;
+        final user = usersById[uid];
+        final userType =
+            _normalizeUserType(user?['userType'] ?? user?['usertype']);
+        if (userType.isNotEmpty && userType != 'jugador') {
+          continue;
         }
+        rankingRows.add({
+          ...row,
+          'users': user,
+        });
       }
 
-      if (_currentUserProgress == null) {
-        _currentUserProgress = {
-          'total_xp': 0,
-          'courses_completed': 0,
-          'exercises_completed': 0,
-        };
-      }
+      _allRankingRows = rankingRows;
+      _currentUserProgress = rankingRows.cast<Map<String, dynamic>?>().firstWhere(
+            (row) => row?['user_id']?.toString() == currentUserUid,
+            orElse: () => null,
+          );
+
+      _currentUserProgress ??= {
+        'user_id': currentUserUid,
+        'total_xp': 0,
+        'courses_completed': 0,
+        'exercises_completed': 0,
+        'users': usersById[currentUserUid],
+      };
 
       final currentPoints =
           GamificationService.toInt(_currentUserProgress?['total_xp']);
-      _currentUserLevelName = GamificationService.levelNameFromPoints(
-        currentPoints,
+      _currentUserLevelName =
+          GamificationService.levelNameFromPoints(currentPoints);
+
+      _scopeValue = GamificationService.rankingScopeValue(
+        _currentUserProgress?['users'] is Map
+            ? Map<String, dynamic>.from(
+                _currentUserProgress!['users'] as Map,
+              )
+            : null,
+        _scope,
       );
 
-      final currentCategoryYear = GamificationService.birthYearFromUser(
-        _currentUserProgress?['users'] as Map<String, dynamic>?,
-      );
-      _rankingCategoryYear = currentCategoryYear;
-
-      if (currentCategoryYear != null) {
-        _rankingData = allRows.where((row) {
-          final year = GamificationService.birthYearFromUser(
-            row['users'] as Map<String, dynamic>?,
-          );
-          return year == currentCategoryYear;
-        }).toList();
-      } else {
-        _rankingData = allRows;
-      }
-
-      _sortRanking();
+      _applyRankingFilters();
     } catch (e) {
       debugPrint('Error loading ranking: $e');
       if (mounted) {
-        setState(() => _errorMessage = 'Error al cargar el ranking: $e');
+        setState(() => _errorMessage = 'Error al cargar el ranking.');
       }
     } finally {
       if (mounted) {
@@ -134,28 +164,66 @@ class _RankingWidgetState extends State<RankingWidget> {
     }
   }
 
-  void _sortRanking() {
-    if (_sortBy == 'puntos') {
-      _rankingData
-          .sort((a, b) => (b['total_xp'] ?? 0).compareTo(a['total_xp'] ?? 0));
-    } else {
-      _rankingData.sort((a, b) {
-        int medalsA =
-            (a['courses_completed'] ?? 0) + (a['exercises_completed'] ?? 0);
-        int medalsB =
-            (b['courses_completed'] ?? 0) + (b['exercises_completed'] ?? 0);
-        return medalsB.compareTo(medalsA);
-      });
-    }
+  void _applyRankingFilters() {
+    final filtered = _allRankingRows.where((row) {
+      if (_scopeValue == null || _scopeValue!.trim().isEmpty) {
+        return true;
+      }
+      final user = row['users'] is Map<String, dynamic>
+          ? row['users'] as Map<String, dynamic>
+          : (row['users'] is Map
+              ? Map<String, dynamic>.from(row['users'] as Map)
+              : null);
+      final value = GamificationService.rankingScopeValue(user, _scope) ?? '';
+      return value.trim().toLowerCase() == _scopeValue!.trim().toLowerCase();
+    }).toList();
+
+    filtered.sort((a, b) {
+      if (_sortBy == 'desafios') {
+        final completedB = GamificationService.completedChallengesCount(b);
+        final completedA = GamificationService.completedChallengesCount(a);
+        final byCompleted = completedB.compareTo(completedA);
+        if (byCompleted != 0) return byCompleted;
+      }
+
+      final xpCompare = GamificationService.toInt(b['total_xp']).compareTo(
+        GamificationService.toInt(a['total_xp']),
+      );
+      if (xpCompare != 0) return xpCompare;
+
+      return GamificationService.completedChallengesCount(b).compareTo(
+        GamificationService.completedChallengesCount(a),
+      );
+    });
+
+    _rankingData = filtered;
   }
 
   void _changeSortOrder(String newSort) {
-    if (mounted) {
-      setState(() {
-        _sortBy = newSort;
-        _sortRanking();
-      });
+    if (!mounted) return;
+    setState(() {
+      _sortBy = newSort;
+      _applyRankingFilters();
+    });
+  }
+
+  void _changeScope(String newScope) {
+    if (!mounted) return;
+    final currentUser = _currentUserProgress?['users'] is Map
+        ? Map<String, dynamic>.from(_currentUserProgress!['users'] as Map)
+        : null;
+    setState(() {
+      _scope = newScope;
+      _scopeValue = GamificationService.rankingScopeValue(currentUser, newScope);
+      _applyRankingFilters();
+    });
+  }
+
+  String _scopeSubtitle() {
+    if (_scopeValue == null || _scopeValue!.trim().isEmpty) {
+      return 'Ranking general';
     }
+    return '$_scopeLabel ${_scopeValue!.trim()}';
   }
 
   @override
@@ -209,15 +277,21 @@ class _RankingWidgetState extends State<RankingWidget> {
         children: [
           const Icon(Icons.error_outline, color: Colors.red, size: 48),
           const SizedBox(height: 16),
-          Text(_errorMessage!,
-              style: GoogleFonts.inter(color: Colors.red, fontSize: 16)),
+          Text(
+            _errorMessage!,
+            style: GoogleFonts.inter(color: Colors.red, fontSize: 16),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: _loadRankingData,
             style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0D3B66)),
-            child:
-                const Text('Reintentar', style: TextStyle(color: Colors.white)),
+              backgroundColor: const Color(0xFF0D3B66),
+            ),
+            child: const Text(
+              'Reintentar',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -225,26 +299,22 @@ class _RankingWidgetState extends State<RankingWidget> {
   }
 
   Widget _buildContent() {
+    final currentPoints = GamificationService.toInt(
+      _currentUserProgress?['total_xp'],
+    );
     return Column(
       children: [
-        // Header
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 50, 20, 0),
           child: Row(
             children: [
               GestureDetector(
                 onTap: () => Navigator.pop(context),
-                child: const Icon(
-                  Icons.arrow_back,
-                  color: Colors.black,
-                  size: 24,
-                ),
+                child: const Icon(Icons.arrow_back, color: Colors.black, size: 24),
               ),
             ],
           ),
         ),
-
-        // Título e nível
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -257,48 +327,75 @@ class _RankingWidgetState extends State<RankingWidget> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                _currentUserLevelName,
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF0D3B66),
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _rankingCategoryYear != null
-                    ? 'Categoría ${_rankingCategoryYear!}'
-                    : 'Ranking general',
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF64748B),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  _buildSummaryBadge(Icons.bolt, '$currentPoints XP'),
+                  _buildSummaryBadge(Icons.workspace_premium, _currentUserLevelName),
+                  _buildSummaryBadge(Icons.filter_alt_outlined, _scopeSubtitle()),
+                ],
               ),
             ],
           ),
         ),
-
-        // Filtros
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Column(
             children: [
-              _buildFilterButton('Orden', null, false),
-              const SizedBox(width: 12),
-              _buildFilterButton('Puntos', 'puntos', _sortBy == 'puntos'),
-              const SizedBox(width: 12),
-              _buildFilterButton('Medallas', 'medallas', _sortBy == 'medallas'),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildChoiceButton(
+                      text: 'Categoría',
+                      selected: _scope == 'categoria',
+                      onTap: () => _changeScope('categoria'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildChoiceButton(
+                      text: 'País',
+                      selected: _scope == 'pais',
+                      onTap: () => _changeScope('pais'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildChoiceButton(
+                      text: 'Posición',
+                      selected: _scope == 'posicion',
+                      onTap: () => _changeScope('posicion'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildChoiceButton(
+                      text: 'XP',
+                      selected: _sortBy == 'puntos',
+                      onTap: () => _changeSortOrder('puntos'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildChoiceButton(
+                      text: 'Desafíos',
+                      selected: _sortBy == 'desafios',
+                      onTap: () => _changeSortOrder('desafios'),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
-
-        const SizedBox(height: 20),
-
-        // Lista de ranking
+        const SizedBox(height: 16),
         Expanded(
           child: _rankingData.isEmpty
               ? _buildEmptyState()
@@ -312,7 +409,7 @@ class _RankingWidgetState extends State<RankingWidget> {
                       final position = index + 1;
                       final isCurrentUser = item['user_id'] == currentUserUid;
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.only(bottom: 10),
                         child: _buildRankingItem(item, position, isCurrentUser),
                       );
                     },
@@ -321,6 +418,62 @@ class _RankingWidgetState extends State<RankingWidget> {
         ),
         const SizedBox(height: 80),
       ],
+    );
+  }
+
+  Widget _buildSummaryBadge(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFD7E0EA)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: const Color(0xFF0D3B66), size: 16),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              color: const Color(0xFF0F172A),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChoiceButton({
+    required String text,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF0D3B66) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? const Color(0xFF0D3B66) : const Color(0xFFCBD5E1),
+          ),
+        ),
+        child: Center(
+          child: Text(
+            text,
+            style: GoogleFonts.inter(
+              color: selected ? Colors.white : const Color(0xFF334155),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -336,20 +489,16 @@ class _RankingWidgetState extends State<RankingWidget> {
           ),
           const SizedBox(height: 16),
           Text(
-            _rankingCategoryYear != null
-                ? 'No hay jugadores en tu categoría'
-                : 'No hay jugadores en el ranking',
+            'No hay jugadores para este ranking',
             style: GoogleFonts.inter(
               color: const Color(0xFF718096),
               fontSize: 16,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            _rankingCategoryYear != null
-                ? 'Aún no hay datos para el año $_rankingCategoryYear'
-                : 'Completa desafíos y sube videos para aparecer aquí',
+            'Completa desafíos y sube videos para subir en el Top.',
             style: GoogleFonts.inter(
               color: const Color(0xFFA0AEC0),
               fontSize: 14,
@@ -375,61 +524,24 @@ class _RankingWidgetState extends State<RankingWidget> {
     );
   }
 
-  Widget _buildFilterButton(String text, String? sortValue, bool isActive) {
-    final bool isClickable = sortValue != null;
-
-    return GestureDetector(
-      onTap: isClickable ? () => _changeSortOrder(sortValue) : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isActive ? const Color(0xFF0D3B66) : const Color(0xFFA0AEC0),
-            width: isActive ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              text,
-              style: GoogleFonts.inter(
-                color: isActive
-                    ? const Color(0xFF0D3B66)
-                    : const Color(0xFF444444),
-                fontSize: 14,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
-            if (isClickable) ...[
-              const SizedBox(width: 4),
-              Icon(
-                Icons.keyboard_arrow_down,
-                color: isActive
-                    ? const Color(0xFF0D3B66)
-                    : const Color(0xFF718096),
-                size: 20,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildRankingItem(
-      Map<String, dynamic> item, int position, bool isCurrentUser) {
-    final user = item['users'] as Map<String, dynamic>?;
+    Map<String, dynamic> item,
+    int position,
+    bool isCurrentUser,
+  ) {
+    final user = item['users'] is Map
+        ? Map<String, dynamic>.from(item['users'] as Map)
+        : <String, dynamic>{};
 
-    final userName = user?['name'] ?? 'Jugador #$position';
-    final userPosition = user?['posicion'] ?? _getRandomPosition(position);
-    final userCountry = user?['country'] ?? _getRandomCountry(position);
-    final totalXp = item['total_xp'] ?? 0;
-    final coursesCompleted = item['courses_completed'] ?? 0;
-    final exercisesCompleted = item['exercises_completed'] ?? 0;
-    final totalMedals = coursesCompleted + exercisesCompleted;
+    final userName = GamificationService.resolveDisplayName(user);
+    final userPosition =
+        GamificationService.resolveUserPosition(user) ?? 'Sin posición';
+    final userCountry =
+        GamificationService.resolveUserCountry(user) ?? 'Sin país';
+    final totalXp = GamificationService.toInt(item['total_xp']);
+    final totalChallenges = GamificationService.completedChallengesCount(item);
+    final levelName = GamificationService.levelNameFromPoints(totalXp);
+    final photoUrl = user['photo_url']?.toString() ?? '';
 
     Color badgeColor = const Color(0xFFD69E2E);
     if (position == 1) {
@@ -448,7 +560,7 @@ class _RankingWidgetState extends State<RankingWidget> {
         borderRadius: BorderRadius.circular(15),
         border: Border.all(
           color:
-              isCurrentUser ? const Color(0xFF0D3B66) : const Color(0xFFB5BECA),
+              isCurrentUser ? const Color(0xFF0D3B66) : const Color(0xFFDBE4EE),
           width: isCurrentUser ? 2 : 1,
         ),
       ),
@@ -473,6 +585,19 @@ class _RankingWidgetState extends State<RankingWidget> {
             ),
           ),
           const SizedBox(width: 12),
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: const Color(0xFFE8F0FE),
+            backgroundImage:
+                photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+            child: photoUrl.isNotEmpty
+                ? null
+                : Text(
+                    userName.substring(0, 1).toUpperCase(),
+                    style: const TextStyle(color: Color(0xFF0D3B66)),
+                  ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -485,7 +610,7 @@ class _RankingWidgetState extends State<RankingWidget> {
                         style: GoogleFonts.inter(
                           color: Colors.black,
                           fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -495,7 +620,9 @@ class _RankingWidgetState extends State<RankingWidget> {
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFF0D3B66),
                           borderRadius: BorderRadius.circular(4),
@@ -516,36 +643,24 @@ class _RankingWidgetState extends State<RankingWidget> {
                 Text(
                   '$userPosition • $userCountry',
                   style: GoogleFonts.inter(
-                    color: position <= 3 ? badgeColor : const Color(0xFFD69E2E),
+                    color: const Color(0xFF64748B),
                     fontSize: 12,
-                    fontWeight: FontWeight.w400,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: position <= 3 ? badgeColor : const Color(0xFFD69E2E),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _sortBy == 'puntos' ? Icons.star : Icons.emoji_events,
-                  color: Colors.white,
-                  size: 15,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  _sortBy == 'puntos' ? '$totalXp' : '$totalMedals',
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _buildMiniPill('$totalXp XP', const Color(0xFF0D3B66)),
+                    _buildMiniPill(levelName, const Color(0xFF1D4ED8)),
+                    _buildMiniPill(
+                      '$totalChallenges desafíos',
+                      const Color(0xFF0F766E),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -554,24 +669,25 @@ class _RankingWidgetState extends State<RankingWidget> {
           GestureDetector(
             onTap: () {
               final uid = item['user_id']?.toString() ?? '';
-              if (uid.isNotEmpty) {
-                context.pushNamed('perfil_profesional_solicitar_Contato',
-                    queryParameters: {'userId': uid});
-              }
+              if (uid.isEmpty) return;
+              context.pushNamed(
+                'perfil_profesional_solicitar_Contato',
+                queryParameters: {'userId': uid},
+              );
             },
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE8E8E8)),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
               child: Text(
-                'Ver Perfil',
+                'Ver perfil',
                 style: GoogleFonts.inter(
                   color: const Color(0xFF0D3B66),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -581,22 +697,22 @@ class _RankingWidgetState extends State<RankingWidget> {
     );
   }
 
-  String _getRandomPosition(int index) {
-    final positions = ['DEF', 'MID', 'ATK', 'GK', 'DEF', 'MID', 'ATK', 'DEF'];
-    return positions[index % positions.length];
-  }
-
-  String _getRandomCountry(int index) {
-    final countries = [
-      'Argentina',
-      'Brasil',
-      'Colombia',
-      'México',
-      'Chile',
-      'Uruguay',
-      'Perú',
-      'Ecuador'
-    ];
-    return countries[index % countries.length];
+  Widget _buildMiniPill(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.22)),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 }

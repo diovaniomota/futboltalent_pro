@@ -1,6 +1,8 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/gamification/gamification_service.dart';
+import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import '/modal/comments_sheet/comments_sheet_widget.dart';
@@ -707,9 +709,50 @@ class _FeedWidgetState extends State<FeedWidget>
         }
       }
 
+      final visibleVideos = videos.where((video) {
+        final ownerData = video['user_data'] is Map<String, dynamic>
+            ? Map<String, dynamic>.from(video['user_data'] as Map)
+            : null;
+        return GuardianMvpService.isVideoVisibleToPublic(
+          video,
+          ownerData: ownerData,
+        );
+      }).toList();
+
+      final visibleUserIds = visibleVideos
+          .map((video) => video['user_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      final progressByUserId = <String, Map<String, dynamic>>{};
+      if (visibleUserIds.isNotEmpty) {
+        try {
+          final progressRows = await SupaFlow.client
+              .from('user_progress')
+              .select(
+                  'user_id, total_xp, current_level_id, courses_completed, exercises_completed')
+              .inFilter('user_id', visibleUserIds);
+          for (final row in (progressRows as List)) {
+            final map = Map<String, dynamic>.from(row as Map);
+            final uid = map['user_id']?.toString() ?? '';
+            if (uid.isNotEmpty) {
+              progressByUserId[uid] = map;
+            }
+          }
+        } catch (e) {
+          debugPrint('Feed progress load failed: $e');
+        }
+      }
+
+      for (final video in visibleVideos) {
+        final uid = video['user_id']?.toString() ?? '';
+        video['user_progress'] = progressByUserId[uid];
+      }
+
       if (mounted) {
         setState(() {
-          _videos = videos;
+          _videos = visibleVideos;
           _isLoading = false;
           _currentIndex = 0;
         });
@@ -1167,6 +1210,35 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildGamificationOverlay() {
+    final progress = widget.videoData['user_progress'] is Map
+        ? Map<String, dynamic>.from(widget.videoData['user_progress'] as Map)
+        : <String, dynamic>{};
+    final hasAnyData =
+        progress.isNotEmpty || (widget.videoData['user_data'] is Map);
+    if (!hasAnyData) return const SizedBox.shrink();
+
+    final totalXp = GamificationService.toInt(progress['total_xp']);
+    final levelName = GamificationService.levelNameFromPoints(totalXp);
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        _buildScoutOverlayChip(
+          icon: Icons.workspace_premium_outlined,
+          label: levelName,
+          backgroundColor: Colors.black.withOpacity(0.34),
+        ),
+        _buildScoutOverlayChip(
+          icon: Icons.bolt,
+          label: '$totalXp XP',
+          backgroundColor: const Color(0xFF0D3B66).withOpacity(0.82),
+        ),
+      ],
     );
   }
 
@@ -1635,6 +1707,63 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
           ? '${(count / 1000).toStringAsFixed(1)}K'
           : '$count';
 
+  Widget _buildFollowButton() {
+    return GestureDetector(
+      onTap: _isFollowLoading ? null : _toggleFollow,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.22),
+          border: Border.all(color: Colors.white.withOpacity(0.9)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          _isFollowing ? 'Siguiendo' : 'Seguir',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserIdentityRow(String userName) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: GestureDetector(
+            onTap: () {
+              final uid = widget.videoData['user_id']?.toString() ?? '';
+              if (uid.isNotEmpty) {
+                context.pushNamed(
+                  'perfil_profesional_solicitar_Contato',
+                  queryParameters: {'userId': uid},
+                );
+              }
+            },
+            child: Text(
+              '@$userName',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+        if (!_isOwnVideo) ...[
+          const SizedBox(width: 12),
+          _buildFollowButton(),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -1699,57 +1828,33 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                       Colors.transparent,
                       Colors.black.withOpacity(0.8)
                     ])))),
-            if (_isScoutViewer)
-              Positioned(
-                left: 16,
-                right: 80,
-                bottom: 158,
-                child: _buildScoutVideoContextOverlay(userData),
-              ),
-            // Info
             Positioned(
                 left: 16,
-                right: 80,
-                bottom: 100,
+                right: 96,
+                bottom: 72,
                 child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(children: [
-                        GestureDetector(
-                          onTap: () {
-                            final uid =
-                                widget.videoData['user_id']?.toString() ?? '';
-                            if (uid.isNotEmpty) {
-                              context.pushNamed(
-                                  'perfil_profesional_solicitar_Contato',
-                                  queryParameters: {'userId': uid});
-                            }
-                          },
-                          child: Text('@$userName',
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16)),
+                      if (_isScoutViewer) ...[
+                        _buildScoutVideoContextOverlay(userData),
+                        const SizedBox(height: 14),
+                      ],
+                      _buildUserIdentityRow(userName),
+                      const SizedBox(height: 10),
+                      _buildGamificationOverlay(),
+                      const SizedBox(height: 10),
+                      Text(
+                        widget.videoData['title'] ?? '',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          height: 1.25,
                         ),
-                        if (!_isOwnVideo) ...[
-                          const SizedBox(width: 8),
-                          GestureDetector(
-                              onTap: _isFollowLoading ? null : _toggleFollow,
-                              child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 4),
-                                  decoration: BoxDecoration(
-                                      border: Border.all(color: Colors.white),
-                                      borderRadius: BorderRadius.circular(4)),
-                                  child: Text(
-                                      _isFollowing ? 'Siguiendo' : 'Seguir',
-                                      style: const TextStyle(
-                                          color: Colors.white, fontSize: 12))))
-                        ]
-                      ]),
-                      const SizedBox(height: 8),
-                      Text(widget.videoData['title'] ?? '',
-                          style: const TextStyle(color: Colors.white)),
+                      ),
+                      const SizedBox(height: 2),
                     ])),
             // Buttons
             Positioned(

@@ -1,11 +1,9 @@
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/flutter_flow/flutter_flow_widgets.dart';
-import 'dart:ui';
 import '/index.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 import 'onboardign1_model.dart';
 export 'onboardign1_model.dart';
 
@@ -98,7 +96,7 @@ class _Onboardign1WidgetState extends State<Onboardign1Widget> {
                       padding:
                           EdgeInsetsDirectional.fromSTEB(30.0, 0.0, 30.0, 0.0),
                       child: Text(
-                        'Compartí tus jugadas y empezá a ser visto por clubes y scouts.',
+                        'Plataforma de scouting y desarrollo de talento en el fútbol.',
                         style: FlutterFlowTheme.of(context).bodyMedium.override(
                               font: GoogleFonts.inter(
                                 fontWeight: FontWeight.w500,
@@ -124,7 +122,7 @@ class _Onboardign1WidgetState extends State<Onboardign1Widget> {
                         context.pushNamed(
                             SeleccionDelTipoDePerfilWidget.routeName);
                       },
-                      text: 'Empezar',
+                      text: 'Crear perfil',
                       options: FFButtonOptions(
                         width: 357.0,
                         height: 43.0,

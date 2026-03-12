@@ -1,6 +1,7 @@
 import '/backend/supabase/supabase.dart';
 import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import 'package:provider/provider.dart';
@@ -172,6 +173,21 @@ class _CrearPublicacinDeVideoWidgetState
       return;
     }
 
+    final moderationError = GuardianMvpService.validatePublicFields([
+      _tituloController.text,
+      _descripcionController.text,
+      _etiquetasController.text,
+    ]);
+    if (moderationError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(moderationError),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final user = SupaFlow.client.auth.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -182,6 +198,17 @@ class _CrearPublicacinDeVideoWidgetState
 
     setState(() => _isPublishing = true);
     try {
+      Map<String, dynamic>? currentUserData;
+      try {
+        currentUserData = await SupaFlow.client
+            .from('users')
+            .select()
+            .eq('user_id', user.id)
+            .maybeSingle();
+      } catch (_) {}
+      final moderationStatus =
+          GuardianMvpService.moderationStatusForUser(currentUserData);
+
       var isFirstVideo = false;
       try {
         final existingVideos = await SupaFlow.client
@@ -192,7 +219,7 @@ class _CrearPublicacinDeVideoWidgetState
         isFirstVideo = (existingVideos as List).isEmpty;
       } catch (_) {}
 
-      await SupaFlow.client.from('videos').insert({
+      final payload = <String, dynamic>{
         'user_id': user.id,
         'video_url': _uploadedVideoUrl,
         'title': _tituloController.text.trim(),
@@ -201,13 +228,23 @@ class _CrearPublicacinDeVideoWidgetState
         'is_public': _isPublic,
         'likes_count': 0,
         'created_at': DateTime.now().toIso8601String(),
-      });
+        'moderation_status': moderationStatus,
+      };
+      try {
+        await SupaFlow.client.from('videos').insert(payload);
+      } catch (_) {
+        payload.remove('moderation_status');
+        await SupaFlow.client.from('videos').insert(payload);
+      }
       await GamificationService.recalculateUserProgress(userId: user.id);
       if (mounted) {
         final gained = GamificationService.videoUploadPoints +
             (isFirstVideo ? GamificationService.firstVideoBonusPoints : 0);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('¡Video publicado con éxito! +$gained pts'),
+            content: Text(moderationStatus ==
+                    GuardianMvpService.pendingStatus
+                ? 'Video recibido. Quedará visible cuando el responsable apruebe la cuenta. +$gained pts'
+                : '¡Video publicado con éxito! +$gained pts'),
             backgroundColor: Colors.green));
         await Future.delayed(const Duration(milliseconds: 500));
         if (mounted) {

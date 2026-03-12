@@ -1,6 +1,7 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import 'package:flutter/material.dart';
@@ -45,6 +46,8 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   bool _isGuardando = false;
   bool _isMinor = false;
   String? _guardianName;
+  String? _guardianId;
+  String _guardianStatus = GuardianMvpService.approvedStatus;
 
   @override
   void initState() {
@@ -74,6 +77,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           .maybeSingle();
       if (u != null) {
         _userData = u;
+        _guardianStatus = GuardianMvpService.normalizedGuardianStatus(u);
         if (u['colaboraciones'] != null) {
           if (u['colaboraciones'] is List)
             _colabs = List<String>.from(u['colaboraciones']);
@@ -91,10 +95,15 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         _isMinor = true;
         final guardian = await SupaFlow.client
             .from('guardians')
-            .select('name')
+            .select('id, name, status')
             .eq('player_id', widget.userId!)
             .maybeSingle();
+        _guardianId = guardian?['id']?.toString();
         _guardianName = guardian?['name'];
+        final guardianStatus = guardian?['status']?.toString().trim();
+        if (guardianStatus != null && guardianStatus.isNotEmpty) {
+          _guardianStatus = guardianStatus.toLowerCase();
+        }
       }
       await _checkStatus();
       await _loadHistory();
@@ -110,24 +119,32 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     try {
       final response = await SupaFlow.client
           .from('videos')
-          .select(
-              'id, title, thumbnail_url, thumbnail, video_url, description, created_at')
+          .select()
           .eq('user_id', widget.userId!)
           .eq('is_public', true)
           .order('created_at', ascending: false)
           .limit(60);
-      _playerVideos = List<Map<String, dynamic>>.from(response);
+      _playerVideos = List<Map<String, dynamic>>.from(response)
+          .where((video) => GuardianMvpService.isVideoVisibleToPublic(
+                video,
+                ownerData: _userData,
+              ))
+          .toList();
     } catch (_) {
       try {
         final response = await SupaFlow.client
             .from('videos')
-            .select(
-                'id, title, thumbnail_url, thumbnail, video_url, description, created_at')
+            .select()
             .eq('user_id', widget.userId!)
             .eq('is_public', true)
             .order('created_at', ascending: false)
             .limit(60);
-        _playerVideos = List<Map<String, dynamic>>.from(response);
+        _playerVideos = List<Map<String, dynamic>>.from(response)
+            .where((video) => GuardianMvpService.isVideoVisibleToPublic(
+                  video,
+                  ownerData: _userData,
+                ))
+            .toList();
       } catch (_) {
         _playerVideos = [];
       }
@@ -252,6 +269,17 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     if (_isProcessing) return;
     final uid = currentUserUid;
     if (uid.isEmpty) return;
+    if (_isLimitedMinorProfile) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Este perfil de menor todavía está en validación del responsable. El contacto directo sigue bloqueado.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     setState(() => _isProcessing = true);
     try {
       if (_contactRequestId != null &&
@@ -272,12 +300,20 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           }).eq('id', _contactRequestId!);
         }
       } else {
-        await SupaFlow.client.from('contact_requests').insert({
+        final payload = <String, dynamic>{
           'from_user_id': uid,
           'to_user_id': widget.userId!,
           'status': 'pending',
           'guardian_notified': _isMinor,
-        });
+          if (_guardianId != null && _guardianId!.isNotEmpty)
+            'guardian_id': _guardianId,
+        };
+        try {
+          await SupaFlow.client.from('contact_requests').insert(payload);
+        } catch (_) {
+          payload.remove('guardian_id');
+          await SupaFlow.client.from('contact_requests').insert(payload);
+        }
       }
 
       await _checkStatus();
@@ -314,6 +350,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   String _contactButtonLabel() {
     if (_isContactAccepted) return 'Contacto aprobado';
     if (_isContactPending) return 'Solicitado';
+    if (_isLimitedMinorProfile) return 'Protegido';
     if (_isContactRejected) return 'Solicitar nuevamente';
     return 'Solicitar Contacto';
   }
@@ -321,7 +358,12 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   Color _contactButtonColor() {
     if (_isContactAccepted) return const Color(0xFF15803D);
     if (_isContactPending) return Colors.grey;
+    if (_isLimitedMinorProfile) return const Color(0xFF9CA3AF);
     return const Color(0xFF0D3B66);
+  }
+
+  bool get _isLimitedMinorProfile {
+    return _isMinor && GuardianMvpService.isLimitedProfile(_userData);
   }
 
   Future<void> _follow() async {
@@ -608,7 +650,8 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                   width: actionButtonWidth,
                                   child: ElevatedButton(
                                       onPressed: (_isContactPending ||
-                                              _isContactAccepted)
+                                              _isContactAccepted ||
+                                              _isLimitedMinorProfile)
                                           ? null
                                           : _request,
                                       style: ElevatedButton.styleFrom(
@@ -675,7 +718,9 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
-                                        'La solicitud fue aprobada por el jugador. Ya podés avanzar con el contacto.',
+                                        _isMinor
+                                            ? 'La solicitud fue aprobada por el responsable. Ya podés avanzar con el contacto.'
+                                            : 'La solicitud fue aprobada por el jugador. Ya podés avanzar con el contacto.',
                                         style: GoogleFonts.inter(
                                           fontSize: 12,
                                           color: const Color(0xFF166534),
@@ -773,13 +818,41 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                         SizedBox(width: 6),
                                         Text(
                                             _guardianName != null
-                                                ? 'Menor de edad · Responsable: $_guardianName'
+                                                ? 'Menor de edad · Responsable: $_guardianName · ${_guardianStatus == GuardianMvpService.approvedStatus ? 'Aprobado' : 'Pendiente'}'
                                                 : 'Menor de edad · Contacto vía responsable',
                                             style: GoogleFonts.inter(
                                                 fontSize: 12,
                                                 color: Color(0xFF856404),
                                                 fontWeight: FontWeight.w500)),
                                       ]))),
+                        if (_isLimitedMinorProfile)
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              horizontalPadding,
+                              10,
+                              horizontalPadding,
+                              0,
+                            ),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEEF2FF),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: const Color(0xFFBFDBFE),
+                                ),
+                              ),
+                              child: Text(
+                                'El perfil está en modo protegido hasta que el responsable apruebe el acceso. Mientras tanto no se muestran videos públicos ni se habilita el contacto directo.',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF1D4ED8),
+                                ),
+                              ),
+                            ),
+                          ),
                         if (bio.isNotEmpty)
                           Padding(
                               padding: EdgeInsets.fromLTRB(

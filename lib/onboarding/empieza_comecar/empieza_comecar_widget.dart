@@ -1,6 +1,7 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/guardian/guardian_mvp_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -52,6 +53,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   final FocusNode _dataNascimentoFocusNode = FocusNode();
   final FocusNode _paisFocusNode = FocusNode();
   final FocusNode _cidadeFocusNode = FocusNode();
+  final FocusNode _guardianEmailFocusNode = FocusNode();
 
   // Mask
   final MaskTextInputFormatter _dataNascimentoMask = MaskTextInputFormatter(
@@ -72,9 +74,11 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   String? _selectedCountryId;
 
   // Guardian controllers (Tab 4 - menores)
-  final TextEditingController _guardianNameController = TextEditingController();
   final TextEditingController _guardianEmailController = TextEditingController();
-  String _guardianRelationship = 'padre';
+  final String _guardianRelationship = 'tutor';
+  bool _acceptedCommunityRules = false;
+  bool _guardianAuthorized = false;
+  bool _shouldShowGuardianStep = false;
 
   // ============ RESPONSIVE HELPERS ============
   double _responsive(
@@ -101,7 +105,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   void initState() {
     super.initState();
     _model = createModel(context, () => EmpiezaComecarModel());
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _loadCountries();
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
   }
@@ -124,7 +128,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     _dataNascimentoFocusNode.dispose();
     _paisFocusNode.dispose();
     _cidadeFocusNode.dispose();
-    _guardianNameController.dispose();
+    _guardianEmailFocusNode.dispose();
     _guardianEmailController.dispose();
     super.dispose();
   }
@@ -133,7 +137,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     try {
       final response = await SupaFlow.client.from('countrys').select().order('name');
       if (mounted) {
-        setState(() => _countries = List<Map<String, dynamic>>.from(response ?? []));
+        setState(() => _countries = List<Map<String, dynamic>>.from(response));
       }
     } catch (e) {
       debugPrint('Error loading countries: $e');
@@ -254,6 +258,17 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     return null;
   }
 
+  String get _normalizedSelectedUserType =>
+      (widget.selectedUserType ?? 'jugador').trim().toLowerCase();
+
+  bool get _usesMinorProtectionFlow => const [
+        'jugador',
+        'jogador',
+        'player',
+        'athlete',
+        'atleta',
+      ].contains(_normalizedSelectedUserType);
+
   /// Tab 3 "Siguiente" - valida dados e se menor, vai para Tab 4 (guardian)
   void _onProfileNext() {
     if (_nameController.text.trim().isEmpty) {
@@ -272,18 +287,36 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     }
 
     final age = _calculateAge(birthday);
-    if (age < 5 || age > 100) {
-      _showSnackBar('La edad debe estar entre 5 y 100 años');
+    if (age < 13) {
+      _showSnackBar(
+        'FutbolTalent está disponible solo para jugadores a partir de 13 años.',
+      );
       return;
     }
 
-    if (age < 18) {
-      // Menor: ir para Tab 4 (responsável)
-      _goToNextTab();
-    } else {
-      // Maior: salvar direto
-      _saveProfileAndFinish();
+    if (age > 100) {
+      _showSnackBar('La edad debe ser válida para continuar.');
+      return;
     }
+
+    setState(() => _shouldShowGuardianStep = _usesMinorProtectionFlow && age < 18);
+    _goToNextTab();
+  }
+
+  void _onCommunityNext() {
+    if (!_acceptedCommunityRules) {
+      _showSnackBar(
+        'Debes aceptar las reglas de la comunidad para continuar.',
+      );
+      return;
+    }
+
+    if (_shouldShowGuardianStep) {
+      _goToNextTab();
+      return;
+    }
+
+    _saveProfileAndFinish();
   }
 
   /// Salva perfil + guardian se menor
@@ -299,24 +332,33 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
       final birthday = _parseBirthday();
       final age = birthday != null ? _calculateAge(birthday) : 99;
-      final isMinor = age < 18;
+      final isMinor = _usesMinorProtectionFlow && age < 18;
 
       // Se menor, validar guardian
       if (isMinor) {
-        if (_guardianNameController.text.trim().isEmpty) {
-          _showSnackBar('Es necesario el nombre del adulto responsable');
-          setState(() => _isSavingProfile = false);
-          return;
-        }
         if (_guardianEmailController.text.trim().isEmpty) {
           _showSnackBar('Es necesario el email del adulto responsable');
           setState(() => _isSavingProfile = false);
           return;
         }
+        if (!_guardianEmailController.text.trim().contains('@')) {
+          _showSnackBar('Ingresá un email válido del responsable.');
+          setState(() => _isSavingProfile = false);
+          return;
+        }
+        if (!_guardianAuthorized) {
+          _showSnackBar(
+            'Debes confirmar que el responsable autorizó el uso de FutbolTalent.',
+          );
+          setState(() => _isSavingProfile = false);
+          return;
+        }
       }
 
-      final userType = (widget.selectedUserType ?? 'jugador').trim().toLowerCase();
+      final userType = _normalizedSelectedUserType;
       final nowIso = DateTime.now().toIso8601String();
+      final approvalCode =
+          isMinor ? GuardianMvpService.generateApprovalCode() : null;
 
       final userPayload = {
         'name': _nameController.text.trim(),
@@ -333,12 +375,25 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         'is_minor': isMinor,
         // Só deve ser true após salvar guardian com sucesso.
         'has_guardian': false,
+        'guardian_status': isMinor
+            ? GuardianMvpService.pendingStatus
+            : GuardianMvpService.approvedStatus,
+        'visibility_status': isMinor
+            ? GuardianMvpService.limitedVisibility
+            : GuardianMvpService.activeVisibility,
       };
 
       final fallbackPayload = {
         ...userPayload,
         'usertype': userType,
       }..remove('userType');
+
+      final legacyUserPayload = Map<String, dynamic>.from(userPayload)
+        ..remove('guardian_status')
+        ..remove('visibility_status');
+      final legacyFallbackPayload = Map<String, dynamic>.from(fallbackPayload)
+        ..remove('guardian_status')
+        ..remove('visibility_status');
 
       Future<void> persistUsersPayload(Map<String, dynamic> payload) async {
         final updatePayload = Map<String, dynamic>.from(payload)
@@ -383,7 +438,15 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       try {
         await persistUsersPayload(userPayload);
       } catch (_) {
-        await persistUsersPayload(fallbackPayload);
+        try {
+          await persistUsersPayload(fallbackPayload);
+        } catch (_) {
+          try {
+            await persistUsersPayload(legacyUserPayload);
+          } catch (_) {
+            await persistUsersPayload(legacyFallbackPayload);
+          }
+        }
       }
 
       // guardians.player_id references public.players.id, so players row must
@@ -437,11 +500,18 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       // Se menor, salvar guardian
       if (isMinor) {
         final guardianPayload = {
-          'name': _guardianNameController.text.trim(),
+          'name': 'Responsable legal',
           'relationship': _guardianRelationship,
           'email': _guardianEmailController.text.trim(),
           'player_id': uid,
+          'status': GuardianMvpService.pendingStatus,
+          'approval_code': approvalCode,
+          'approved_at': null,
         };
+        final legacyGuardianPayload = Map<String, dynamic>.from(guardianPayload)
+          ..remove('status')
+          ..remove('approval_code')
+          ..remove('approved_at');
         try {
           await SupaFlow.client.from('guardians').insert(guardianPayload);
         } catch (guardianInsertError) {
@@ -449,10 +519,30 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           if (msg.contains('duplicate key') ||
               msg.contains('unique') ||
               msg.contains('guardians_player_id')) {
-            await SupaFlow.client
-                .from('guardians')
-                .update(guardianPayload)
-                .eq('player_id', uid);
+            try {
+              await SupaFlow.client
+                  .from('guardians')
+                  .update(guardianPayload)
+                  .eq('player_id', uid);
+            } catch (_) {
+              await SupaFlow.client
+                  .from('guardians')
+                  .update(legacyGuardianPayload)
+                  .eq('player_id', uid);
+            }
+          } else if (msg.contains('column') ||
+              msg.contains('approval_code') ||
+              msg.contains('status')) {
+            try {
+              await SupaFlow.client
+                  .from('guardians')
+                  .insert(legacyGuardianPayload);
+            } catch (_) {
+              await SupaFlow.client
+                  .from('guardians')
+                  .update(legacyGuardianPayload)
+                  .eq('player_id', uid);
+            }
           } else {
             rethrow;
           }
@@ -462,18 +552,51 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         try {
           await SupaFlow.client
               .from('users')
-              .update({'has_guardian': true})
+              .update({
+                'has_guardian': true,
+                'guardian_status': GuardianMvpService.pendingStatus,
+                'visibility_status': GuardianMvpService.limitedVisibility,
+              })
               .eq('user_id', uid);
         } catch (_) {
-          await SupaFlow.client
-              .from('users')
-              .update({'has_guardian': true})
-              .eq('id', uid);
+          try {
+            await SupaFlow.client
+                .from('users')
+                .update({
+                  'has_guardian': true,
+                  'guardian_status': GuardianMvpService.pendingStatus,
+                  'visibility_status': GuardianMvpService.limitedVisibility,
+                })
+                .eq('id', uid);
+          } catch (_) {
+            try {
+              await SupaFlow.client
+                  .from('users')
+                  .update({'has_guardian': true})
+                  .eq('user_id', uid);
+            } catch (_) {
+              await SupaFlow.client
+                  .from('users')
+                  .update({'has_guardian': true})
+                  .eq('id', uid);
+            }
+          }
         }
       }
 
       FFAppState().userType = userType;
 
+      if (isMinor &&
+          approvalCode != null &&
+          approvalCode.isNotEmpty &&
+          mounted) {
+        await _showGuardianApprovalCodeDialog(
+          approvalCode: approvalCode,
+          guardianEmail: _guardianEmailController.text.trim(),
+        );
+      }
+
+      if (!mounted) return;
       if (userType == 'club') {
         context.goNamed('dashboard_club');
       } else {
@@ -493,6 +616,66 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       SnackBar(
         content: Text(message),
         backgroundColor: const Color(0xFF0D3B66),
+      ),
+    );
+  }
+
+  Future<void> _showGuardianApprovalCodeDialog({
+    required String approvalCode,
+    required String guardianEmail,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Código del responsable'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              guardianEmail.isNotEmpty
+                  ? 'La cuenta quedó en modo limitado hasta que el adulto responsable apruebe el acceso. Compartí este código con $guardianEmail.'
+                  : 'La cuenta quedó en modo limitado hasta que el adulto responsable apruebe el acceso. Compartí este código con tu responsable.',
+            ),
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFD1D5DB)),
+              ),
+              child: SelectableText(
+                approvalCode,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF0D3B66),
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'El responsable puede aprobarlo desde la pantalla de login usando este código.',
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0D3B66),
+            ),
+            child: const Text(
+              'Entendido',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -527,6 +710,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                   Tab(text: '                          '),
                   Tab(text: '                        '),
                   Tab(text: '                        '),
+                  Tab(text: '                        '),
                 ],
               ),
 
@@ -539,7 +723,8 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                     _buildTab1Intro(context),
                     _buildTab2Register(context),
                     _buildTab3Profile(context),
-                    _buildTab4Guardian(context),
+                    _buildTab4Community(context),
+                    _buildTab5Guardian(context),
                   ],
                 ),
               ),
@@ -602,7 +787,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
             // Título
             Text(
-              'Tu Carrera Empieza acá',
+              'Mostrá tu talento al mundo.',
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: titleFontSize,
@@ -615,7 +800,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
             // Subtítulo
             Text(
-              'Entrená, participá y hacé visible tu progreso dentro y fuera de la cancha.',
+              'Plataforma de scouting y desarrollo de talento en el fútbol.',
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: subtitleFontSize,
@@ -630,22 +815,22 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildBenefitCard('Puntos', Icons.leaderboard, cardSize),
+                _buildBenefitCard('Scouting', Icons.travel_explore, cardSize),
                 SizedBox(width: cardSpacing),
-                _buildBenefitCard('Ranking', Icons.emoji_events, cardSize),
+                _buildBenefitCard('Desarrollo', Icons.school, cardSize),
                 SizedBox(width: cardSpacing),
-                _buildBenefitCard('Desafios', Icons.shield, cardSize),
+                _buildBenefitCard('Seguridad', Icons.shield, cardSize),
               ],
             ),
             SizedBox(height: cardSpacing),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildBenefitCard('Recompensas', Icons.star, cardSize),
+                _buildBenefitCard('Videos', Icons.videocam, cardSize),
                 SizedBox(width: cardSpacing),
-                _buildBenefitCard('Cursos', Icons.school, cardSize),
+                _buildBenefitCard('Desafíos', Icons.flag, cardSize),
                 SizedBox(width: cardSpacing),
-                _buildBenefitCard('Convocatorias', Icons.campaign, cardSize),
+                _buildBenefitCard('Explorer', Icons.manage_search, cardSize),
               ],
             ),
 
@@ -654,7 +839,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             // Botón Siguiente
             _buildPrimaryButton(
               context: context,
-              text: 'Siguiente',
+              text: 'Crear perfil',
               onPressed: _goToNextTab,
               width: buttonWidth,
             ),
@@ -851,7 +1036,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           Padding(
             padding: EdgeInsets.only(top: 20 * scale),
             child: Text(
-              'Contanos sobre vos',
+              'Verificación de edad',
               style: GoogleFonts.inter(
                 fontSize:
                     _responsive(context, mobile: 24, tablet: 28, desktop: 32) *
@@ -862,6 +1047,24 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             ),
           ),
           SizedBox(height: 30 * scale),
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(14 * scale),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFD7E0EA)),
+            ),
+            child: Text(
+              'FutbolTalent es una plataforma para jugadores a partir de 13 años.',
+              style: GoogleFonts.inter(
+                fontSize: 13 * scale,
+                color: const Color(0xFF334155),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          SizedBox(height: 18 * scale),
           _buildTextField(
             context: context,
             label: 'Me llamo',
@@ -873,7 +1076,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           SizedBox(height: 15 * scale),
           _buildTextField(
             context: context,
-            label: 'Año de nacimiento',
+            label: 'Fecha de nacimiento',
             hint: 'DD/MM/AAAA',
             controller: _dataNascimentoController,
             focusNode: _dataNascimentoFocusNode,
@@ -943,18 +1146,216 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     );
   }
 
-  // ===== TAB 4: RESPONSÁVEL (menores) =====
-  Widget _buildTab4Guardian(BuildContext context) {
+  // ===== TAB 4: SEGURIDAD DE LA COMUNIDAD =====
+  Widget _buildTab4Community(BuildContext context) {
     final scale = _scaleFactor(context);
     final buttonWidth =
         _responsive(context, mobile: 145, tablet: 157, desktop: 180);
 
-    final relationships = [
-      {'value': 'padre', 'label': 'Padre'},
-      {'value': 'madre', 'label': 'Madre'},
-      {'value': 'tutor', 'label': 'Tutor Legal'},
-      {'value': 'representante', 'label': 'Representante Legal'},
-    ];
+    Widget ruleItem(String text) {
+      return Padding(
+        padding: EdgeInsets.only(bottom: 10 * scale),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.only(top: 4 * scale),
+              child: const Icon(
+                Icons.check_circle_outline,
+                size: 18,
+                color: Color(0xFF0D3B66),
+              ),
+            ),
+            SizedBox(width: 10 * scale),
+            Expanded(
+              child: Text(
+                text,
+                style: GoogleFonts.inter(
+                  fontSize: 13 * scale,
+                  color: const Color(0xFF334155),
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.symmetric(
+        horizontal: _responsive(context, mobile: 20, tablet: 40, desktop: 60),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: 20 * scale),
+            child: Text(
+              'Seguridad de la comunidad',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize:
+                    _responsive(context, mobile: 24, tablet: 28, desktop: 32) *
+                        scale,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF0D3B66),
+              ),
+            ),
+          ),
+          SizedBox(height: 22 * scale),
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(18 * scale),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFD7E0EA)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'FutbolTalent es una plataforma de scouting deportivo diseñada para ayudar a jugadores a mostrar su talento a scouts y clubes.',
+                  style: GoogleFonts.inter(
+                    fontSize: 14 * scale,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF1E293B),
+                    height: 1.45,
+                  ),
+                ),
+                SizedBox(height: 14 * scale),
+                Text(
+                  'Para proteger a los jugadores menores de edad:',
+                  style: GoogleFonts.inter(
+                    fontSize: 13 * scale,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+                SizedBox(height: 14 * scale),
+                ruleItem(
+                  'no existe chat ni mensajes privados entre jugadores y scouts',
+                ),
+                ruleItem(
+                  'no publiques datos personales o de contacto',
+                ),
+                ruleItem(
+                  'scouts y clubes solo pueden solicitar contacto a través de la plataforma',
+                ),
+                ruleItem(
+                  'los perfiles y videos pueden ser visibles para scouts y clubes registrados',
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 18 * scale),
+          CheckboxListTile(
+            value: _acceptedCommunityRules,
+            onChanged: (value) =>
+                setState(() => _acceptedCommunityRules = value ?? false),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              'Entiendo y acepto las reglas de la comunidad',
+              style: GoogleFonts.inter(
+                fontSize: 13 * scale,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF0F172A),
+              ),
+            ),
+          ),
+          SizedBox(height: 26 * scale),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: buttonWidth,
+                height: 43 * scale,
+                child: ElevatedButton(
+                  onPressed: _goToPreviousTab,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2B6CB0),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    'Anterior',
+                    style: GoogleFonts.inter(
+                      fontSize: 14 * scale,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(width: 20 * scale),
+              SizedBox(
+                width: buttonWidth,
+                height: 43 * scale,
+                child: ElevatedButton(
+                  onPressed: _isSavingProfile ? null : _onCommunityNext,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D3B66),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    _shouldShowGuardianStep ? 'Continuar' : 'Activar cuenta',
+                    style: GoogleFonts.inter(
+                      fontSize: 14 * scale,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  // ===== TAB 5: RESPONSABLE (13-17) =====
+  Widget _buildTab5Guardian(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final buttonWidth =
+        _responsive(context, mobile: 145, tablet: 157, desktop: 180);
+
+    Widget consentItem(IconData icon, String text) {
+      return Padding(
+        padding: EdgeInsets.only(bottom: 10 * scale),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.only(top: 3 * scale),
+              child: Icon(
+                icon,
+                size: 18 * scale,
+                color: const Color(0xFF0D3B66),
+              ),
+            ),
+            SizedBox(width: 10 * scale),
+            Expanded(
+              child: Text(
+                text,
+                style: GoogleFonts.inter(
+                  fontSize: 13 * scale,
+                  color: const Color(0xFF334155),
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
@@ -965,7 +1366,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           Padding(
             padding: EdgeInsets.only(top: 20 * scale),
             child: Text(
-              'Adulto Responsable',
+              'Responsable',
               style: GoogleFonts.inter(
                 fontSize:
                     _responsive(context, mobile: 24, tablet: 28, desktop: 32) *
@@ -979,83 +1380,81 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           Container(
             padding: EdgeInsets.all(16 * scale),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF3CD),
+              color: const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFFD93D)),
+              border: Border.all(color: const Color(0xFFD7E0EA)),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.info_outline, color: const Color(0xFF856404), size: 24 * scale),
-                SizedBox(width: 12 * scale),
-                Expanded(
-                  child: Text(
-                    'Por ser menor de 18 años, es obligatorio registrar un adulto responsable.',
-                    style: GoogleFonts.inter(
-                      fontSize: 13 * scale,
-                      color: const Color(0xFF856404),
-                    ),
+                Text(
+                  'Si tienes menos de 18 años, un padre, madre o tutor debe autorizar el uso de la plataforma.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13 * scale,
+                    color: const Color(0xFF334155),
+                    fontWeight: FontWeight.w600,
+                    height: 1.45,
                   ),
                 ),
+                SizedBox(height: 10 * scale),
+                Text(
+                  'Tu responsable también deberá autorizar la publicación de videos y el eventual contacto mediado con scouts o clubes.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13 * scale,
+                    color: const Color(0xFF475569),
+                    height: 1.45,
+                  ),
+                ),
+                SizedBox(height: 14 * scale),
+                Text(
+                  'Al autorizar el uso de la cuenta, el responsable acepta:',
+                  style: GoogleFonts.inter(
+                    fontSize: 13 * scale,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+                SizedBox(height: 12 * scale),
+                consentItem(Icons.description_outlined, 'términos de uso'),
+                consentItem(Icons.privacy_tip_outlined, 'política de privacidad'),
+                consentItem(Icons.photo_camera_back_outlined, 'autorización de uso de imagen'),
+                consentItem(Icons.video_library_outlined, 'publicación de videos en la plataforma'),
               ],
             ),
           ),
           SizedBox(height: 24 * scale),
           _buildTextField(
             context: context,
-            label: 'Nombre del responsable',
-            hint: 'Nombre completo',
-            controller: _guardianNameController,
-            focusNode: FocusNode(),
-            width: double.infinity,
-          ),
-          SizedBox(height: 15 * scale),
-          // Relationship dropdown
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: EdgeInsets.only(bottom: 8 * scale),
-                child: Text('Relación',
-                    style: GoogleFonts.inter(
-                        fontSize: 13 * scale,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black)),
-              ),
-              Container(
-                width: double.infinity,
-                padding: EdgeInsets.symmetric(horizontal: 16 * scale),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: const Color(0xFFA0AEC0)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _guardianRelationship,
-                    isExpanded: true,
-                    items: relationships
-                        .map((r) => DropdownMenuItem<String>(
-                            value: r['value'],
-                            child: Text(r['label']!,
-                                style: GoogleFonts.inter(fontSize: 13 * scale))))
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) setState(() => _guardianRelationship = v);
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 15 * scale),
-          _buildTextField(
-            context: context,
             label: 'Email del responsable',
             hint: 'email@ejemplo.com',
             controller: _guardianEmailController,
-            focusNode: FocusNode(),
+            focusNode: _guardianEmailFocusNode,
             keyboardType: TextInputType.emailAddress,
             width: double.infinity,
+          ),
+          SizedBox(height: 16 * scale),
+          Text(
+            'El responsable recibirá una notificación si un scout o club solicita contacto.',
+            style: GoogleFonts.inter(
+              fontSize: 13 * scale,
+              color: const Color(0xFF64748B),
+            ),
+          ),
+          SizedBox(height: 12 * scale),
+          CheckboxListTile(
+            value: _guardianAuthorized,
+            onChanged: (value) =>
+                setState(() => _guardianAuthorized = value ?? false),
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: Text(
+              'Confirmo que mi responsable autorizó el uso de FutbolTalent',
+              style: GoogleFonts.inter(
+                fontSize: 13 * scale,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF0F172A),
+              ),
+            ),
           ),
           SizedBox(height: 60 * scale),
           Row(
@@ -1091,7 +1490,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8)),
                   ),
-                  child: Text(_isSavingProfile ? 'Guardando...' : 'Finalizar',
+                  child: Text(_isSavingProfile ? 'Guardando...' : 'Continuar',
                       style: GoogleFonts.inter(
                           fontSize: 14 * scale,
                           fontWeight: FontWeight.bold,

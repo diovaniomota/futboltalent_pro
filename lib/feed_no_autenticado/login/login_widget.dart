@@ -1,6 +1,7 @@
 import '/flutter_flow/flutter_flow_util.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/guardian/guardian_mvp_service.dart';
 import '/index.dart'; // For routes
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -312,6 +313,22 @@ class _LoginWidgetState extends State<LoginWidget> {
                 fontWeight: FontWeight.bold,
                 color: const Color(0xFF0D3B66))),
       ),
+      SizedBox(height: 14 * scale),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: _showGuardianApprovalDialog,
+          icon: const Icon(Icons.verified_user_outlined),
+          label: Text(
+            'Aprobar cuenta de menor',
+            style: GoogleFonts.inter(
+              fontSize: 14 * scale,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF0D3B66),
+            ),
+          ),
+        ),
+      ),
       if (_errorMessage != null)
         Padding(
             padding: EdgeInsets.only(top: 16 * scale),
@@ -439,5 +456,108 @@ class _LoginWidgetState extends State<LoginWidget> {
                       },
                       child: const Text('Enviar'))
                 ]));
+  }
+
+  Future<void> _showGuardianApprovalDialog() async {
+    final codeController = TextEditingController();
+    var isSubmitting = false;
+    String? localError;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Aprobar cuenta de menor'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Ingresá el código que recibió el adulto responsable para activar el perfil del menor.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: codeController,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  hintText: 'RESP-123456',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (localError != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  localError!,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSubmitting
+                  ? null
+                  : () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      final code = codeController.text.trim().toUpperCase();
+                      if (code.isEmpty) {
+                        setDialogState(() {
+                          localError = 'Ingresá el código del responsable.';
+                        });
+                        return;
+                      }
+
+                      setDialogState(() {
+                        isSubmitting = true;
+                        localError = null;
+                      });
+
+                      try {
+                        await GuardianMvpService.approveGuardianCode(code);
+                        if (!dialogContext.mounted) return;
+                        Navigator.pop(dialogContext);
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Cuenta aprobada. El perfil del menor ya quedó activo.',
+                            ),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } catch (error) {
+                        final message = error.toString().toLowerCase();
+                        setDialogState(() {
+                          isSubmitting = false;
+                          if (message.contains('approval_code_not_found')) {
+                            localError = 'Código inválido o vencido.';
+                          } else if (message.contains(
+                              'approve_guardian_by_code')) {
+                            localError =
+                                'Falta ejecutar el SQL del flujo de responsable en Supabase.';
+                          } else {
+                            localError =
+                                'No se pudo aprobar la cuenta con ese código.';
+                          }
+                        });
+                      }
+                    },
+              child: isSubmitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Aprobar'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -4,8 +4,9 @@ class GamificationService {
   static const int profileCompletePoints = 50;
   static const int firstVideoBonusPoints = 50;
   static const int videoUploadPoints = 30;
-  static const int challengeParticipatedPoints = 40;
-  static const int challengeCompletedPoints = 60;
+  static const int challengeParticipatedPoints = 80;
+  static const int challengeCompletedPoints = 200;
+  static const int featuredExplorerVideoPoints = 100;
 
   static const List<_GamificationTier> _tiers = [
     _GamificationTier(levelId: 1, name: 'Aficionado', minPoints: 0),
@@ -24,6 +25,103 @@ class GamificationService {
 
   static bool _hasText(dynamic value) =>
       value?.toString().trim().isNotEmpty == true;
+
+  static String? firstNonEmptyText(Iterable<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        return text;
+      }
+    }
+    return null;
+  }
+
+  static String resolveDisplayName(Map<String, dynamic>? user) {
+    final first = firstNonEmptyText([
+          user?['name'],
+          user?['username'],
+        ]) ??
+        '';
+    final last = firstNonEmptyText([
+          user?['lastname'],
+          user?['surname'],
+        ]) ??
+        '';
+    final full = '$first $last'.trim();
+    return full.isNotEmpty ? full : 'Jugador';
+  }
+
+  static String? resolveUserPosition(Map<String, dynamic>? user) {
+    return firstNonEmptyText([
+      user?['posicion'],
+      user?['position'],
+      user?['posição'],
+    ]);
+  }
+
+  static String? resolveUserCountry(Map<String, dynamic>? user) {
+    return firstNonEmptyText([
+      user?['country'],
+      user?['pais'],
+      user?['country_name'],
+    ]);
+  }
+
+  static String? resolveUserCategoryLabel(Map<String, dynamic>? user) {
+    return firstNonEmptyText([
+          user?['categoria'],
+          user?['category'],
+        ]) ??
+        birthYearFromUser(user)?.toString();
+  }
+
+  static String? rankingScopeValue(
+    Map<String, dynamic>? user,
+    String scope,
+  ) {
+    switch (scope) {
+      case 'pais':
+        return resolveUserCountry(user);
+      case 'posicion':
+        return resolveUserPosition(user);
+      case 'categoria':
+      default:
+        return resolveUserCategoryLabel(user);
+    }
+  }
+
+  static int completedChallengesCount(Map<String, dynamic>? progressRow) {
+    return toInt(progressRow?['courses_completed']) +
+        toInt(progressRow?['exercises_completed']);
+  }
+
+  static bool _isTruthy(dynamic value) {
+    if (value is bool) return value;
+    final text = value?.toString().trim().toLowerCase() ?? '';
+    return text == 'true' ||
+        text == '1' ||
+        text == 'yes' ||
+        text == 'featured' ||
+        text == 'selected' ||
+        text == 'destacado' ||
+        text == 'seleccionado';
+  }
+
+  static int _countFeaturedExplorerVideos(List<dynamic> videosRows) {
+    var count = 0;
+    for (final row in videosRows) {
+      final map = Map<String, dynamic>.from(row as Map);
+      if (_isTruthy(map['featured_in_explorer']) ||
+          _isTruthy(map['is_featured']) ||
+          _isTruthy(map['explorer_featured']) ||
+          _isTruthy(map['selected_in_explorer']) ||
+          _isTruthy(map['is_selected']) ||
+          _isTruthy(map['highlighted'])) {
+        count += 1;
+      }
+    }
+    return count;
+  }
 
   static int? birthYearFromRaw(dynamic raw) {
     if (raw == null) return null;
@@ -141,10 +239,8 @@ class GamificationService {
 
     List<dynamic> videosRows = const [];
     try {
-      videosRows = await SupaFlow.client
-          .from('videos')
-          .select('id, description')
-          .eq('user_id', uid);
+      videosRows =
+          await SupaFlow.client.from('videos').select().eq('user_id', uid);
     } catch (_) {}
 
     final participatedKeys = <String>{};
@@ -239,6 +335,7 @@ class GamificationService {
     }
 
     final videosCount = videosRows.length;
+    final featuredVideosCount = _countFeaturedExplorerVideos(videosRows);
     final profilePoints = isProfileComplete(user) ? profileCompletePoints : 0;
     final videoPoints = videosCount > 0
         ? firstVideoBonusPoints + (videosCount * videoUploadPoints)
@@ -247,10 +344,13 @@ class GamificationService {
         participatedKeys.length * challengeParticipatedPoints;
     final challengeCompletedPts =
         completedKeys.length * challengeCompletedPoints;
+    final featuredExplorerPts =
+        featuredVideosCount * featuredExplorerVideoPoints;
     final totalPoints = profilePoints +
         videoPoints +
         challengeParticipatedPts +
-        challengeCompletedPts;
+        challengeCompletedPts +
+        featuredExplorerPts;
     final levelId = levelIdFromPoints(totalPoints);
 
     final now = DateTime.now();
@@ -316,6 +416,7 @@ class GamificationService {
       'category_year': birthYearFromUser(user),
       'profile_complete': profilePoints > 0,
       'videos_count': videosCount,
+      'featured_videos_count': featuredVideosCount,
       'challenges_participated': participatedKeys.length,
       'challenges_completed': completedKeys.length,
     };

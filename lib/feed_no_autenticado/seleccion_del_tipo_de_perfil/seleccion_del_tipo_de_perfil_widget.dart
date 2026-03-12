@@ -186,7 +186,7 @@ class _SeleccionDelTipoDePerfilWidgetState
                                   type: 'jugador',
                                   title: 'Jugador',
                                   description:
-                                      'Para jóvenes talentos (10-20 años) que quieren mostrar sus habilidades al mundo.',
+                                      'Para jugadores desde los 13 años que quieren mostrar su talento a scouts y clubes.',
                                 ),
                                 SizedBox(height: cardSpacing),
                                 _buildProfileCard(

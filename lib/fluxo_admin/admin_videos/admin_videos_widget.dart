@@ -1,6 +1,7 @@
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/gamification/gamification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'admin_videos_model.dart';
@@ -42,8 +43,7 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
     try {
       final videosResponse = await SupaFlow.client
           .from('videos')
-          .select(
-              'id, title, description, video_url, thumbnail_url, created_at, user_id, is_public')
+          .select()
           .eq('is_public', true)
           .order('created_at', ascending: false);
 
@@ -182,6 +182,44 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
     }
   }
 
+  bool _isFeatured(Map<String, dynamic> video) {
+    final raw = video['featured_in_explorer'];
+    if (raw is bool) return raw;
+    return raw?.toString().toLowerCase() == 'true';
+  }
+
+  Future<void> _toggleFeatured(Map<String, dynamic> video) async {
+    final videoId = (video['id'] ?? '').toString().trim();
+    final userId = (video['user_id'] ?? '').toString().trim();
+    if (videoId.isEmpty) return;
+
+    final nextValue = !_isFeatured(video);
+    try {
+      await SupaFlow.client
+          .from('videos')
+          .update({'featured_in_explorer': nextValue}).eq('id', videoId);
+
+      if (userId.isNotEmpty) {
+        await GamificationService.recalculateUserProgress(userId: userId);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        video['featured_in_explorer'] = nextValue;
+      });
+      _showSnack(
+        nextValue
+            ? 'Video destacado en Explorer.'
+            : 'Video removido de destacados.',
+      );
+    } catch (e) {
+      debugPrint('Error toggling featured video: $e');
+      _showSnack(
+        'No se pudo cambiar el destaque. Si falta la columna, ejecutá el SQL de gamificación.',
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -220,6 +258,7 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
   Widget _buildVideoCard(Map<String, dynamic> video) {
     final userId = (video['user_id'] ?? '').toString();
     final userName = _userNameById[userId] ?? 'Usuario desconocido';
+    final isFeatured = _isFeatured(video);
     final createdAt = video['created_at'] != null
         ? DateTime.tryParse(video['created_at'].toString())
         : null;
@@ -301,6 +340,40 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
                               letterSpacing: 0.0,
                             ),
                       ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isFeatured
+                                ? const Color(0xFFFFF7CC)
+                                : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: isFeatured
+                                  ? const Color(0xFFEAB308)
+                                  : const Color(0xFFCBD5E1),
+                            ),
+                          ),
+                          child: Text(
+                            isFeatured ? 'Destacado +100 XP' : 'Sin destacar',
+                            style: TextStyle(
+                              color: isFeatured
+                                  ? const Color(0xFF854D0E)
+                                  : const Color(0xFF475569),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 6,
@@ -310,6 +383,18 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
                           onPressed: () => _openVideo(video),
                           icon: const Icon(Icons.play_circle_outline, size: 16),
                           label: const Text('Ver'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => _toggleFeatured(video),
+                          icon: Icon(
+                            isFeatured ? Icons.star : Icons.star_outline,
+                            size: 16,
+                            color: const Color(0xFFEAB308),
+                          ),
+                          label: Text(
+                            isFeatured ? 'Quitar destaque' : 'Destacar',
+                            style: const TextStyle(color: Color(0xFF854D0E)),
+                          ),
                         ),
                         OutlinedButton.icon(
                           onPressed: () => _deleteVideo(video),
