@@ -34,6 +34,9 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   List<Map<String, dynamic>> _completedChallenges = [];
   List<Map<String, dynamic>> _savedVideos = [];
   List<Map<String, dynamic>> _contactRequests = [];
+  bool _isLoadingSavedVideos = false;
+  String? _removingSavedVideoId;
+  String? _updatingFeaturedVideoId;
   int _userRanking = 0;
   int _pendingContactRequests = 0;
 
@@ -42,6 +45,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     super.initState();
     _model = createModel(context, () => PerfilJugadorModel());
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_handleTabChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
@@ -51,8 +55,17 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   @override
   void dispose() {
     _model.dispose();
+    _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _handleTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    if (mounted) setState(() {});
+    if (_tabController.index == 2 && currentUserUid.isNotEmpty) {
+      _loadSavedVideos(currentUserUid, refreshUi: true);
+    }
   }
 
   Future<void> _loadData() async {
@@ -93,29 +106,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       final videos = List<Map<String, dynamic>>.from(videosResponse);
       final completedChallenges = await _buildCompletedChallenges(videos);
 
-      // Carregar vídeos salvos/curtidos (guardados)
-      List<Map<String, dynamic>> savedVideos = [];
-      try {
-        final likesResponse = await SupaFlow.client
-            .from('likes')
-            .select('video_id')
-            .eq('user_id', uid);
-
-        if ((likesResponse as List).isNotEmpty) {
-          final videoIds = (likesResponse).map((l) => l['video_id']).toList();
-
-          final savedVideosResponse = await SupaFlow.client
-              .from('videos')
-              .select()
-              .inFilter('id', videoIds)
-              .eq('is_public', true)
-              .order('created_at', ascending: false);
-
-          savedVideos = List<Map<String, dynamic>>.from(savedVideosResponse);
-        }
-      } catch (e) {
-        debugPrint('Erro ao carregar vídeos salvos: $e');
-      }
+      final savedVideos = await _loadSavedVideos(uid);
 
       // Calcular ranking do usuário (com tratamento de erro)
       int ranking = await _loadCategoryRanking(uid, mergedUserData);
@@ -139,6 +130,232 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     } catch (e) {
       debugPrint('Erro ao carregar dados: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadSavedVideos(
+    String uid, {
+    bool refreshUi = false,
+  }) async {
+    if (mounted && refreshUi) {
+      setState(() => _isLoadingSavedVideos = true);
+    }
+
+    try {
+      final savedRowsResponse = await SupaFlow.client
+          .from('saved_videos')
+          .select('video_id, created_at')
+          .eq('user_id', uid);
+
+      final savedRows = List<Map<String, dynamic>>.from(savedRowsResponse);
+      savedRows.sort((a, b) {
+        final aDate = a['created_at']?.toString() ?? '';
+        final bDate = b['created_at']?.toString() ?? '';
+        return bDate.compareTo(aDate);
+      });
+
+      final videoIds = savedRows
+          .map((row) => row['video_id']?.toString())
+          .where((id) => id != null && id.isNotEmpty)
+          .cast<String>()
+          .toList();
+
+      if (videoIds.isEmpty) {
+        if (mounted && refreshUi) {
+          setState(() {
+            _savedVideos = [];
+            _isLoadingSavedVideos = false;
+          });
+        }
+        return [];
+      }
+
+      final videosResponse = await SupaFlow.client
+          .from('videos')
+          .select()
+          .inFilter('id', videoIds);
+
+      final videos = List<Map<String, dynamic>>.from(videosResponse);
+      final videosById = <String, Map<String, dynamic>>{
+        for (final video in videos)
+          (video['id']?.toString() ?? ''): Map<String, dynamic>.from(video),
+      };
+
+      final ownerIds = videos
+          .map((video) => video['user_id']?.toString())
+          .where((id) => id != null && id.isNotEmpty)
+          .cast<String>()
+          .toSet()
+          .toList();
+
+      final ownersById = <String, Map<String, dynamic>>{};
+      if (ownerIds.isNotEmpty) {
+        try {
+          final ownersResponse = await SupaFlow.client
+              .from('users')
+              .select('user_id, name, lastname, username, photo_url')
+              .inFilter('user_id', ownerIds);
+          for (final owner in List<Map<String, dynamic>>.from(ownersResponse)) {
+            final key = owner['user_id']?.toString() ?? '';
+            if (key.isNotEmpty) ownersById[key] = owner;
+          }
+        } catch (_) {}
+      }
+
+      final merged = <Map<String, dynamic>>[];
+      for (final savedRow in savedRows) {
+        final videoId = savedRow['video_id']?.toString() ?? '';
+        if (videoId.isEmpty) continue;
+        final video = videosById[videoId];
+        if (video == null) continue;
+        final ownerId = video['user_id']?.toString() ?? '';
+        merged.add({
+          ...video,
+          'saved_at': savedRow['created_at'],
+          'owner_data': ownerIds.contains(ownerId) ? ownersById[ownerId] : null,
+        });
+      }
+
+      if (mounted && refreshUi) {
+        setState(() {
+          _savedVideos = merged;
+          _isLoadingSavedVideos = false;
+        });
+      }
+
+      return merged;
+    } catch (e) {
+      debugPrint('Erro ao carregar vídeos guardados: $e');
+      if (mounted && refreshUi) {
+        setState(() => _isLoadingSavedVideos = false);
+      }
+      return [];
+    }
+  }
+
+  Future<void> _removeSavedVideo(Map<String, dynamic> video) async {
+    final uid = currentUserUid;
+    final videoId = video['id']?.toString() ?? '';
+    if (uid.isEmpty || videoId.isEmpty) return;
+
+    final shouldRemove = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Quitar de guardados'),
+            content: const Text(
+              'Este video dejará de aparecer en tu pestaña Guardados.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D3B66),
+                ),
+                child: const Text(
+                  'Quitar',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!shouldRemove) return;
+
+    setState(() => _removingSavedVideoId = videoId);
+    try {
+      await SupaFlow.client
+          .from('saved_videos')
+          .delete()
+          .eq('user_id', uid)
+          .eq('video_id', videoId);
+
+      if (!mounted) return;
+      setState(() {
+        _savedVideos.removeWhere((item) => item['id']?.toString() == videoId);
+        _removingSavedVideoId = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Video removido de Guardados')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _removingSavedVideoId = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo quitar el video: $e')),
+      );
+    }
+  }
+
+  bool _isTruthy(dynamic value) {
+    if (value is bool) return value;
+    final text = value?.toString().trim().toLowerCase() ?? '';
+    return text == 'true' || text == '1' || text == 'yes' || text == 'sim';
+  }
+
+  bool _isVideoFeatured(Map<String, dynamic> video) {
+    return _isTruthy(video['featured_in_explorer']) ||
+        _isTruthy(video['is_featured']) ||
+        _isTruthy(video['explorer_featured']) ||
+        _isTruthy(video['highlighted']);
+  }
+
+  Future<void> _toggleFeaturedVideo(Map<String, dynamic> video) async {
+    final uid = currentUserUid;
+    final videoId = video['id']?.toString() ?? '';
+    if (uid.isEmpty || videoId.isEmpty) return;
+
+    final shouldFeature = !_isVideoFeatured(video);
+    if (mounted) {
+      setState(() => _updatingFeaturedVideoId = videoId);
+    }
+
+    try {
+      await SupaFlow.client
+          .from('videos')
+          .update({'featured_in_explorer': false}).eq('user_id', uid);
+
+      if (shouldFeature) {
+        await SupaFlow.client
+            .from('videos')
+            .update({'featured_in_explorer': true}).eq('id', videoId);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        for (final item in _videos) {
+          final itemId = item['id']?.toString() ?? '';
+          item['featured_in_explorer'] = shouldFeature && itemId == videoId;
+        }
+        _updatingFeaturedVideoId = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            shouldFeature
+                ? 'Video destacado seleccionado para Explorer'
+                : 'Video destacado removido',
+          ),
+          backgroundColor:
+              shouldFeature ? const Color(0xFF0F766E) : const Color(0xFF475569),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Erro ao atualizar vídeo destacado: $e');
+      if (!mounted) return;
+      setState(() => _updatingFeaturedVideoId = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No se pudo actualizar el video destacado. Si persiste, aplicá la policy SQL de update own en videos.',
+          ),
+        ),
+      );
     }
   }
 
@@ -1377,11 +1594,68 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
             spacing: 5,
             runSpacing: 5,
             children: _videos.asMap().entries.map((entry) {
+              final video = entry.value;
+              final videoId = video['id']?.toString() ?? '';
+              final isFeatured = _isVideoFeatured(video);
+              final isUpdating = _updatingFeaturedVideoId == videoId;
               return _VideoCard(
-                videoUrl: entry.value['video_url'] ?? '',
+                videoUrl: video['video_url'] ?? '',
                 onTap: () => _openVideoFeed(entry.key, _videos),
+                badge: isFeatured
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F766E),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'Destacado',
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    : null,
+                topRightAction: GestureDetector(
+                  onTap: isUpdating ? null : () => _toggleFeaturedVideo(video),
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: isUpdating
+                        ? const Padding(
+                            padding: EdgeInsets.all(7),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Icon(
+                            isFeatured ? Icons.star : Icons.star_border,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                  ),
+                ),
               );
             }).toList(),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Elegí un video destacado. Explorer abrirá ese primero para scouts.',
+            style: GoogleFonts.inter(
+              color: const Color(0xFF64748B),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
@@ -1706,28 +1980,44 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onTap: () {},
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '+ Crear una nova coleção',
-                  style: GoogleFonts.inter(
-                    color: const Color(0xFF444444),
-                    fontSize: 14,
-                  ),
-                ),
                 const Icon(
-                  Icons.arrow_forward_ios,
-                  size: 16,
-                  color: Color(0xFF444444),
+                  Icons.lock_outline,
+                  size: 18,
+                  color: Color(0xFF0D3B66),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Guardados es privado. Solo vos podés ver estos videos.',
+                    style: GoogleFonts.inter(
+                      color: const Color(0xFF334155),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 20),
-          if (_savedVideos.isEmpty)
+          if (_isLoadingSavedVideos)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: CircularProgressIndicator(color: Color(0xFF0D3B66)),
+              ),
+            )
+          else if (_savedVideos.isEmpty)
             Center(
               child: Column(
                 children: [
@@ -1747,7 +2037,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Os vídeos que você gostar aparecerão aqui',
+                    'Los videos que guardes desde el feed aparecerán acá',
                     style: GoogleFonts.inter(
                       color: Colors.grey[500],
                       fontSize: 12,
@@ -1758,15 +2048,163 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
               ),
             )
           else
-            Wrap(
-              spacing: 5,
-              runSpacing: 5,
-              children: _savedVideos.asMap().entries.map((entry) {
-                return _VideoCard(
-                  videoUrl: entry.value['video_url'] ?? '',
-                  onTap: () => _openVideoFeed(entry.key, _savedVideos),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _savedVideos.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.74,
+              ),
+              itemBuilder: (context, index) {
+                final video = _savedVideos[index];
+                final thumb = video['thumbnail_url'] ??
+                    video['thumbnail'] ??
+                    video['cover_url'] ??
+                    '';
+                final title = video['title']?.toString().trim().isNotEmpty ==
+                        true
+                    ? video['title'].toString().trim()
+                    : 'Video guardado';
+                final owner = video['owner_data'] is Map<String, dynamic>
+                    ? Map<String, dynamic>.from(video['owner_data'] as Map)
+                    : <String, dynamic>{};
+                final ownerName =
+                    owner['name']?.toString().trim().isNotEmpty == true
+                        ? owner['name'].toString().trim()
+                        : owner['username']?.toString().trim() ?? 'Jugador';
+                final videoId = video['id']?.toString() ?? '';
+                final isRemoving = _removingSavedVideoId == videoId;
+
+                return GestureDetector(
+                  onTap: () => _openVideoFeed(index, _savedVideos),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey[900],
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: thumb.toString().isNotEmpty
+                                ? Image.network(
+                                    thumb.toString(),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: Colors.grey[850],
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.play_circle_outline,
+                                          color: Colors.white,
+                                          size: 40,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : Container(
+                                    color: Colors.grey[850],
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.play_circle_outline,
+                                        color: Colors.white,
+                                        size: 40,
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: GestureDetector(
+                            onTap:
+                                isRemoving ? null : () => _removeSavedVideo(video),
+                            child: Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.58),
+                                shape: BoxShape.circle,
+                              ),
+                              child: isRemoving
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(8),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.close,
+                                      color: Colors.white,
+                                      size: 18,
+                                    ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(12, 30, 12, 12),
+                            decoration: BoxDecoration(
+                              borderRadius: const BorderRadius.vertical(
+                                bottom: Radius.circular(14),
+                              ),
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withValues(alpha: 0.88),
+                                ],
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  ownerName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: Colors.white.withValues(alpha: 0.8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 );
-              }).toList(),
+              },
             ),
         ],
       ),
@@ -2477,8 +2915,15 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
 class _VideoCard extends StatefulWidget {
   final String videoUrl;
   final VoidCallback onTap;
+  final Widget? badge;
+  final Widget? topRightAction;
 
-  const _VideoCard({required this.videoUrl, required this.onTap});
+  const _VideoCard({
+    required this.videoUrl,
+    required this.onTap,
+    this.badge,
+    this.topRightAction,
+  });
 
   @override
   State<_VideoCard> createState() => _VideoCardState();
@@ -2535,42 +2980,59 @@ class _VideoCardState extends State<_VideoCard> {
           color: Colors.grey[300],
           borderRadius: BorderRadius.circular(10),
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: _hasError
-              ? Container(
-                  color: Colors.grey[400],
-                  child: const Icon(
-                    Icons.videocam_off,
-                    color: Colors.white70,
-                    size: 30,
-                  ),
-                )
-              : !_isInitialized || _controller == null
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: _hasError
                   ? Container(
                       color: Colors.grey[400],
-                      child: const Center(
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white70,
-                          ),
-                        ),
+                      child: const Icon(
+                        Icons.videocam_off,
+                        color: Colors.white70,
+                        size: 30,
                       ),
                     )
-                  : SizedBox.expand(
-                      child: FittedBox(
-                        fit: BoxFit.cover,
-                        clipBehavior: Clip.hardEdge,
-                        child: SizedBox(
-                          width: _controller!.value.size.width,
-                          height: _controller!.value.size.height,
-                          child: VideoPlayer(_controller!),
+                  : !_isInitialized || _controller == null
+                      ? Container(
+                          color: Colors.grey[400],
+                          child: const Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
+                        )
+                      : SizedBox.expand(
+                          child: FittedBox(
+                            fit: BoxFit.cover,
+                            clipBehavior: Clip.hardEdge,
+                            child: SizedBox(
+                              width: _controller!.value.size.width,
+                              height: _controller!.value.size.height,
+                              child: VideoPlayer(_controller!),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
+            ),
+            if (widget.badge != null)
+              Positioned(
+                left: 8,
+                top: 8,
+                child: widget.badge!,
+              ),
+            if (widget.topRightAction != null)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: widget.topRightAction!,
+              ),
+          ],
         ),
       ),
     );
@@ -2928,32 +3390,6 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Column(
-                    children: [
-                      Icon(
-                        Icons.chat_bubble_outline,
-                        color: Colors.white,
-                        size: 32,
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        '0',
-                        style: TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  const Column(
-                    children: [
-                      Icon(Icons.share, color: Colors.white, size: 32),
-                      SizedBox(height: 4),
-                      Text(
-                        'Share',
-                        style: TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ],
                   ),
                 ],
               ),

@@ -1,6 +1,7 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/fluxo_compartilhado/notificacoes/notificacoes_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/index.dart'; // For EditarPerfilWidget and PerfilProfesionalSolicitarContatoWidget
@@ -34,6 +35,8 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
   List<Map<String, dynamic>> _savedVideos = [];
   List<String> _colabs = [];
   bool _isLoading = true;
+  bool _isLoadingSavedVideos = false;
+  String? _removingSavedVideoId;
   int _followers = 0;
 
   @override
@@ -42,14 +45,24 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
     _model = createModel(context, () => PerfilProfesioanlModel());
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_handleTabChanged);
     _loadProfile();
   }
 
   @override
   void dispose() {
     _model.dispose();
+    _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _handleTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    if (mounted) setState(() {});
+    if (_tabController.index == 1 && currentUserUid.isNotEmpty) {
+      _loadSaved(currentUserUid, refreshUi: true);
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -115,22 +128,95 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
     } catch (_) {}
   }
 
-  Future<void> _loadSaved(String uid) async {
+  Future<void> _loadSaved(String uid, {bool refreshUi = false}) async {
+    if (mounted && refreshUi) {
+      setState(() => _isLoadingSavedVideos = true);
+    }
     try {
       final res = await SupaFlow.client
           .from('saved_videos')
-          .select('video_id')
+          .select('video_id, created_at')
           .eq('user_id', uid);
-      final vids = (res as List)
-          .map((e) => e['video_id'])
-          .where((id) => id != null)
+
+      final savedRows = List<Map<String, dynamic>>.from(res);
+      savedRows.sort((a, b) {
+        final aDate = a['created_at']?.toString() ?? '';
+        final bDate = b['created_at']?.toString() ?? '';
+        return bDate.compareTo(aDate);
+      });
+
+      final videoIds = savedRows
+          .map((e) => e['video_id']?.toString())
+          .where((id) => id != null && id.isNotEmpty)
+          .cast<String>()
           .toList();
-      if (vids.isNotEmpty) {
-        final vs =
-            await SupaFlow.client.from('videos').select().inFilter('id', vids);
-        _savedVideos = List<Map<String, dynamic>>.from(vs);
+
+      if (videoIds.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _savedVideos = [];
+            _isLoadingSavedVideos = false;
+          });
+        }
+        return;
+      }
+
+      final videosResponse = await SupaFlow.client
+          .from('videos')
+          .select()
+          .inFilter('id', videoIds);
+
+      final videos = List<Map<String, dynamic>>.from(videosResponse);
+      final videosById = <String, Map<String, dynamic>>{
+        for (final video in videos)
+          (video['id']?.toString() ?? ''): Map<String, dynamic>.from(video),
+      };
+
+      final ownerIds = videos
+          .map((v) => v['user_id']?.toString())
+          .where((id) => id != null && id.isNotEmpty)
+          .cast<String>()
+          .toSet()
+          .toList();
+
+      final ownersById = <String, Map<String, dynamic>>{};
+      if (ownerIds.isNotEmpty) {
+        try {
+          final ownersResponse = await SupaFlow.client
+              .from('users')
+              .select('user_id, name, lastname, username, photo_url')
+              .inFilter('user_id', ownerIds);
+          for (final owner in List<Map<String, dynamic>>.from(ownersResponse)) {
+            final key = owner['user_id']?.toString() ?? '';
+            if (key.isNotEmpty) ownersById[key] = owner;
+          }
+        } catch (_) {}
+      }
+
+      final merged = <Map<String, dynamic>>[];
+      for (final saved in savedRows) {
+        final videoId = saved['video_id']?.toString() ?? '';
+        if (videoId.isEmpty) continue;
+        final video = videosById[videoId];
+        if (video == null) continue;
+        final ownerId = video['user_id']?.toString() ?? '';
+        merged.add({
+          ...video,
+          'saved_at': saved['created_at'],
+          'owner_data': ownerIds.contains(ownerId) ? ownersById[ownerId] : null,
+        });
+      }
+
+      if (mounted) {
+        setState(() {
+          _savedVideos = merged;
+          _isLoadingSavedVideos = false;
+        });
       }
     } catch (_) {}
+    if (mounted) {
+      setState(() => _isLoadingSavedVideos = false);
+    }
   }
 
   String _fmt(int n) {
@@ -156,6 +242,65 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
             backgroundColor: Colors.transparent,
             insetPadding: EdgeInsets.zero,
             child: _VideoPlayerDialog(url: v['video_url'] ?? '')));
+  }
+
+  Future<void> _removeSavedVideo(Map<String, dynamic> video) async {
+    final uid = currentUserUid;
+    final videoId = video['id']?.toString() ?? '';
+    if (uid.isEmpty || videoId.isEmpty) return;
+
+    final shouldRemove = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Quitar de guardados'),
+            content: const Text(
+              'Este video dejará de aparecer en tu pestaña Guardados.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D3B66),
+                ),
+                child: const Text(
+                  'Quitar',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!shouldRemove) return;
+
+    setState(() => _removingSavedVideoId = videoId);
+    try {
+      await SupaFlow.client
+          .from('saved_videos')
+          .delete()
+          .eq('user_id', uid)
+          .eq('video_id', videoId);
+
+      if (!mounted) return;
+      setState(() {
+        _savedVideos.removeWhere((item) => item['id']?.toString() == videoId);
+        _removingSavedVideoId = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Video removido de Guardados')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _removingSavedVideoId = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo quitar el video: $e')),
+      );
+    }
   }
 
   @override
@@ -216,7 +361,15 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                                         }),
                                         Row(children: [
                                           _iconBtn(Icons.notifications, () {
-                                            // TODO: notifications page
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    const NotificacionesWidget(
+                                                  initialUserType: 'scout',
+                                                ),
+                                              ),
+                                            );
                                           }),
                                           const SizedBox(width: 12),
                                           _iconBtn(Icons.logout, () async {
@@ -353,25 +506,12 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                               Tab(text: 'Historial de Scouting'),
                               Tab(text: 'Guardados')
                             ])),
-                    if (_tabController.index == 0)
-                      Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 16),
-                          child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('+ Crear una nueva colección',
-                                    style: GoogleFonts.inter(
-                                        fontSize: 14,
-                                        color: const Color(0xFF444444))),
-                                const Icon(Icons.arrow_forward,
-                                    size: 20, color: Color(0xFF444444))
-                              ])),
-                    SizedBox(
-                        height: 500,
-                        child: TabBarView(
-                            controller: _tabController,
-                            children: [_list(), _grid()])),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child: _tabController.index == 0
+                          ? _buildScoutingHistoryTab()
+                          : _buildSavedVideosTab(),
+                    ),
                     const SizedBox(height: 100)
                   ])))
             ]),
@@ -404,19 +544,26 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
               color: Colors.white.withOpacity(0.9), shape: BoxShape.circle),
           child: Icon(i, color: Colors.black87, size: 22)));
 
-  Widget _list() {
+  Widget _buildScoutingHistoryTab() {
     if (_scoutHistory.isEmpty) {
-      return Center(
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.people_outline, size: 64, color: Colors.grey[300]),
-        const SizedBox(height: 16),
-        const Text('No hay historial de scouting',
-            style: TextStyle(color: Colors.grey))
-      ]));
+      return Padding(
+        key: const ValueKey('scouting_history_empty'),
+        padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
+        child: Center(
+            child:
+                Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.people_outline, size: 64, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          const Text('No hay historial de scouting',
+              style: TextStyle(color: Colors.grey))
+        ])),
+      );
     }
     return ListView.builder(
+        key: const ValueKey('scouting_history_list'),
+        shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         itemCount: _scoutHistory.length,
         itemBuilder: (ctx, i) => _card(_scoutHistory[i]));
   }
@@ -495,45 +642,203 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
         ]));
   }
 
-  Widget _grid() {
-    if (_savedVideos.isEmpty) {
-      return Center(
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.bookmark_border, size: 64, color: Colors.grey[300]),
-        const SizedBox(height: 16),
-        const Text('No hay videos guardados',
-            style: TextStyle(color: Colors.grey))
-      ]));
+  Widget _buildSavedVideosTab() {
+    if (_isLoadingSavedVideos) {
+      return const Padding(
+        key: ValueKey('saved_videos_loading'),
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Center(
+          child: CircularProgressIndicator(color: Color(0xFF0D3B66)),
+        ),
+      );
     }
-    return GridView.builder(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            childAspectRatio: 0.75,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8),
-        itemCount: _savedVideos.length,
-        itemBuilder: (ctx, i) {
+
+    if (_savedVideos.isEmpty) {
+      return Padding(
+        key: const ValueKey('saved_videos_empty'),
+        padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
+        child: Center(
+            child:
+                Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.bookmark_border, size: 64, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          const Text('No hay videos guardados',
+              style: TextStyle(color: Colors.grey))
+        ])),
+      );
+    }
+
+    return Column(
+        key: const ValueKey('saved_videos_content'),
+        children: [
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lock_outline,
+                    color: Color(0xFF0D3B66), size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Guardados es privado. Solo vos podés ver estos videos.',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF334155),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  childAspectRatio: 0.76,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12),
+              itemCount: _savedVideos.length,
+              itemBuilder: (ctx, i) {
           final v = _savedVideos[i];
           final thumb =
               v['thumbnail_url'] ?? v['thumbnail'] ?? v['cover_url'] ?? '';
+          final owner = v['owner_data'] is Map<String, dynamic>
+              ? Map<String, dynamic>.from(v['owner_data'] as Map)
+              : <String, dynamic>{};
+          final ownerName =
+              owner['name']?.toString().trim().isNotEmpty == true
+                  ? owner['name'].toString().trim()
+                  : owner['username']?.toString().trim() ?? 'Jugador';
+          final title =
+              v['title']?.toString().trim().isNotEmpty == true
+                  ? v['title'].toString().trim()
+                  : 'Video guardado';
+          final videoId = v['id']?.toString() ?? '';
+          final isRemoving = _removingSavedVideoId == videoId;
+
           return GestureDetector(
               onTap: () => _openVideo(v),
               child: Container(
-                  decoration: BoxDecoration(
-                      color: Colors.grey[900],
-                      borderRadius: BorderRadius.circular(8),
-                      image: thumb.isNotEmpty
-                          ? DecorationImage(
-                              image: NetworkImage(thumb), fit: BoxFit.cover)
-                          : null),
-                  child: thumb.isEmpty
-                      ? const Center(
-                          child: Icon(Icons.play_circle_outline,
-                              color: Colors.white))
-                      : null));
-        });
+                decoration: BoxDecoration(
+                  color: Colors.grey[900],
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: thumb.isNotEmpty
+                            ? Image.network(thumb, fit: BoxFit.cover)
+                            : Container(
+                                color: Colors.grey[850],
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.play_circle_outline,
+                                    color: Colors.white,
+                                    size: 38,
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: GestureDetector(
+                        onTap: isRemoving ? null : () => _removeSavedVideo(v),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.55),
+                            shape: BoxShape.circle,
+                          ),
+                          child: isRemoving
+                              ? const Padding(
+                                  padding: EdgeInsets.all(9),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.close,
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(12, 26, 12, 12),
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.vertical(
+                            bottom: Radius.circular(12),
+                          ),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.86),
+                            ],
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              ownerName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: Colors.white.withOpacity(0.8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ));
+        }),
+        ],
+      );
   }
 }
 

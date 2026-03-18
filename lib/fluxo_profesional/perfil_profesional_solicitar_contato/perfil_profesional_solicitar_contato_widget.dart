@@ -181,6 +181,15 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   }
 
   bool _isChallengeVideo(Map<String, dynamic> video) {
+    final persistedType = (video['videoType'] ??
+            video['video_type'] ??
+            video['type'])
+        ?.toString()
+        .trim()
+        .toLowerCase();
+    if (persistedType == 'challenge') return true;
+    if (persistedType == 'ugc') return false;
+
     final description = video['description']?.toString() ?? '';
     if (_parseChallengeRef(description) != null) return true;
 
@@ -572,6 +581,60 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           color: Colors.white,
           child: Center(
               child: CircularProgressIndicator(color: Color(0xFF0D3B66))));
+    if (_userData == null) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 10),
+                IconButton(
+                  onPressed: () => context.safePop(),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                ),
+                const Spacer(),
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.person_search_outlined,
+                        size: 46,
+                        color: Color(0xFF94A3B8),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No se pudo cargar el perfil público',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Volvé a intentarlo desde los resultados del jugador.',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: const Color(0xFF64748B),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     final name = _userData?['name'] ?? _userData?['nombre'] ?? 'Usuario';
     final user = _userData?['username'] ?? '@usuario';

@@ -1,5 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -16,6 +17,39 @@ import 'explorar_model.dart';
 export 'explorar_model.dart';
 
 enum _ScoutTab { jugadores, clubes, convocatorias }
+
+enum _JugadorSearchTab { jugadores, convocatorias, clubes, scouts }
+
+String _clubRefFromMap(Map<String, dynamic> club) {
+  final values = [
+    club['id'],
+    club['owner_id'],
+    club['user_id'],
+    club['club_id'],
+  ];
+  for (final value in values) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
+  }
+  return '';
+}
+
+void _openPublicClubProfile(
+  BuildContext context,
+  Map<String, dynamic> club,
+) {
+  final clubRef = _clubRefFromMap(club);
+  if (clubRef.isEmpty) return;
+
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => PerfilPublicoClubWidget(
+        clubRef: clubRef,
+        initialClubData: Map<String, dynamic>.from(club),
+      ),
+    ),
+  );
+}
 
 class ExplorarWidget extends StatefulWidget {
   const ExplorarWidget({super.key});
@@ -38,6 +72,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   String? _errorMessage;
 
   String _searchQuery = '';
+  bool _isJugadorSearchMode = false;
+  _JugadorSearchTab _jugadorSearchTab = _JugadorSearchTab.convocatorias;
 
   List<Map<String, dynamic>> _users = [];
   List<Map<String, dynamic>> _players = [];
@@ -45,6 +81,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   List<Map<String, dynamic>> _convocatorias = [];
   List<Map<String, dynamic>> _videos = [];
   List<Map<String, dynamic>> _recommendedChallenges = [];
+  final Set<String> _savedPlayerIds = <String>{};
+  String? _savingPlayerId;
 
   final Map<String, int> _videoCountByUserId = {};
   final Map<String, Map<String, dynamic>> _latestVideoByUserId = {};
@@ -53,9 +91,28 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   _ScoutTab _scoutTab = _ScoutTab.jugadores;
   String? _scoutPosition;
   String? _scoutCategory;
-  String? _scoutLocation;
-  bool _scoutOnlyVerified = false;
-  bool _scoutWithVideo = false;
+  String? _scoutPlayerCountry;
+  String? _scoutPlayerCity;
+  String? _scoutPlayerLevel;
+  String? _scoutClubCountry;
+  String? _scoutClubCity;
+  String? _scoutClubLeague;
+  String? _scoutConvocatoriaCountry;
+  String? _scoutConvocatoriaCity;
+  String? _scoutConvocatoriaCategory;
+  String? _scoutConvocatoriaPosition;
+  String? _jugadorPlayerCategory;
+  String? _jugadorPlayerPosition;
+  String? _jugadorPlayerCountry;
+  String? _jugadorPlayerCity;
+  String? _jugadorPlayerLevel;
+  String? _jugadorConvocatoriaCategory;
+  String? _jugadorConvocatoriaPosition;
+  String? _jugadorConvocatoriaCountry;
+  String? _jugadorClubCountry;
+  String? _jugadorClubCity;
+  String? _jugadorClubLeague;
+  String? _jugadorScoutCountry;
 
   int? _currentPlanId;
   bool _currentUserVerified = true;
@@ -94,9 +151,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         _loadVideos(),
         _loadCountries(),
         _loadRecommendedChallenges(),
+        _loadSavedPlayersForScout(),
       ]);
       await _loadNextChallenge();
       _decorateUserData();
+      _decorateConvocatoriasData();
       await _loadPlayerProgressData();
     } catch (e) {
       _errorMessage = 'Error al cargar Explorer';
@@ -217,6 +276,25 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     }
   }
 
+  Future<void> _loadSavedPlayersForScout() async {
+    _savedPlayerIds.clear();
+    if (currentUserUid.isEmpty) return;
+
+    try {
+      final response = await SupaFlow.client
+          .from('jugadores_guardados')
+          .select('jugador_id')
+          .eq('scout_id', currentUserUid);
+
+      for (final row in List<Map<String, dynamic>>.from(response)) {
+        final playerId = row['jugador_id']?.toString().trim() ?? '';
+        if (playerId.isNotEmpty) {
+          _savedPlayerIds.add(playerId);
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadCountries() async {
     try {
       final response =
@@ -318,6 +396,36 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     }
   }
 
+  void _decorateConvocatoriasData() {
+    final clubsById = <String, Map<String, dynamic>>{};
+    for (final club in _clubs) {
+      final directId = club['id']?.toString() ?? '';
+      final userId = club['user_id']?.toString() ?? '';
+      final ownerId = club['owner_id']?.toString() ?? '';
+      if (directId.isNotEmpty) {
+        clubsById[directId] = club;
+      }
+      if (userId.isNotEmpty) {
+        clubsById[userId] = club;
+      }
+      if (ownerId.isNotEmpty) {
+        clubsById[ownerId] = club;
+      }
+    }
+
+    _convocatorias = _convocatorias.map((conv) {
+      final map = Map<String, dynamic>.from(conv);
+      final clubId = map['club_id']?.toString() ?? '';
+      if (map['club_data'] == null && clubId.isNotEmpty) {
+        final clubData = clubsById[clubId];
+        if (clubData != null) {
+          map['club_data'] = clubData;
+        }
+      }
+      return map;
+    }).toList();
+  }
+
   Future<void> _loadPlayerProgressData() async {
     final playerIds = _players
         .map((player) => player['user_id']?.toString() ?? '')
@@ -404,8 +512,43 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     return status == 'verified' || status == 'verificado';
   }
 
+  bool _isTruthy(dynamic value) {
+    if (value is bool) return value;
+    final text = value?.toString().trim().toLowerCase() ?? '';
+    return text == 'true' || text == '1' || text == 'yes' || text == 'sim';
+  }
+
+  List<Map<String, dynamic>> _sortedPublicVideosForPlayer(String playerId) {
+    final videos = _videos
+        .where((video) => (video['user_id']?.toString() ?? '') == playerId)
+        .map((video) => Map<String, dynamic>.from(video))
+        .toList();
+
+    videos.sort((a, b) {
+      final featuredCompare = (_isTruthy(b['featured_in_explorer']) ? 1 : 0)
+          .compareTo(_isTruthy(a['featured_in_explorer']) ? 1 : 0);
+      if (featuredCompare != 0) return featuredCompare;
+
+      final bCreated = b['created_at']?.toString() ?? '';
+      final aCreated = a['created_at']?.toString() ?? '';
+      return bCreated.compareTo(aCreated);
+    });
+
+    return videos;
+  }
+
   void _onSearchChanged(String value) {
     setState(() => _searchQuery = value.trim().toLowerCase());
+  }
+
+  String? _firstNonEmpty(Iterable<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        return text;
+      }
+    }
+    return null;
   }
 
   List<String> _extractUniqueStrings(Iterable<dynamic> values) {
@@ -451,6 +594,18 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     return value.toString().trim();
   }
 
+  String _resolveClubLeague(Map<String, dynamic> club) {
+    final value = [
+      club['liga'],
+      club['league'],
+      club['league_name'],
+    ].firstWhere(
+      (item) => item?.toString().trim().isNotEmpty == true,
+      orElse: () => '',
+    );
+    return value.toString().trim();
+  }
+
   String _resolveState(Map<String, dynamic> row) {
     final value = [
       row['provincia'],
@@ -478,6 +633,100 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       orElse: () => '',
     );
     return value.toString().trim();
+  }
+
+  String _resolveConvocatoriaCountry(Map<String, dynamic> convocatoria) {
+    final direct = [
+      convocatoria['pais'],
+      convocatoria['country'],
+      convocatoria['country_name'],
+      convocatoria['país'],
+    ].firstWhere(
+      (item) => item?.toString().trim().isNotEmpty == true,
+      orElse: () => '',
+    );
+    if (direct.toString().trim().isNotEmpty) {
+      return direct.toString().trim();
+    }
+
+    final clubData = convocatoria['club_data'];
+    if (clubData is Map) {
+      return _resolveCountryFromClub(Map<String, dynamic>.from(clubData));
+    }
+    return '';
+  }
+
+  String _resolveConvocatoriaCity(Map<String, dynamic> convocatoria) {
+    final direct = [
+      convocatoria['city'],
+      convocatoria['ciudad'],
+      convocatoria['cidade'],
+      convocatoria['localidad'],
+    ].firstWhere(
+      (item) => item?.toString().trim().isNotEmpty == true,
+      orElse: () => '',
+    );
+    if (direct.toString().trim().isNotEmpty) {
+      return direct.toString().trim();
+    }
+
+    final clubData = convocatoria['club_data'];
+    if (clubData is Map) {
+      final city = _resolveCity(Map<String, dynamic>.from(clubData));
+      if (city.isNotEmpty) return city;
+    }
+
+    final fallbackLocation = convocatoria['ubicacion']?.toString().trim() ?? '';
+    return fallbackLocation;
+  }
+
+  String _resolveConvocatoriaCategory(Map<String, dynamic> convocatoria) {
+    return _firstNonEmpty([
+          convocatoria['categoria'],
+          convocatoria['category'],
+        ]) ??
+        '';
+  }
+
+  String _resolveConvocatoriaClubName(Map<String, dynamic> convocatoria) {
+    final direct = _firstNonEmpty([
+      convocatoria['club_name'],
+      convocatoria['club_nombre'],
+      convocatoria['nombre_club'],
+      convocatoria['club'],
+    ]);
+    if (direct != null && direct.isNotEmpty) {
+      return direct;
+    }
+
+    final clubData = convocatoria['club_data'];
+    if (clubData is Map) {
+      return _firstNonEmpty([
+            clubData['name'],
+            clubData['nombre'],
+            clubData['club_name'],
+            clubData['nombre_corto'],
+          ]) ??
+          '';
+    }
+
+    return '';
+  }
+
+  String _resolveConvocatoriaPosition(Map<String, dynamic> convocatoria) {
+    return _firstNonEmpty([
+          convocatoria['posicion'],
+          convocatoria['position'],
+          convocatoria['posição'],
+        ]) ??
+        '';
+  }
+
+  String _resolvePlayerLevel(Map<String, dynamic> player) {
+    final direct = player['level_name']?.toString().trim() ?? '';
+    if (direct.isNotEmpty) return direct;
+    final totalXp = GamificationService.toInt(player['total_xp']);
+    return GamificationService.levelNameFromPoints(totalXp);
   }
 
   String? _categoryFromBirthday(dynamic birthday) {
@@ -516,7 +765,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((u) {
         final text =
-            '${u['name'] ?? ''} ${u['lastname'] ?? ''} ${u['posicion'] ?? ''} ${u['city'] ?? ''} ${u['club'] ?? ''}'
+            '${u['name'] ?? ''} ${u['lastname'] ?? ''} ${u['posicion'] ?? ''} '
+            '${_resolveCity(u)} ${_resolveCountryFromUser(u)} ${u['club'] ?? ''} ${_resolvePlayerLevel(u)}'
                 .toLowerCase();
         return text.contains(_searchQuery);
       });
@@ -528,24 +778,28 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           _scoutPosition!.toLowerCase());
     }
 
-    if (_scoutLocation != null) {
+    if (_scoutPlayerCountry != null) {
       filtered = filtered.where((u) =>
-          (u['city']?.toString().trim().toLowerCase() ?? '') ==
-          _scoutLocation!.toLowerCase());
+          _resolveCountryFromUser(u).toLowerCase() ==
+          _scoutPlayerCountry!.toLowerCase());
+    }
+
+    if (_scoutPlayerCity != null) {
+      filtered = filtered
+          .where((u) => _resolveCity(u).toLowerCase() == _scoutPlayerCity!.toLowerCase());
     }
 
     if (_scoutCategory != null) {
-      filtered = filtered
-          .where((u) => _categoryFromBirthday(u['birthday']) == _scoutCategory);
+      filtered = filtered.where(
+        (u) => _categoryFromBirthday(u['birthday']) == _scoutCategory,
+      );
     }
 
-    if (_scoutOnlyVerified) {
-      filtered = filtered.where(_isVerified);
-    }
-
-    if (_scoutWithVideo) {
-      filtered = filtered.where((u) =>
-          (_videoCountByUserId[u['user_id']?.toString() ?? ''] ?? 0) > 0);
+    if (_scoutPlayerLevel != null) {
+      filtered = filtered.where(
+        (u) => _resolvePlayerLevel(u).toLowerCase() ==
+            _scoutPlayerLevel!.toLowerCase(),
+      );
     }
 
     return filtered.toList();
@@ -557,10 +811,28 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((club) {
         final text =
-            '${club['nombre'] ?? ''} ${club['nombre_corto'] ?? ''} ${club['pais'] ?? ''} ${club['liga'] ?? ''}'
+            '${club['nombre'] ?? ''} ${club['nombre_corto'] ?? ''} '
+            '${_resolveCountryFromClub(club)} ${_resolveCity(club)} ${_resolveClubLeague(club)}'
                 .toLowerCase();
         return text.contains(_searchQuery);
       });
+    }
+
+    if (_scoutClubCountry != null) {
+      filtered = filtered.where((club) =>
+          _resolveCountryFromClub(club).toLowerCase() ==
+          _scoutClubCountry!.toLowerCase());
+    }
+
+    if (_scoutClubCity != null) {
+      filtered = filtered.where((club) =>
+          _resolveCity(club).toLowerCase() == _scoutClubCity!.toLowerCase());
+    }
+
+    if (_scoutClubLeague != null) {
+      filtered = filtered.where((club) =>
+          _resolveClubLeague(club).toLowerCase() ==
+          _scoutClubLeague!.toLowerCase());
     }
 
     return filtered.toList();
@@ -572,28 +844,266 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((conv) {
         final text =
-            '${conv['titulo'] ?? ''} ${conv['posicion'] ?? ''} ${conv['ubicacion'] ?? ''}'
+            '${conv['titulo'] ?? ''} '
+            '${_resolveConvocatoriaPosition(conv)} '
+            '${_resolveConvocatoriaCategory(conv)} '
+            '${_resolveConvocatoriaCity(conv)} '
+            '${_resolveConvocatoriaCountry(conv)} '
+            '${conv['ubicacion'] ?? ''} '
+            '${_resolveConvocatoriaClubName(conv)}'
                 .toLowerCase();
         return text.contains(_searchQuery);
       });
     }
 
-    if (_scoutPosition != null) {
+    if (_scoutConvocatoriaPosition != null) {
       filtered = filtered.where((conv) =>
-          (conv['posicion']?.toString().trim().toLowerCase() ?? '') ==
-          _scoutPosition!.toLowerCase());
+          _resolveConvocatoriaPosition(conv).toLowerCase() ==
+          _scoutConvocatoriaPosition!.toLowerCase());
     }
 
-    if (_scoutLocation != null) {
+    if (_scoutConvocatoriaCity != null) {
       filtered = filtered.where((conv) =>
-          (conv['ubicacion']?.toString().trim().toLowerCase() ?? '') ==
-          _scoutLocation!.toLowerCase());
+          _resolveConvocatoriaCity(conv).toLowerCase() ==
+          _scoutConvocatoriaCity!.toLowerCase());
+    }
+
+    if (_scoutConvocatoriaCountry != null) {
+      filtered = filtered.where((conv) =>
+          _resolveConvocatoriaCountry(conv).toLowerCase() ==
+          _scoutConvocatoriaCountry!.toLowerCase());
+    }
+
+    if (_scoutConvocatoriaCategory != null) {
+      filtered = filtered.where((conv) =>
+          _resolveConvocatoriaCategory(conv).toLowerCase() ==
+          _scoutConvocatoriaCategory!.toLowerCase());
     }
 
     return filtered.toList();
   }
 
-  Future<void> _savePlayerForScout(Map<String, dynamic> player) async {
+  List<Map<String, dynamic>> get _jugadorFilteredPlayers {
+    Iterable<Map<String, dynamic>> filtered = _players;
+
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered.where((u) {
+        final text =
+            '${u['name'] ?? ''} ${u['lastname'] ?? ''} ${u['posicion'] ?? ''} '
+            '${_resolveCity(u)} ${_resolveCountryFromUser(u)} ${u['club'] ?? ''} ${_resolvePlayerLevel(u)}'
+                .toLowerCase();
+        return text.contains(_searchQuery);
+      });
+    }
+
+    if (_jugadorPlayerPosition != null) {
+      filtered = filtered.where((u) =>
+          (u['posicion']?.toString().trim().toLowerCase() ?? '') ==
+          _jugadorPlayerPosition!.toLowerCase());
+    }
+
+    if (_jugadorPlayerCountry != null) {
+      filtered = filtered.where((u) =>
+          _resolveCountryFromUser(u).toLowerCase() ==
+          _jugadorPlayerCountry!.toLowerCase());
+    }
+
+    if (_jugadorPlayerCity != null) {
+      filtered = filtered.where((u) =>
+          _resolveCity(u).toLowerCase() == _jugadorPlayerCity!.toLowerCase());
+    }
+
+    if (_jugadorPlayerCategory != null) {
+      filtered = filtered.where(
+        (u) => _categoryFromBirthday(u['birthday']) == _jugadorPlayerCategory,
+      );
+    }
+
+    if (_jugadorPlayerLevel != null) {
+      filtered = filtered.where(
+        (u) => _resolvePlayerLevel(u).toLowerCase() ==
+            _jugadorPlayerLevel!.toLowerCase(),
+      );
+    }
+
+    return filtered.toList();
+  }
+
+  List<Map<String, dynamic>> get _jugadorFilteredConvocatorias {
+    Iterable<Map<String, dynamic>> filtered = _convocatorias;
+
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered.where((conv) {
+        final text =
+            '${conv['titulo'] ?? ''} '
+            '${_resolveConvocatoriaPosition(conv)} '
+            '${_resolveConvocatoriaCategory(conv)} '
+            '${_resolveConvocatoriaCountry(conv)} '
+            '${_resolveConvocatoriaCity(conv)} '
+            '${_resolveConvocatoriaClubName(conv)}'
+                .toLowerCase();
+        return text.contains(_searchQuery);
+      });
+    }
+
+    if (_jugadorConvocatoriaCategory != null) {
+      filtered = filtered.where((conv) =>
+          _resolveConvocatoriaCategory(conv).toLowerCase() ==
+          _jugadorConvocatoriaCategory!.toLowerCase());
+    }
+
+    if (_jugadorConvocatoriaPosition != null) {
+      filtered = filtered.where((conv) =>
+          _resolveConvocatoriaPosition(conv).toLowerCase() ==
+          _jugadorConvocatoriaPosition!.toLowerCase());
+    }
+
+    if (_jugadorConvocatoriaCountry != null) {
+      filtered = filtered.where((conv) =>
+          _resolveConvocatoriaCountry(conv).toLowerCase() ==
+          _jugadorConvocatoriaCountry!.toLowerCase());
+    }
+
+    return filtered.toList();
+  }
+
+  List<Map<String, dynamic>> get _jugadorFilteredClubs {
+    Iterable<Map<String, dynamic>> filtered = _clubs;
+
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered.where((club) {
+        final text =
+            '${club['nombre'] ?? ''} ${club['nombre_corto'] ?? ''} ${_resolveCountryFromClub(club)} ${_resolveCity(club)} ${_resolveClubLeague(club)}'
+                .toLowerCase();
+        return text.contains(_searchQuery);
+      });
+    }
+
+    if (_jugadorClubCountry != null) {
+      filtered = filtered.where((club) =>
+          _resolveCountryFromClub(club).toLowerCase() ==
+          _jugadorClubCountry!.toLowerCase());
+    }
+
+    if (_jugadorClubCity != null) {
+      filtered = filtered.where((club) =>
+          _resolveCity(club).toLowerCase() ==
+          _jugadorClubCity!.toLowerCase());
+    }
+
+    if (_jugadorClubLeague != null) {
+      filtered = filtered.where((club) =>
+          _resolveClubLeague(club).toLowerCase() ==
+          _jugadorClubLeague!.toLowerCase());
+    }
+
+    return filtered.toList();
+  }
+
+  List<Map<String, dynamic>> get _jugadorFilteredScouts {
+    Iterable<Map<String, dynamic>> filtered = _users.where((user) {
+      final isScout =
+          (user['userType']?.toString().trim().toLowerCase() ?? '') ==
+              'profesional';
+      return isScout && _isVerified(user);
+    });
+
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered.where((user) {
+        final text =
+            '${user['name'] ?? ''} ${user['lastname'] ?? ''} ${_resolveCity(user)} ${_resolveState(user)} ${_resolveCountryFromUser(user)} ${user['club'] ?? ''}'
+                .toLowerCase();
+        return text.contains(_searchQuery);
+      });
+    }
+
+    if (_jugadorScoutCountry != null) {
+      filtered = filtered.where((user) =>
+          _resolveCountryFromUser(user).toLowerCase() ==
+          _jugadorScoutCountry!.toLowerCase());
+    }
+
+    return filtered.toList();
+  }
+
+  void _resetJugadorSearchFilters() {
+    _jugadorPlayerCategory = null;
+    _jugadorPlayerPosition = null;
+    _jugadorPlayerCountry = null;
+    _jugadorPlayerCity = null;
+    _jugadorPlayerLevel = null;
+    _jugadorConvocatoriaCategory = null;
+    _jugadorConvocatoriaPosition = null;
+    _jugadorConvocatoriaCountry = null;
+    _jugadorClubCountry = null;
+    _jugadorClubCity = null;
+    _jugadorClubLeague = null;
+    _jugadorScoutCountry = null;
+  }
+
+  String _jugadorTabLabel(_JugadorSearchTab tab) {
+    switch (tab) {
+      case _JugadorSearchTab.jugadores:
+        return 'Jugadores';
+      case _JugadorSearchTab.convocatorias:
+        return 'Convocatorias';
+      case _JugadorSearchTab.clubes:
+        return 'Clubes';
+      case _JugadorSearchTab.scouts:
+        return 'Scouts';
+    }
+  }
+
+  IconData _jugadorTabIcon(_JugadorSearchTab tab) {
+    switch (tab) {
+      case _JugadorSearchTab.jugadores:
+        return Icons.people_outline;
+      case _JugadorSearchTab.convocatorias:
+        return Icons.campaign_outlined;
+      case _JugadorSearchTab.clubes:
+        return Icons.shield_outlined;
+      case _JugadorSearchTab.scouts:
+        return Icons.verified_user_outlined;
+    }
+  }
+
+  bool get _jugadorCurrentTabHasActiveFilters {
+    switch (_jugadorSearchTab) {
+      case _JugadorSearchTab.jugadores:
+        return _jugadorPlayerCategory != null ||
+            _jugadorPlayerPosition != null ||
+            _jugadorPlayerCountry != null ||
+            _jugadorPlayerCity != null ||
+            _jugadorPlayerLevel != null;
+      case _JugadorSearchTab.convocatorias:
+        return _jugadorConvocatoriaCategory != null ||
+            _jugadorConvocatoriaPosition != null ||
+            _jugadorConvocatoriaCountry != null;
+      case _JugadorSearchTab.clubes:
+        return _jugadorClubCountry != null ||
+            _jugadorClubCity != null ||
+            _jugadorClubLeague != null;
+      case _JugadorSearchTab.scouts:
+        return _jugadorScoutCountry != null;
+    }
+  }
+
+  List<Map<String, dynamic>> get _jugadorCurrentResults {
+    switch (_jugadorSearchTab) {
+      case _JugadorSearchTab.jugadores:
+        return _jugadorFilteredPlayers;
+      case _JugadorSearchTab.convocatorias:
+        return _jugadorFilteredConvocatorias;
+      case _JugadorSearchTab.clubes:
+        return _jugadorFilteredClubs;
+      case _JugadorSearchTab.scouts:
+        return _jugadorFilteredScouts;
+    }
+  }
+
+  bool _isPlayerSaved(String playerId) => _savedPlayerIds.contains(playerId);
+
+  Future<void> _toggleSavePlayerForScout(Map<String, dynamic> player) async {
     if (!_canUseSensitiveActions) {
       _showUpsellDialog(
         title: 'Acción bloqueada',
@@ -605,20 +1115,30 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     if (currentUserUid.isEmpty) return;
     final playerId = player['user_id']?.toString() ?? '';
-    if (playerId.isEmpty) return;
+    if (playerId.isEmpty || _savingPlayerId == playerId) return;
 
+    final wasSaved = _isPlayerSaved(playerId);
+    if (mounted) {
+      setState(() => _savingPlayerId = playerId);
+    }
     try {
-      final existing = await SupaFlow.client
-          .from('jugadores_guardados')
-          .select('id')
-          .eq('scout_id', currentUserUid)
-          .eq('jugador_id', playerId)
-          .maybeSingle();
+      if (wasSaved) {
+        await SupaFlow.client
+            .from('jugadores_guardados')
+            .delete()
+            .eq('scout_id', currentUserUid)
+            .eq('jugador_id', playerId);
 
-      if (existing != null) {
         if (!mounted) return;
+        setState(() {
+          _savedPlayerIds.remove(playerId);
+          _savingPlayerId = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Este jugador ya está guardado')),
+          const SnackBar(
+            content: Text('Jugador removido de guardados'),
+            backgroundColor: Color(0xFF475569),
+          ),
         );
         return;
       }
@@ -630,6 +1150,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       });
 
       if (!mounted) return;
+      setState(() {
+        _savedPlayerIds.add(playerId);
+        _savingPlayerId = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Jugador guardado con éxito'),
@@ -638,8 +1162,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       );
     } catch (_) {
       if (!mounted) return;
+      setState(() => _savingPlayerId = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo guardar el jugador')),
+        SnackBar(
+          content: Text(
+            wasSaved
+                ? 'No se pudo remover el jugador'
+                : 'No se pudo guardar el jugador',
+          ),
+        ),
       );
     }
   }
@@ -657,9 +1188,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     final playerId = player['user_id']?.toString() ?? '';
     if (playerId.isEmpty) return;
 
-    final videos = _videos
-        .where((v) => (v['user_id']?.toString() ?? '') == playerId)
-        .toList();
+    final videos = _sortedPublicVideosForPlayer(playerId);
 
     if (videos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -673,6 +1202,37 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       isScrollControlled: true,
       backgroundColor: Colors.black,
       builder: (_) => _VideoPreviewSheet(videos: videos),
+    );
+  }
+
+  void _openPublicPlayerProfile(Map<String, dynamic> player) {
+    final uid = _firstNonEmpty([
+          player['user_id'],
+          player['jugador_id'],
+          player['id'],
+        ]) ??
+        '';
+    if (uid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo abrir el perfil del jugador')),
+      );
+      return;
+    }
+
+    final rawType = FFAppState.normalizeUserType(
+      player['userType'] ?? player['usertype'] ?? player['user_type'],
+    );
+    if (rawType.isNotEmpty && rawType != 'jugador') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Este resultado no corresponde a un jugador')),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PerfilProfesionalSolicitarContatoWidget(userId: uid),
+      ),
     );
   }
 
@@ -726,6 +1286,31 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     );
   }
 
+  void _openJugadorSearchMode() {
+    if (!mounted) return;
+    setState(() {
+      _isJugadorSearchMode = true;
+      _jugadorSearchTab = _JugadorSearchTab.convocatorias;
+      _resetJugadorSearchFilters();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _searchFocusNode.requestFocus();
+    });
+  }
+
+  void _closeJugadorSearchMode() {
+    if (!mounted) return;
+    setState(() {
+      _isJugadorSearchMode = false;
+      _searchQuery = '';
+      _jugadorSearchTab = _JugadorSearchTab.convocatorias;
+      _resetJugadorSearchFilters();
+    });
+    _searchController.clear();
+    _searchFocusNode.unfocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     final userType = context.watch<FFAppState>().userType;
@@ -734,45 +1319,53 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       return const DashboardClubWidget();
     }
 
-    return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: Scaffold(
-        key: scaffoldKey,
-        backgroundColor: FlutterFlowTheme.of(context).primaryBackground,
-        body: Stack(
-          children: [
-            Positioned.fill(
-              child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFF0D3B66),
-                      ),
-                    )
-                  : _errorMessage != null
-                      ? _buildErrorState()
-                      : (userType == 'profesional'
-                          ? _buildScoutExplorer()
-                          : _buildJugadorExplorer()),
-            ),
-            if (userType == 'jugador')
-              Align(
-                alignment: const AlignmentDirectional(0, 1),
-                child: wrapWithModel(
-                  model: _model.navBarJudadorModel,
-                  updateCallback: () => safeSetState(() {}),
-                  child: const NavBarJudadorWidget(),
-                ),
+    return PopScope(
+      canPop: !(userType == 'jugador' && _isJugadorSearchMode),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && userType == 'jugador' && _isJugadorSearchMode) {
+          _closeJugadorSearchMode();
+        }
+      },
+      child: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Scaffold(
+          key: scaffoldKey,
+          backgroundColor: FlutterFlowTheme.of(context).primaryBackground,
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF0D3B66),
+                        ),
+                      )
+                    : _errorMessage != null
+                        ? _buildErrorState()
+                        : (userType == 'profesional'
+                            ? _buildScoutExplorer()
+                            : _buildJugadorExplorer()),
               ),
-            if (userType == 'profesional')
-              Align(
-                alignment: const AlignmentDirectional(0, 1),
-                child: wrapWithModel(
-                  model: _model.navBarProfesionalModel,
-                  updateCallback: () => safeSetState(() {}),
-                  child: const NavBarProfesionalWidget(),
+              if (userType == 'jugador')
+                Align(
+                  alignment: const AlignmentDirectional(0, 1),
+                  child: wrapWithModel(
+                    model: _model.navBarJudadorModel,
+                    updateCallback: () => safeSetState(() {}),
+                    child: const NavBarJudadorWidget(),
+                  ),
                 ),
-              ),
-          ],
+              if (userType == 'profesional')
+                Align(
+                  alignment: const AlignmentDirectional(0, 1),
+                  child: wrapWithModel(
+                    model: _model.navBarProfesionalModel,
+                    updateCallback: () => safeSetState(() {}),
+                    child: const NavBarProfesionalWidget(),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -814,26 +1407,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   Widget _buildJugadorExplorer() {
-    final promoted = _convocatorias
-        .where((conv) {
-          if (_searchQuery.isEmpty) return true;
-          final text =
-              '${conv['titulo'] ?? ''} ${conv['posicion'] ?? ''} ${conv['ubicacion'] ?? ''}'
-                  .toLowerCase();
-          return text.contains(_searchQuery);
-        })
-        .take(6)
-        .toList();
-    final recommendedChallenges = _recommendedChallenges
-        .where((challenge) {
-          if (_searchQuery.isEmpty) return true;
-          final text =
-              '${challenge['title'] ?? ''} ${challenge['category'] ?? challenge['categoria'] ?? ''} ${challenge['difficulty'] ?? challenge['dificultad'] ?? ''}'
-                  .toLowerCase();
-          return text.contains(_searchQuery);
-        })
-        .take(8)
-        .toList();
+    if (_isJugadorSearchMode) {
+      return _buildJugadorSearchMode();
+    }
+
+    final promoted = _convocatorias.take(6).toList();
+    final recommendedChallenges = _recommendedChallenges.take(8).toList();
 
     return RefreshIndicator(
       onRefresh: _loadAll,
@@ -860,9 +1439,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               ),
             ),
             const SizedBox(height: 14),
-            _buildSearchBar(
-              hint: 'Buscar desafíos, convocatorias, clubes o usuarios...',
-            ),
+            _buildJugadorSearchEntry(),
             const SizedBox(height: 14),
             _buildQuickActionsJugador(),
             const SizedBox(height: 14),
@@ -881,13 +1458,41 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   Widget _buildScoutExplorer() {
-    final positionOptions =
+    final playerPositionOptions =
         _extractUniqueStrings(_players.map((u) => u['posicion']));
-    final categoryOptions = _extractUniqueStrings(
+    final playerCategoryOptions = _extractUniqueStrings(
       _players.map((u) => _categoryFromBirthday(u['birthday'])),
     );
-    final locationOptions =
-        _extractUniqueStrings(_players.map((u) => u['city']));
+    final playerCountryOptions = _extractUniqueStrings(
+      _players.map(_resolveCountryFromUser),
+    );
+    final playerCityOptions = _extractUniqueStrings(
+      _players.map(_resolveCity),
+    );
+    final playerLevelOptions = _extractUniqueStrings(
+      _players.map(_resolvePlayerLevel),
+    );
+    final clubCountryOptions = _extractUniqueStrings(
+      _clubs.map(_resolveCountryFromClub),
+    );
+    final clubCityOptions = _extractUniqueStrings(
+      _clubs.map(_resolveCity),
+    );
+    final clubLeagueOptions = _extractUniqueStrings(
+      _clubs.map(_resolveClubLeague),
+    );
+    final convocatoriaCountryOptions = _extractUniqueStrings(
+      _convocatorias.map(_resolveConvocatoriaCountry),
+    );
+    final convocatoriaCityOptions = _extractUniqueStrings(
+      _convocatorias.map(_resolveConvocatoriaCity),
+    );
+    final convocatoriaCategoryOptions = _extractUniqueStrings(
+      _convocatorias.map(_resolveConvocatoriaCategory),
+    );
+    final convocatoriaPositionOptions = _extractUniqueStrings(
+      _convocatorias.map(_resolveConvocatoriaPosition),
+    );
 
     return RefreshIndicator(
       onRefresh: _loadAll,
@@ -922,15 +1527,28 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               children: [
                 Expanded(
                   child: _buildSearchBar(
-                    hint: 'Buscar jugador, club, posición, año, ciudad...',
+                    hint: _scoutTab == _ScoutTab.convocatorias
+                        ? 'Buscar convocatoria, país, ciudad, categoría...'
+                        : _scoutTab == _ScoutTab.clubes
+                            ? 'Buscar club, país, ciudad, liga...'
+                            : 'Buscar jugador, categoría, posición, país, ciudad...',
                   ),
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: () => _openScoutFilters(
-                    positionOptions: positionOptions,
-                    categoryOptions: categoryOptions,
-                    locationOptions: locationOptions,
+                    playerPositionOptions: playerPositionOptions,
+                    playerCategoryOptions: playerCategoryOptions,
+                    playerCountryOptions: playerCountryOptions,
+                    playerCityOptions: playerCityOptions,
+                    playerLevelOptions: playerLevelOptions,
+                    clubCountryOptions: clubCountryOptions,
+                    clubCityOptions: clubCityOptions,
+                    clubLeagueOptions: clubLeagueOptions,
+                    convocatoriaCountryOptions: convocatoriaCountryOptions,
+                    convocatoriaCityOptions: convocatoriaCityOptions,
+                    convocatoriaCategoryOptions: convocatoriaCategoryOptions,
+                    convocatoriaPositionOptions: convocatoriaPositionOptions,
                   ),
                   icon: const Icon(Icons.tune),
                   label: const Text('Filtros'),
@@ -1217,6 +1835,739 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     );
   }
 
+  Widget _buildJugadorSearchMode() {
+    final playerCategoryOptions = _extractUniqueStrings(
+      _players.map((u) => _categoryFromBirthday(u['birthday'])),
+    );
+    final playerPositionOptions = _extractUniqueStrings(
+      _players.map((u) => u['posicion']),
+    );
+    final playerCountryOptions = _extractUniqueStrings(
+      _players.map(_resolveCountryFromUser),
+    );
+    final playerCityOptions = _extractUniqueStrings(
+      _players.map(_resolveCity),
+    );
+    final playerLevelOptions = _extractUniqueStrings(
+      _players.map(_resolvePlayerLevel),
+    );
+    final convocatoriaCategoryOptions = _extractUniqueStrings(
+      _convocatorias.map(_resolveConvocatoriaCategory),
+    );
+    final convocatoriaPositionOptions = _extractUniqueStrings(
+      _convocatorias.map(_resolveConvocatoriaPosition),
+    );
+    final convocatoriaCountryOptions = _extractUniqueStrings(
+      _convocatorias.map(_resolveConvocatoriaCountry),
+    );
+    final clubCountryOptions = _extractUniqueStrings(
+      _clubs.map(_resolveCountryFromClub),
+    );
+    final clubCityOptions = _extractUniqueStrings(
+      _clubs.map(_resolveCity),
+    );
+    final clubLeagueOptions = _extractUniqueStrings(
+      _clubs.map(_resolveClubLeague),
+    );
+    final verifiedScouts = _users.where((user) {
+      final isScout =
+          (user['userType']?.toString().trim().toLowerCase() ?? '') ==
+              'profesional';
+      return isScout && _isVerified(user);
+    }).toList();
+    final scoutCountryOptions = _extractUniqueStrings(
+      verifiedScouts.map(_resolveCountryFromUser),
+    );
+    final currentResults = _jugadorCurrentResults;
+    final hasActiveCriteria =
+        _searchQuery.trim().length >= 2 || _jugadorCurrentTabHasActiveFilters;
+    final resultLabel = currentResults.length == 1 ? 'resultado' : 'resultados';
+
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      child: SafeArea(
+        bottom: false,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  onPressed: _closeJugadorSearchMode,
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Buscar',
+                    style: GoogleFonts.inter(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF0D3B66),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Buscá jugadores, convocatorias, clubes y scouts en un modo separado del contenido de descubrimiento.',
+              style: GoogleFonts.inter(
+                color: const Color(0xFF4A5568),
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 14),
+            _buildSearchBar(
+              hint: 'Buscar jugadores, convocatorias, clubes o scouts...',
+            ),
+            const SizedBox(height: 14),
+            _buildJugadorSearchTabBar(),
+            const SizedBox(height: 12),
+            _buildJugadorSearchFilters(
+              playerCategoryOptions: playerCategoryOptions,
+              playerPositionOptions: playerPositionOptions,
+              playerCountryOptions: playerCountryOptions,
+              playerCityOptions: playerCityOptions,
+              playerLevelOptions: playerLevelOptions,
+              convocatoriaCategoryOptions: convocatoriaCategoryOptions,
+              convocatoriaPositionOptions: convocatoriaPositionOptions,
+              convocatoriaCountryOptions: convocatoriaCountryOptions,
+              clubCountryOptions: clubCountryOptions,
+              clubCityOptions: clubCityOptions,
+              clubLeagueOptions: clubLeagueOptions,
+              scoutCountryOptions: scoutCountryOptions,
+            ),
+            const SizedBox(height: 12),
+            if (!hasActiveCriteria)
+              _buildInlineStatus(
+                icon: Icons.search_rounded,
+                title: 'Empezá una búsqueda',
+                subtitle:
+                    'Escribí al menos 2 letras o ajustá filtros para ver resultados.',
+              )
+            else ...[
+              Text(
+                '${currentResults.length} $resultLabel en ${_jugadorTabLabel(_jugadorSearchTab).toLowerCase()}',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF4A5568),
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (currentResults.isEmpty)
+                _buildInlineStatus(
+                  icon: Icons.search_off,
+                  title: 'Sem resultados.',
+                  subtitle: 'Tente outros termos ou ajuste os filtros.',
+                )
+              else
+                _buildJugadorSearchResultsList(currentResults),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildJugadorSearchTabBar() {
+    Widget tab(_JugadorSearchTab tab) {
+      final selected = _jugadorSearchTab == tab;
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: InkWell(
+          onTap: () => setState(() => _jugadorSearchTab = tab),
+          borderRadius: BorderRadius.circular(10),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xFF0D3B66) : Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: selected
+                    ? const Color(0xFF0D3B66)
+                    : const Color(0xFFD6DEE8),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _jugadorTabIcon(tab),
+                  size: 16,
+                  color: selected ? Colors.white : const Color(0xFF4A5568),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _jugadorTabLabel(tab),
+                  style: GoogleFonts.inter(
+                    color: selected ? Colors.white : const Color(0xFF4A5568),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          tab(_JugadorSearchTab.convocatorias),
+          tab(_JugadorSearchTab.clubes),
+          tab(_JugadorSearchTab.scouts),
+          tab(_JugadorSearchTab.jugadores),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildJugadorSearchFilters({
+    required List<String> playerCategoryOptions,
+    required List<String> playerPositionOptions,
+    required List<String> playerCountryOptions,
+    required List<String> playerCityOptions,
+    required List<String> playerLevelOptions,
+    required List<String> convocatoriaCategoryOptions,
+    required List<String> convocatoriaPositionOptions,
+    required List<String> convocatoriaCountryOptions,
+    required List<String> clubCountryOptions,
+    required List<String> clubCityOptions,
+    required List<String> clubLeagueOptions,
+    required List<String> scoutCountryOptions,
+  }) {
+    final filters = <Widget>[];
+
+    switch (_jugadorSearchTab) {
+      case _JugadorSearchTab.jugadores:
+        filters.addAll([
+          _ExplorerFilterDropdown(
+            label: 'Categoría',
+            value: _jugadorPlayerCategory,
+            options: playerCategoryOptions,
+            onChanged: (value) =>
+                setState(() => _jugadorPlayerCategory = value),
+          ),
+          _ExplorerFilterDropdown(
+            label: 'Posición',
+            value: _jugadorPlayerPosition,
+            options: playerPositionOptions,
+            onChanged: (value) =>
+                setState(() => _jugadorPlayerPosition = value),
+          ),
+          _ExplorerFilterDropdown(
+            label: 'País',
+            value: _jugadorPlayerCountry,
+            options: playerCountryOptions,
+            onChanged: (value) =>
+                setState(() => _jugadorPlayerCountry = value),
+          ),
+          _ExplorerFilterDropdown(
+            label: 'Ciudad',
+            value: _jugadorPlayerCity,
+            options: playerCityOptions,
+            onChanged: (value) => setState(() => _jugadorPlayerCity = value),
+          ),
+          _ExplorerFilterDropdown(
+            label: 'Nivel',
+            value: _jugadorPlayerLevel,
+            options: playerLevelOptions,
+            onChanged: (value) => setState(() => _jugadorPlayerLevel = value),
+          ),
+        ]);
+        break;
+      case _JugadorSearchTab.convocatorias:
+        filters.addAll([
+          _ExplorerFilterDropdown(
+            label: 'Categoría',
+            value: _jugadorConvocatoriaCategory,
+            options: convocatoriaCategoryOptions,
+            onChanged: (value) =>
+                setState(() => _jugadorConvocatoriaCategory = value),
+          ),
+          _ExplorerFilterDropdown(
+            label: 'Posición',
+            value: _jugadorConvocatoriaPosition,
+            options: convocatoriaPositionOptions,
+            onChanged: (value) =>
+                setState(() => _jugadorConvocatoriaPosition = value),
+          ),
+          _ExplorerFilterDropdown(
+            label: 'País',
+            value: _jugadorConvocatoriaCountry,
+            options: convocatoriaCountryOptions,
+            onChanged: (value) =>
+                setState(() => _jugadorConvocatoriaCountry = value),
+          ),
+        ]);
+        break;
+      case _JugadorSearchTab.clubes:
+        filters.addAll([
+          _ExplorerFilterDropdown(
+            label: 'País',
+            value: _jugadorClubCountry,
+            options: clubCountryOptions,
+            onChanged: (value) => setState(() => _jugadorClubCountry = value),
+          ),
+          _ExplorerFilterDropdown(
+            label: 'Ciudad',
+            value: _jugadorClubCity,
+            options: clubCityOptions,
+            onChanged: (value) => setState(() => _jugadorClubCity = value),
+          ),
+          _ExplorerFilterDropdown(
+            label: 'Liga',
+            value: _jugadorClubLeague,
+            options: clubLeagueOptions,
+            onChanged: (value) => setState(() => _jugadorClubLeague = value),
+          ),
+        ]);
+        break;
+      case _JugadorSearchTab.scouts:
+        filters.addAll([
+          _ExplorerFilterDropdown(
+            label: 'País',
+            value: _jugadorScoutCountry,
+            options: scoutCountryOptions,
+            onChanged: (value) =>
+                setState(() => _jugadorScoutCountry = value),
+          ),
+        ]);
+        break;
+    }
+
+    return Column(
+      children: [
+        _buildJugadorFilterWrap(filters),
+        if (_jugadorCurrentTabHasActiveFilters) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() {
+                switch (_jugadorSearchTab) {
+                  case _JugadorSearchTab.jugadores:
+                    _jugadorPlayerCategory = null;
+                    _jugadorPlayerPosition = null;
+                    _jugadorPlayerCountry = null;
+                    _jugadorPlayerCity = null;
+                    _jugadorPlayerLevel = null;
+                    break;
+                  case _JugadorSearchTab.convocatorias:
+                    _jugadorConvocatoriaCategory = null;
+                    _jugadorConvocatoriaPosition = null;
+                    _jugadorConvocatoriaCountry = null;
+                    break;
+                  case _JugadorSearchTab.clubes:
+                    _jugadorClubCountry = null;
+                    _jugadorClubCity = null;
+                    _jugadorClubLeague = null;
+                    break;
+                  case _JugadorSearchTab.scouts:
+                    _jugadorScoutCountry = null;
+                    break;
+                }
+              }),
+              icon: const Icon(Icons.filter_alt_off_outlined, size: 16),
+              label: const Text('Limpiar filtros'),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildJugadorFilterWrap(List<Widget> filters) {
+    if (filters.isEmpty) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final twoColumns = constraints.maxWidth >= 420;
+        final itemWidth =
+            twoColumns ? (constraints.maxWidth - 8) / 2 : constraints.maxWidth;
+
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: filters
+              .map((filter) => SizedBox(width: itemWidth, child: filter))
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildJugadorSearchResultsList(List<Map<String, dynamic>> results) {
+    switch (_jugadorSearchTab) {
+      case _JugadorSearchTab.jugadores:
+        return _buildJugadorSearchPlayersList(results);
+      case _JugadorSearchTab.convocatorias:
+        return _buildPromotedConvocatorias(results);
+      case _JugadorSearchTab.clubes:
+        return _buildJugadorSearchClubsList(results);
+      case _JugadorSearchTab.scouts:
+        return _buildJugadorSearchScoutsList(results);
+    }
+  }
+
+  Widget _buildJugadorSearchPlayersList(List<Map<String, dynamic>> players) {
+    return Column(
+      children: players.map((player) {
+        final fullName =
+            '${player['name'] ?? ''} ${player['lastname'] ?? ''}'.trim();
+        final position = player['posicion']?.toString() ?? 'Sin posición';
+        final city = _resolveCity(player);
+        final country = _resolveCountryFromUser(player);
+        final club = player['club']?.toString() ?? '';
+        final uid = player['user_id']?.toString() ?? '';
+        final hasVideo = _sortedPublicVideosForPlayer(uid).isNotEmpty;
+        final category = _categoryFromBirthday(player['birthday']) ?? 'Senior';
+        final levelName = _resolvePlayerLevel(player);
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundImage:
+                        (player['photo_url']?.toString().isNotEmpty ?? false)
+                            ? NetworkImage(player['photo_url'])
+                            : null,
+                    backgroundColor: const Color(0xFFE8F0FE),
+                    child: (player['photo_url']?.toString().isNotEmpty ?? false)
+                        ? null
+                        : Text(
+                            fullName.isNotEmpty
+                                ? fullName.substring(0, 1).toUpperCase()
+                                : 'J',
+                            style: const TextStyle(color: Color(0xFF0D3B66)),
+                          ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          fullName.isNotEmpty ? fullName : 'Jugador',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          [
+                            category,
+                            position,
+                            if (club.isNotEmpty) club,
+                            if (city.isNotEmpty) city,
+                            if (country.isNotEmpty) country,
+                          ].join(' • '),
+                          style: GoogleFonts.inter(
+                            color: const Color(0xFF718096),
+                            fontSize: 12,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _simpleBadge(category, color: const Color(0xFF0D3B66)),
+                  _simpleBadge(position, color: const Color(0xFF7C3AED)),
+                  if (country.isNotEmpty)
+                    _simpleBadge(country, color: const Color(0xFF0F766E)),
+                  _simpleBadge(levelName, color: const Color(0xFF1D4ED8)),
+                  _simpleBadge(
+                    hasVideo ? 'Tem vídeo' : 'Sem vídeo',
+                    color: hasVideo
+                        ? const Color(0xFF2F855A)
+                        : const Color(0xFF718096),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed:
+                          hasVideo ? () => _openPlayerVideos(player) : null,
+                      icon: const Icon(Icons.play_circle_outline, size: 16),
+                      label: const Text('Ver vídeo'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _openPublicPlayerProfile(player),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0D3B66),
+                      ),
+                      icon: const Icon(
+                        Icons.person_outline,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                      label: const Text(
+                        'Ver perfil',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildJugadorSearchEntry() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: _openJugadorSearchMode,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFD6DEE8)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.search, color: Color(0xFFA0AEC0)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Buscar jugadores, convocatorias, clubes o scouts...',
+                style: GoogleFonts.inter(
+                  color: const Color(0xFFA0AEC0),
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildJugadorSearchClubsList(List<Map<String, dynamic>> clubs) {
+    return Column(
+      children: clubs.map((club) {
+        final name = club['nombre']?.toString() ?? 'Club';
+        final short = club['nombre_corto']?.toString() ?? '';
+        final league = _resolveClubLeague(club);
+        final country = _resolveCountryFromClub(club);
+        final city = _resolveCity(club);
+        final activeCount = _convocatorias.where((conv) {
+          final clubData = conv['club_data'];
+          if (clubData is Map) {
+            return _clubRefFromMap(Map<String, dynamic>.from(clubData)) ==
+                _clubRefFromMap(club);
+          }
+          return (conv['club_id']?.toString().trim() ?? '') ==
+              _clubRefFromMap(club);
+        }).length;
+
+        return GestureDetector(
+          onTap: () => _openPublicClubProfile(context, club),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: const Color(0xFFE8F0FE),
+                  backgroundImage:
+                      club['logo_url']?.toString().isNotEmpty == true
+                          ? NetworkImage(club['logo_url'].toString())
+                          : null,
+                  child: club['logo_url']?.toString().isNotEmpty == true
+                      ? null
+                      : const Icon(
+                          Icons.shield_outlined,
+                          color: Color(0xFF0D3B66),
+                        ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        [
+                          if (short.isNotEmpty) short,
+                          if (league.isNotEmpty) league,
+                          if (country.isNotEmpty) country,
+                          if (city.isNotEmpty) city,
+                        ].join(' • '),
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFF718096),
+                          fontSize: 12,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _simpleBadge(
+                  activeCount > 0 ? '$activeCount activas' : 'Sin activas',
+                  color: const Color(0xFF0D3B66),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildJugadorSearchScoutsList(List<Map<String, dynamic>> scouts) {
+    return Column(
+      children: scouts.map((scout) {
+        final uid = scout['user_id']?.toString() ?? '';
+        final name = '${scout['name'] ?? ''} ${scout['lastname'] ?? ''}'.trim();
+        final city = _resolveCity(scout);
+        final country = _resolveCountryFromUser(scout);
+        final state = _resolveState(scout);
+        final club = scout['club']?.toString() ?? '';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: const Color(0xFFE8F0FE),
+                    backgroundImage: scout['photo_url']?.toString().isNotEmpty ==
+                            true
+                        ? NetworkImage(scout['photo_url'].toString())
+                        : null,
+                    child: scout['photo_url']?.toString().isNotEmpty == true
+                        ? null
+                        : Text(
+                            name.isNotEmpty ? name[0].toUpperCase() : 'S',
+                            style: const TextStyle(color: Color(0xFF0D3B66)),
+                          ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name.isNotEmpty ? name : 'Scout',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          [
+                            if (club.isNotEmpty) club,
+                            if (city.isNotEmpty) city,
+                            if (state.isNotEmpty) state,
+                            if (country.isNotEmpty) country,
+                          ].join(' • '),
+                          style: GoogleFonts.inter(
+                            color: const Color(0xFF718096),
+                            fontSize: 12,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: uid.isEmpty
+                      ? null
+                      : () {
+                          context.pushNamed(
+                            'perfil_profesional_solicitar_Contato',
+                            queryParameters: {'userId': uid},
+                          );
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D3B66),
+                  ),
+                  icon: const Icon(
+                    Icons.person_outline,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                  label: const Text(
+                    'Ver perfil',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   Widget _buildDropdownFilter({
     required String label,
     required String? value,
@@ -1273,7 +2624,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     return Column(
       children: convocatorias
           .map(
-            (conv) => Container(
+            (conv) {
+              final clubName = _resolveConvocatoriaClubName(conv);
+              final details = [
+                _resolveConvocatoriaPosition(conv),
+                _resolveConvocatoriaCategory(conv),
+                _resolveConvocatoriaCity(conv),
+              ].where((value) => value.trim().isNotEmpty).join(' • ');
+
+              return Container(
               margin: const EdgeInsets.only(bottom: 10),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -1291,10 +2650,41 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                subtitle: Text(
-                  '${conv['posicion'] ?? 'Sin posición'} • ${conv['ubicacion'] ?? 'Sin ubicación'}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (clubName.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      GestureDetector(
+                        onTap: () => _openPublicClubProfile(
+                          context,
+                          conv['club_data'] is Map<String, dynamic>
+                              ? Map<String, dynamic>.from(conv['club_data'] as Map)
+                              : {
+                                  'id': conv['club_id'],
+                                  'club_name': clubName,
+                                },
+                        ),
+                        child: Text(
+                          clubName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF0D3B66),
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 2),
+                    Text(
+                      details.isNotEmpty ? details : 'Sin detalles',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
@@ -1306,7 +2696,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   );
                 },
               ),
-            ),
+            );
+            },
           )
           .toList(),
     );
@@ -1399,7 +2790,9 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         final city = player['city']?.toString() ?? 'Sin ubicación';
         final club = player['club']?.toString() ?? '';
         final uid = player['user_id']?.toString() ?? '';
-        final hasVideo = (_videoCountByUserId[uid] ?? 0) > 0;
+        final isSaved = _isPlayerSaved(uid);
+        final isSaving = _savingPlayerId == uid;
+        final hasVideo = _sortedPublicVideosForPlayer(uid).isNotEmpty;
         final category = _categoryFromBirthday(player['birthday']);
         final year = _birthYear(player['birthday']);
         final totalXp = GamificationService.toInt(player['total_xp']);
@@ -1505,10 +2898,39 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _savePlayerForScout(player),
-                      icon: const Icon(Icons.bookmark_add_outlined, size: 16),
-                      label: const Text('Salvar lista'),
+                    child: ElevatedButton.icon(
+                      onPressed:
+                          isSaving ? null : () => _toggleSavePlayerForScout(player),
+                      style: ElevatedButton.styleFrom(
+                        elevation: 0,
+                        backgroundColor: isSaved
+                            ? const Color(0xFF0F9D58)
+                            : Colors.white,
+                        foregroundColor: isSaved
+                            ? Colors.white
+                            : const Color(0xFF0D3B66),
+                        side: BorderSide(
+                          color: isSaved
+                              ? const Color(0xFF0F9D58)
+                              : const Color(0xFF0D3B66),
+                        ),
+                      ),
+                      icon: isSaving
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: isSaved
+                                    ? Colors.white
+                                    : const Color(0xFF0D3B66),
+                              ),
+                            )
+                          : Icon(
+                              isSaved ? Icons.bookmark : Icons.bookmark_border,
+                              size: 16,
+                            ),
+                      label: Text(isSaved ? 'Guardado' : 'Salvar jugador'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1524,11 +2946,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () {
-                        if (uid.isEmpty) return;
-                        context.pushNamed(
-                          'perfil_profesional_solicitar_Contato',
-                          queryParameters: {'userId': uid},
-                        );
+                        _openPublicPlayerProfile(player);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0D3B66),
@@ -1576,6 +2994,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
           child: ListTile(
+            onTap: () => _openPublicClubProfile(context, club),
             leading: const CircleAvatar(
               backgroundColor: Color(0xFFE8F0FE),
               child: Icon(Icons.shield_outlined, color: Color(0xFF0D3B66)),
@@ -1589,6 +3008,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               ].join(' • '),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+            ),
+            trailing: const Icon(
+              Icons.chevron_right,
+              color: Color(0xFF94A3B8),
             ),
           ),
         );
@@ -1610,6 +3033,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     return Column(
       children: convocatorias.map((conv) {
         final id = conv['id']?.toString() ?? '';
+        final clubName = _resolveConvocatoriaClubName(conv);
+        final details = [
+          _resolveConvocatoriaPosition(conv),
+          _resolveConvocatoriaCategory(conv),
+          _resolveConvocatoriaCity(conv),
+          _resolveConvocatoriaCountry(conv),
+        ].where((value) => value.trim().isNotEmpty).join(' • ');
 
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
@@ -1628,10 +3058,41 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            subtitle: Text(
-              '${conv['posicion'] ?? 'Sin posición'} • ${conv['ubicacion'] ?? 'Sin ubicación'}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (clubName.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  GestureDetector(
+                    onTap: () => _openPublicClubProfile(
+                      context,
+                      conv['club_data'] is Map<String, dynamic>
+                          ? Map<String, dynamic>.from(conv['club_data'] as Map)
+                          : {
+                              'id': conv['club_id'],
+                              'club_name': clubName,
+                            },
+                    ),
+                    child: Text(
+                      clubName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0D3B66),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 2),
+                Text(
+                  details.isNotEmpty ? details : 'Sin detalles',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
             trailing: ElevatedButton(
               onPressed: id.isEmpty
@@ -1654,15 +3115,31 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   Future<void> _openScoutFilters({
-    required List<String> positionOptions,
-    required List<String> categoryOptions,
-    required List<String> locationOptions,
+    required List<String> playerPositionOptions,
+    required List<String> playerCategoryOptions,
+    required List<String> playerCountryOptions,
+    required List<String> playerCityOptions,
+    required List<String> playerLevelOptions,
+    required List<String> clubCountryOptions,
+    required List<String> clubCityOptions,
+    required List<String> clubLeagueOptions,
+    required List<String> convocatoriaCountryOptions,
+    required List<String> convocatoriaCityOptions,
+    required List<String> convocatoriaCategoryOptions,
+    required List<String> convocatoriaPositionOptions,
   }) async {
     String? tempPosition = _scoutPosition;
     String? tempCategory = _scoutCategory;
-    String? tempLocation = _scoutLocation;
-    bool tempOnlyVerified = _scoutOnlyVerified;
-    bool tempWithVideo = _scoutWithVideo;
+    String? tempPlayerCountry = _scoutPlayerCountry;
+    String? tempPlayerCity = _scoutPlayerCity;
+    String? tempPlayerLevel = _scoutPlayerLevel;
+    String? tempClubCountry = _scoutClubCountry;
+    String? tempClubCity = _scoutClubCity;
+    String? tempClubLeague = _scoutClubLeague;
+    String? tempConvCountry = _scoutConvocatoriaCountry;
+    String? tempConvCity = _scoutConvocatoriaCity;
+    String? tempConvCategory = _scoutConvocatoriaCategory;
+    String? tempConvPosition = _scoutConvocatoriaPosition;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -1683,45 +3160,112 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Filtros Scout V1',
+                    _scoutTab == _ScoutTab.convocatorias
+                        ? 'Filtros de convocatorias'
+                        : _scoutTab == _ScoutTab.clubes
+                            ? 'Filtros de clubes'
+                            : 'Filtros de jugadores',
                     style: GoogleFonts.inter(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   const SizedBox(height: 14),
-                  _buildDropdownFilter(
-                    label: 'Posición',
-                    value: tempPosition,
-                    options: positionOptions,
-                    onChanged: (v) => setSheetState(() => tempPosition = v),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildDropdownFilter(
-                    label: 'Ano/Faixa etária',
-                    value: tempCategory,
-                    options: categoryOptions,
-                    onChanged: (v) => setSheetState(() => tempCategory = v),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildDropdownFilter(
-                    label: 'Localización',
-                    value: tempLocation,
-                    options: locationOptions,
-                    onChanged: (v) => setSheetState(() => tempLocation = v),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: tempOnlyVerified,
-                    onChanged: (v) => setSheetState(() => tempOnlyVerified = v),
-                    title: const Text('Apenas verificados'),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: tempWithVideo,
-                    onChanged: (v) => setSheetState(() => tempWithVideo = v),
-                    title: const Text('Tem vídeo'),
-                  ),
+                  if (_scoutTab == _ScoutTab.convocatorias) ...[
+                    _buildDropdownFilter(
+                      label: 'País',
+                      value: tempConvCountry,
+                      options: convocatoriaCountryOptions,
+                      onChanged: (v) =>
+                          setSheetState(() => tempConvCountry = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'Ciudad',
+                      value: tempConvCity,
+                      options: convocatoriaCityOptions,
+                      onChanged: (v) =>
+                          setSheetState(() => tempConvCity = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'Categoría',
+                      value: tempConvCategory,
+                      options: convocatoriaCategoryOptions,
+                      onChanged: (v) =>
+                          setSheetState(() => tempConvCategory = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'Posición buscada',
+                      value: tempConvPosition,
+                      options: convocatoriaPositionOptions,
+                      onChanged: (v) =>
+                          setSheetState(() => tempConvPosition = v),
+                    ),
+                  ] else if (_scoutTab == _ScoutTab.clubes) ...[
+                    _buildDropdownFilter(
+                      label: 'País',
+                      value: tempClubCountry,
+                      options: clubCountryOptions,
+                      onChanged: (v) =>
+                          setSheetState(() => tempClubCountry = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'Ciudad',
+                      value: tempClubCity,
+                      options: clubCityOptions,
+                      onChanged: (v) =>
+                          setSheetState(() => tempClubCity = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'Liga',
+                      value: tempClubLeague,
+                      options: clubLeagueOptions,
+                      onChanged: (v) =>
+                          setSheetState(() => tempClubLeague = v),
+                    ),
+                  ] else ...[
+                    _buildDropdownFilter(
+                      label: 'Categoría',
+                      value: tempCategory,
+                      options: playerCategoryOptions,
+                      onChanged: (v) => setSheetState(() => tempCategory = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'Posición',
+                      value: tempPosition,
+                      options: playerPositionOptions,
+                      onChanged: (v) => setSheetState(() => tempPosition = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'País',
+                      value: tempPlayerCountry,
+                      options: playerCountryOptions,
+                      onChanged: (v) =>
+                          setSheetState(() => tempPlayerCountry = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'Ciudad',
+                      value: tempPlayerCity,
+                      options: playerCityOptions,
+                      onChanged: (v) =>
+                          setSheetState(() => tempPlayerCity = v),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'Nivel',
+                      value: tempPlayerLevel,
+                      options: playerLevelOptions,
+                      onChanged: (v) =>
+                          setSheetState(() => tempPlayerLevel = v),
+                    ),
+                  ],
                   const SizedBox(height: 6),
                   Row(
                     children: [
@@ -1729,11 +3273,22 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         child: OutlinedButton(
                           onPressed: () {
                             setSheetState(() {
-                              tempPosition = null;
-                              tempCategory = null;
-                              tempLocation = null;
-                              tempOnlyVerified = false;
-                              tempWithVideo = false;
+                              if (_scoutTab == _ScoutTab.convocatorias) {
+                                tempConvCountry = null;
+                                tempConvCity = null;
+                                tempConvCategory = null;
+                                tempConvPosition = null;
+                              } else if (_scoutTab == _ScoutTab.clubes) {
+                                tempClubCountry = null;
+                                tempClubCity = null;
+                                tempClubLeague = null;
+                              } else {
+                                tempPosition = null;
+                                tempCategory = null;
+                                tempPlayerCountry = null;
+                                tempPlayerCity = null;
+                                tempPlayerLevel = null;
+                              }
                             });
                           },
                           child: const Text('Limpar'),
@@ -1744,11 +3299,22 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         child: ElevatedButton(
                           onPressed: () {
                             setState(() {
-                              _scoutPosition = tempPosition;
-                              _scoutCategory = tempCategory;
-                              _scoutLocation = tempLocation;
-                              _scoutOnlyVerified = tempOnlyVerified;
-                              _scoutWithVideo = tempWithVideo;
+                              if (_scoutTab == _ScoutTab.convocatorias) {
+                                _scoutConvocatoriaCountry = tempConvCountry;
+                                _scoutConvocatoriaCity = tempConvCity;
+                                _scoutConvocatoriaCategory = tempConvCategory;
+                                _scoutConvocatoriaPosition = tempConvPosition;
+                              } else if (_scoutTab == _ScoutTab.clubes) {
+                                _scoutClubCountry = tempClubCountry;
+                                _scoutClubCity = tempClubCity;
+                                _scoutClubLeague = tempClubLeague;
+                              } else {
+                                _scoutPosition = tempPosition;
+                                _scoutCategory = tempCategory;
+                                _scoutPlayerCountry = tempPlayerCountry;
+                                _scoutPlayerCity = tempPlayerCity;
+                                _scoutPlayerLevel = tempPlayerLevel;
+                              }
                             });
                             Navigator.pop(ctx);
                           },
@@ -1764,7 +3330,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  if (!_isClubStaff)
+                  if (_scoutTab == _ScoutTab.jugadores && !_isClubStaff)
                     Text(
                       'Compartilhar listas só aparece para staff de clube.',
                       style: GoogleFonts.inter(
@@ -2294,87 +3860,96 @@ class _JugadorClubsResultsPageState extends State<_JugadorClubsResultsPage> {
                           final description =
                               club['descripcion']?.toString().trim() ?? '';
 
-                          return Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border:
-                                  Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 22,
-                                      backgroundColor: const Color(0xFFE8F0FE),
-                                      backgroundImage: club['logo_url']
-                                                  ?.toString()
-                                                  .isNotEmpty ==
-                                              true
-                                          ? NetworkImage(
-                                              club['logo_url'].toString(),
-                                            )
-                                          : null,
-                                      child: club['logo_url']
-                                                  ?.toString()
-                                                  .isNotEmpty ==
-                                              true
-                                          ? null
-                                          : const Icon(
-                                              Icons.shield_outlined,
-                                              color: Color(0xFF0D3B66),
+                          return GestureDetector(
+                            onTap: () => _openPublicClubProfile(context, club),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border:
+                                    Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 22,
+                                        backgroundColor:
+                                            const Color(0xFFE8F0FE),
+                                        backgroundImage: club['logo_url']
+                                                    ?.toString()
+                                                    .isNotEmpty ==
+                                                true
+                                            ? NetworkImage(
+                                                club['logo_url'].toString(),
+                                              )
+                                            : null,
+                                        child: club['logo_url']
+                                                    ?.toString()
+                                                    .isNotEmpty ==
+                                                true
+                                            ? null
+                                            : const Icon(
+                                                Icons.shield_outlined,
+                                                color: Color(0xFF0D3B66),
+                                              ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              name,
+                                              style: GoogleFonts.inter(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 15,
+                                              ),
                                             ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            name,
-                                            style: GoogleFonts.inter(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 15,
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              [
+                                                if (short.isNotEmpty) short,
+                                                if (league.isNotEmpty) league,
+                                                if (city.isNotEmpty) city,
+                                                if (state.isNotEmpty) state,
+                                                if (country.isNotEmpty) country,
+                                              ].join(' • '),
+                                              style: GoogleFonts.inter(
+                                                color: const Color(0xFF718096),
+                                                fontSize: 12,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            [
-                                              if (short.isNotEmpty) short,
-                                              if (league.isNotEmpty) league,
-                                              if (city.isNotEmpty) city,
-                                              if (state.isNotEmpty) state,
-                                              if (country.isNotEmpty) country,
-                                            ].join(' • '),
-                                            style: GoogleFonts.inter(
-                                              color: const Color(0xFF718096),
-                                              fontSize: 12,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Icon(
+                                        Icons.chevron_right,
+                                        color: Color(0xFF94A3B8),
+                                      ),
+                                    ],
+                                  ),
+                                  if (description.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      description,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                        color: const Color(0xFF4A5568),
+                                        fontSize: 12,
                                       ),
                                     ),
                                   ],
-                                ),
-                                if (description.isNotEmpty) ...[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    description,
-                                    maxLines: 3,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.inter(
-                                      color: const Color(0xFF4A5568),
-                                      fontSize: 12,
-                                    ),
-                                  ),
                                 ],
-                              ],
+                              ),
                             ),
                           );
                         },

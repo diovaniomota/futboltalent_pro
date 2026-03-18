@@ -1,6 +1,9 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
+import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/gamification/gamification_service.dart';
 import '/index.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,11 +11,32 @@ import 'package:video_player/video_player.dart';
 import 'dashboard_club_model.dart';
 export 'dashboard_club_model.dart';
 
+String _clubRefFromMap(Map<String, dynamic> club) {
+  final values = [
+    club['id'],
+    club['owner_id'],
+    club['user_id'],
+    club['club_id'],
+  ];
+  for (final value in values) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
+  }
+  return '';
+}
+
 class DashboardClubWidget extends StatefulWidget {
-  const DashboardClubWidget({super.key});
+  const DashboardClubWidget({
+    super.key,
+    this.searchOnly = false,
+    this.initialSearchQuery = '',
+  });
 
   static String routeName = 'dashboard_club';
   static String routePath = '/dashboardClub';
+
+  final bool searchOnly;
+  final String initialSearchQuery;
 
   @override
   State<DashboardClubWidget> createState() => _DashboardClubWidgetState();
@@ -43,12 +67,38 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   List<Map<String, dynamic>> _searchPlayers = [];
   List<Map<String, dynamic>> _searchClubs = [];
   List<Map<String, dynamic>> _searchTryouts = [];
+  final Map<int, String> _countryNameById = {};
+  final Set<String> _savedPlayerIds = <String>{};
+  String? _savingPlayerId;
+  String? _invitingPlayerId;
+
+  String? _playerFilterCategory;
+  String? _playerFilterPosition;
+  String? _playerFilterCountry;
+  String? _playerFilterCity;
+  String? _playerFilterLevel;
+  String? _clubFilterCountry;
+  String? _clubFilterCity;
+  String? _clubFilterLeague;
+  String? _tryoutFilterCategory;
+  String? _tryoutFilterPosition;
+  String? _tryoutFilterCountry;
 
   @override
   void initState() {
     super.initState();
     _model = createModel(context, () => DashboardClubModel());
     _searchController.addListener(_onSearchChanged);
+    final initialQuery = widget.initialSearchQuery.trim();
+    if (widget.searchOnly && initialQuery.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _searchController.text = initialQuery;
+        _searchController.selection = TextSelection.collapsed(
+          offset: initialQuery.length,
+        );
+      });
+    }
     _loadData();
   }
 
@@ -81,6 +131,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       await Future.wait([
         _loadViewerCapabilities(),
         _loadClubName(),
+        _loadCountryNames(),
+        _loadSavedPlayers(),
       ]);
 
       final convocatoriasResponse = await SupaFlow.client
@@ -170,6 +222,60 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     }
   }
 
+  Future<void> _loadCountryNames() async {
+    try {
+      final response = await SupaFlow.client
+          .from('countrys')
+          .select('id, name')
+          .order('name');
+      _countryNameById.clear();
+      for (final row in (response as List)) {
+        final map = Map<String, dynamic>.from(row);
+        final id = map['id'] is int
+            ? map['id'] as int
+            : int.tryParse(map['id']?.toString() ?? '');
+        final name = map['name']?.toString().trim() ?? '';
+        if (id != null && name.isNotEmpty) {
+          _countryNameById[id] = name;
+        }
+      }
+    } catch (_) {
+      _countryNameById.clear();
+    }
+  }
+
+  Future<void> _loadSavedPlayers() async {
+    _savedPlayerIds.clear();
+
+    if (currentUserUid.isEmpty) return;
+
+    try {
+      final savedByClub = await SupaFlow.client
+          .from('jugadores_guardados')
+          .select('jugador_id')
+          .eq('club_id', currentUserUid)
+          .limit(800);
+      for (final row in (savedByClub as List)) {
+        final id = row['jugador_id']?.toString() ?? '';
+        if (id.isNotEmpty) _savedPlayerIds.add(id);
+      }
+    } catch (_) {}
+
+    if (_savedPlayerIds.isNotEmpty) return;
+
+    try {
+      final savedByScout = await SupaFlow.client
+          .from('jugadores_guardados')
+          .select('jugador_id')
+          .eq('scout_id', currentUserUid)
+          .limit(800);
+      for (final row in (savedByScout as List)) {
+        final id = row['jugador_id']?.toString() ?? '';
+        if (id.isNotEmpty) _savedPlayerIds.add(id);
+      }
+    } catch (_) {}
+  }
+
   Future<Map<String, Map<String, dynamic>>> _loadUsersMap(
       List<String> ids) async {
     if (ids.isEmpty) return {};
@@ -218,20 +324,19 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }
 
   void _onSearchChanged() {
+    final previousQuery = _searchQuery;
     final value = _searchController.text.trim();
     if (value == _searchQuery) return;
     _searchQuery = value;
-    _searchHome(value);
-  }
 
-  void _setHomeScope(String scope) {
-    if (_homeScope == scope) return;
-    setState(() {
-      _homeScope = scope;
-    });
-    if (scope == 'jugadores' && _searchQuery.trim().length < 2) {
+    final wasSearchMode = previousQuery.trim().length >= 2;
+    final willSearch = value.trim().length >= 2;
+
+    if (!willSearch) {
       if (!mounted) return;
       setState(() {
+        _homeScope = 'jugadores';
+        _resetSearchFilters();
         _isSearchingPlayers = false;
         _searchPlayers = [];
         _searchClubs = [];
@@ -239,7 +344,39 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       });
       return;
     }
+
+    if (!wasSearchMode && willSearch && mounted) {
+      setState(() {
+        _homeScope = 'jugadores';
+        _resetSearchFilters();
+      });
+    }
+
+    _searchHome(value);
+  }
+
+  void _setHomeScope(String scope) {
+    if (!_isSearchMode) return;
+    if (_homeScope == scope) return;
+    setState(() {
+      _homeScope = scope;
+      _resetSearchFilters();
+    });
     _searchHome(_searchQuery);
+  }
+
+  void _resetSearchFilters() {
+    _playerFilterCategory = null;
+    _playerFilterPosition = null;
+    _playerFilterCountry = null;
+    _playerFilterCity = null;
+    _playerFilterLevel = null;
+    _clubFilterCountry = null;
+    _clubFilterCity = null;
+    _clubFilterLeague = null;
+    _tryoutFilterCategory = null;
+    _tryoutFilterPosition = null;
+    _tryoutFilterCountry = null;
   }
 
   Future<void> _searchHome(String value) async {
@@ -276,16 +413,28 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     }
 
     try {
-      final response = await SupaFlow.client
-          .from('users')
-          .select(
-              'user_id, name, lastname, username, posicion, city, club, birthday, photo_url, userType')
-          .inFilter(
-              'userType', ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
-          .or('name.ilike.%$query%,lastname.ilike.%$query%,username.ilike.%$query%,posicion.ilike.%$query%,city.ilike.%$query%')
-          .limit(60);
-
-      final players = List<Map<String, dynamic>>.from(response);
+      List<Map<String, dynamic>> players;
+      try {
+        final response = await SupaFlow.client
+            .from('users')
+            .select(
+                'user_id, name, lastname, username, posicion, position, city, ciudad, club, birthday, birth_date, categoria, category, photo_url, userType, pais, country, country_name, country_id')
+            .inFilter('userType',
+                ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
+            .or('name.ilike.%$query%,lastname.ilike.%$query%,username.ilike.%$query%,posicion.ilike.%$query%,position.ilike.%$query%,city.ilike.%$query%,ciudad.ilike.%$query%,club.ilike.%$query%,categoria.ilike.%$query%,category.ilike.%$query%,pais.ilike.%$query%,country.ilike.%$query%,country_name.ilike.%$query%')
+            .limit(80);
+        players = List<Map<String, dynamic>>.from(response);
+      } catch (_) {
+        final response = await SupaFlow.client
+            .from('users')
+            .select(
+                'user_id, name, lastname, username, posicion, position, city, ciudad, club, birthday, birth_date, categoria, category, photo_url, usertype, pais, country, country_name, country_id')
+            .inFilter('usertype',
+                ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
+            .or('name.ilike.%$query%,lastname.ilike.%$query%,username.ilike.%$query%,posicion.ilike.%$query%,position.ilike.%$query%,city.ilike.%$query%,ciudad.ilike.%$query%,club.ilike.%$query%,categoria.ilike.%$query%,category.ilike.%$query%,pais.ilike.%$query%,country.ilike.%$query%,country_name.ilike.%$query%')
+            .limit(80);
+        players = List<Map<String, dynamic>>.from(response);
+      }
       final ids = players
           .map((p) => p['user_id']?.toString() ?? '')
           .where((id) => id.isNotEmpty)
@@ -319,6 +468,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         player['video_count'] = videoCountByUser[uid] ?? 0;
       }
 
+      await _loadSearchPlayerProgress(players);
+
       if (!mounted) return;
       setState(() {
         _searchPlayers = players;
@@ -339,6 +490,16 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
   Future<void> _searchClubsForHome(String value) async {
     final query = value.trim().toLowerCase();
+    if (query.length < 2) {
+      if (!mounted) return;
+      setState(() {
+        _isSearchingPlayers = false;
+        _searchPlayers = [];
+        _searchClubs = [];
+        _searchTryouts = [];
+      });
+      return;
+    }
     if (mounted) {
       setState(() => _isSearchingPlayers = true);
     }
@@ -350,20 +511,23 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           .order('created_at', ascending: false)
           .limit(140);
       final allClubs = List<Map<String, dynamic>>.from(response);
-      final clubs = query.length < 2
-          ? allClubs.take(24).toList()
-          : allClubs.where((club) {
-              final name = (club['nombre'] ??
-                      club['name'] ??
-                      club['club_name'] ??
-                      'Club')
-                  .toString()
-                  .toLowerCase();
-              final city = (club['city'] ?? club['ubicacion'] ?? '')
-                  .toString()
-                  .toLowerCase();
-              return name.contains(query) || city.contains(query);
-            }).toList();
+      final clubs = allClubs.where((club) {
+        final name = (club['nombre'] ?? club['name'] ?? club['club_name'] ?? 'Club')
+            .toString()
+            .toLowerCase();
+        final city =
+            (club['city'] ?? club['ubicacion'] ?? '').toString().toLowerCase();
+        final league = (club['liga'] ?? club['league'] ?? club['league_name'] ?? '')
+            .toString()
+            .toLowerCase();
+        final country = (club['pais'] ?? club['country'] ?? club['country_name'] ?? '')
+            .toString()
+            .toLowerCase();
+        return name.contains(query) ||
+            city.contains(query) ||
+            league.contains(query) ||
+            country.contains(query);
+      }).toList();
 
       if (!mounted) return;
       setState(() {
@@ -385,6 +549,16 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
   Future<void> _searchTryoutsForHome(String value) async {
     final query = value.trim().toLowerCase();
+    if (query.length < 2) {
+      if (!mounted) return;
+      setState(() {
+        _isSearchingPlayers = false;
+        _searchPlayers = [];
+        _searchClubs = [];
+        _searchTryouts = [];
+      });
+      return;
+    }
     if (mounted) {
       setState(() => _isSearchingPlayers = true);
     }
@@ -398,22 +572,27 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           .limit(180);
 
       final allTryouts = List<Map<String, dynamic>>.from(response);
-      final tryouts = query.length < 2
-          ? allTryouts.take(24).toList()
-          : allTryouts.where((row) {
-              final title = (row['titulo'] ?? row['title'] ?? '')
-                  .toString()
-                  .toLowerCase();
-              final desc = (row['descripcion'] ?? row['description'] ?? '')
-                  .toString()
-                  .toLowerCase();
-              final zone = (row['ubicacion'] ?? row['location'] ?? '')
-                  .toString()
-                  .toLowerCase();
-              return title.contains(query) ||
-                  desc.contains(query) ||
-                  zone.contains(query);
-            }).toList();
+      await _decorateTryoutsWithClubData(allTryouts);
+      final tryouts = allTryouts.where((row) {
+        final title =
+            (row['titulo'] ?? row['title'] ?? '').toString().toLowerCase();
+        final desc = (row['descripcion'] ?? row['description'] ?? '')
+            .toString()
+            .toLowerCase();
+        final zone =
+            (row['ubicacion'] ?? row['location'] ?? '').toString().toLowerCase();
+        final category = _resolveTryoutCategory(row).toLowerCase();
+        final position = _resolveTryoutPosition(row).toLowerCase();
+        final clubName = _resolveTryoutClubName(row).toLowerCase();
+        final country = _resolveTryoutCountry(row).toLowerCase();
+        return title.contains(query) ||
+            desc.contains(query) ||
+            zone.contains(query) ||
+            category.contains(query) ||
+            position.contains(query) ||
+            clubName.contains(query) ||
+            country.contains(query);
+      }).toList();
 
       if (!mounted) return;
       setState(() {
@@ -430,6 +609,79 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         _searchTryouts = [];
         _isSearchingPlayers = false;
       });
+    }
+  }
+
+  Future<void> _decorateTryoutsWithClubData(
+    List<Map<String, dynamic>> tryouts,
+  ) async {
+    if (tryouts.isEmpty) return;
+
+    try {
+      final clubsResponse = await SupaFlow.client
+          .from('clubs')
+          .select()
+          .order('created_at', ascending: false)
+          .limit(400);
+      final clubs = List<Map<String, dynamic>>.from(clubsResponse);
+      final clubByRef = <String, Map<String, dynamic>>{};
+
+      for (final club in clubs) {
+        final refs = [
+          club['id'],
+          club['owner_id'],
+          club['user_id'],
+        ];
+        for (final ref in refs) {
+          final key = ref?.toString().trim() ?? '';
+          if (key.isNotEmpty) {
+            clubByRef[key] = club;
+          }
+        }
+      }
+
+      for (final tryout in tryouts) {
+        final clubRef = tryout['club_id']?.toString().trim() ?? '';
+        if (clubRef.isEmpty) continue;
+        final club = clubByRef[clubRef];
+        if (club != null) {
+          tryout['club_data'] = club;
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadSearchPlayerProgress(
+    List<Map<String, dynamic>> players,
+  ) async {
+    final ids = players
+        .map((player) => player['user_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+    if (ids.isEmpty) return;
+
+    final progressByUserId = <String, Map<String, dynamic>>{};
+    try {
+      final progressRows = await SupaFlow.client
+          .from('user_progress')
+          .select('user_id, total_xp, current_level_id')
+          .inFilter('user_id', ids);
+      for (final row in (progressRows as List)) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final uid = map['user_id']?.toString() ?? '';
+        if (uid.isNotEmpty) {
+          progressByUserId[uid] = map;
+        }
+      }
+    } catch (_) {}
+
+    for (final player in players) {
+      final uid = player['user_id']?.toString() ?? '';
+      final progress = progressByUserId[uid] ?? const <String, dynamic>{};
+      final totalXp = GamificationService.toInt(progress['total_xp']);
+      player['user_progress'] = progress;
+      player['total_xp'] = totalXp;
+      player['level_name'] = GamificationService.levelNameFromPoints(totalXp);
     }
   }
 
@@ -502,57 +754,42 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     Map<String, Map<String, dynamic>> usersMap,
     List<Map<String, dynamic>> postulaciones,
   ) async {
-    final suggestedIds = <String>[];
-
-    final applicants = postulaciones
+    final excludedIds = postulaciones
         .map(_postulacionPlayerId)
         .where((id) => id.isNotEmpty)
         .toSet()
-        .toList();
+        .toSet();
 
-    applicants.sort((a, b) {
-      final left = _videoCountByPlayerId[a] ?? 0;
-      final right = _videoCountByPlayerId[b] ?? 0;
-      return right.compareTo(left);
-    });
+    final suggestedPlayers = <Map<String, dynamic>>[];
 
-    for (final id in applicants) {
-      if (!suggestedIds.contains(id)) suggestedIds.add(id);
-    }
+    try {
+      final response = await SupaFlow.client
+          .from('users')
+          .select(
+              'user_id, name, lastname, username, posicion, city, country_id, club, birthday, photo_url, userType, plan_id, full_profile, is_test_account, verification_status, is_verified, created_at')
+          .inFilter('userType',
+              ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
+          .order('created_at', ascending: false)
+          .limit(40);
 
-    if (suggestedIds.length < 12) {
-      try {
-        final fallbackUsersResponse = await SupaFlow.client
-            .from('users')
-            .select()
-            .inFilter('userType',
-                ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
-            .order('created_at', ascending: false)
-            .limit(40);
+      for (final row in (response as List)) {
+        final user = Map<String, dynamic>.from(row);
+        final userId = user['user_id']?.toString() ?? '';
+        if (userId.isEmpty || excludedIds.contains(userId)) continue;
+        if (!_resolveVerification(user, defaultIfMissing: false)) continue;
+        if (!_isProSuggestedPlayer(user)) continue;
 
-        for (final row in (fallbackUsersResponse as List)) {
-          final id = row['user_id']?.toString() ?? '';
-          if (id.isEmpty) continue;
-          usersMap.putIfAbsent(id, () => Map<String, dynamic>.from(row));
-          if (!suggestedIds.contains(id)) {
-            suggestedIds.add(id);
-          }
-          if (suggestedIds.length >= 20) break;
-        }
-      } catch (_) {}
-    }
+        usersMap.putIfAbsent(userId, () => user);
+        suggestedPlayers.add({
+          'user_id': userId,
+          'user_data': usersMap[userId],
+        });
 
-    _suggestedPlayers = suggestedIds
-        .take(12)
-        .map((id) {
-          return {
-            'user_id': id,
-            'user_data': usersMap[id],
-            'video_data': _latestVideoByPlayerId[id],
-          };
-        })
-        .where((row) => row['user_data'] != null)
-        .toList();
+        if (suggestedPlayers.length >= 10) break;
+      }
+    } catch (_) {}
+
+    _suggestedPlayers = suggestedPlayers;
   }
 
   String _postulacionPlayerId(Map<String, dynamic> post) {
@@ -672,6 +909,692 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     } catch (_) {
       return null;
     }
+  }
+
+  String? _firstNonEmpty(Iterable<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
+    }
+    return null;
+  }
+
+  List<String> _extractUniqueStrings(Iterable<dynamic> values) {
+    final set = <String>{};
+    for (final raw in values) {
+      final value = raw?.toString().trim() ?? '';
+      if (value.isNotEmpty && value.toLowerCase() != 'null') {
+        set.add(value);
+      }
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  String _playerCountry(Map<String, dynamic> player) {
+    final direct = _firstNonEmpty([
+      player['pais'],
+      player['country'],
+      player['country_name'],
+    ]);
+    if (direct != null) return direct;
+
+    final rawCountryId = player['country_id'];
+    final countryId = rawCountryId is int
+        ? rawCountryId
+        : int.tryParse(rawCountryId?.toString() ?? '');
+    if (countryId == null) return '';
+    return _countryNameById[countryId] ?? '';
+  }
+
+  String _clubCountry(Map<String, dynamic> club) {
+    return _firstNonEmpty([
+          club['pais'],
+          club['country'],
+          club['country_name'],
+        ]) ??
+        '';
+  }
+
+  String _clubCity(Map<String, dynamic> club) {
+    return _firstNonEmpty([
+          club['city'],
+          club['ciudad'],
+          club['ubicacion'],
+          club['location'],
+        ]) ??
+        '';
+  }
+
+  String _clubLeague(Map<String, dynamic> club) {
+    return _firstNonEmpty([
+          club['liga'],
+          club['league'],
+          club['league_name'],
+        ]) ??
+        '';
+  }
+
+  String _playerPosition(Map<String, dynamic> player) {
+    return _firstNonEmpty([
+          player['posicion'],
+          player['position'],
+        ]) ??
+        'Sin posición';
+  }
+
+  String _playerCategory(Map<String, dynamic> player) {
+    return _firstNonEmpty([
+          player['categoria'],
+          player['category'],
+        ]) ??
+        _categoryFromBirthday(player['birthday'] ?? player['birth_date']);
+  }
+
+  String _playerLevel(Map<String, dynamic> player) {
+    final direct = player['level_name']?.toString().trim() ?? '';
+    if (direct.isNotEmpty) return direct;
+    final totalXp = GamificationService.toInt(player['total_xp']);
+    return GamificationService.levelNameFromPoints(totalXp);
+  }
+
+  String _playerCity(Map<String, dynamic> player) {
+    return _firstNonEmpty([
+          player['city'],
+          player['ciudad'],
+        ]) ??
+        '';
+  }
+
+  String _resolveTryoutClubName(Map<String, dynamic> tryout) {
+    final direct = _firstNonEmpty([
+      tryout['club_name'],
+      tryout['club_nombre'],
+      tryout['nombre_club'],
+      tryout['club'],
+    ]);
+    if (direct != null) return direct;
+
+    final clubData = tryout['club_data'];
+    if (clubData is Map) {
+      return _firstNonEmpty([
+            clubData['nombre'],
+            clubData['name'],
+            clubData['club_name'],
+            clubData['nombre_corto'],
+          ]) ??
+          '';
+    }
+    return '';
+  }
+
+  String _resolveTryoutCategory(Map<String, dynamic> tryout) {
+    final direct = _firstNonEmpty([
+      tryout['categoria'],
+      tryout['category'],
+    ]);
+    if (direct != null) return direct;
+
+    final minAge = tryout['edad_minima'] ?? tryout['edad_min'];
+    final maxAge = tryout['edad_maxima'] ?? tryout['edad_max'];
+    if (minAge != null || maxAge != null) {
+      return '${minAge ?? '-'}-${maxAge ?? '-'}';
+    }
+    return '';
+  }
+
+  String _resolveTryoutPosition(Map<String, dynamic> tryout) {
+    return _firstNonEmpty([
+          tryout['posicion'],
+          tryout['position'],
+          tryout['posição'],
+        ]) ??
+        '';
+  }
+
+  String _resolveTryoutLocation(Map<String, dynamic> tryout) {
+    final direct = _firstNonEmpty([
+      tryout['ubicacion'],
+      tryout['location'],
+      tryout['city'],
+      tryout['ciudad'],
+    ]);
+    if (direct != null) return direct;
+
+    final clubData = tryout['club_data'];
+    if (clubData is Map) {
+      return _clubCity(Map<String, dynamic>.from(clubData));
+    }
+    return '';
+  }
+
+  String _resolveTryoutCountry(Map<String, dynamic> tryout) {
+    final direct = _firstNonEmpty([
+      tryout['pais'],
+      tryout['country'],
+      tryout['country_name'],
+    ]);
+    if (direct != null) return direct;
+
+    final clubData = tryout['club_data'];
+    if (clubData is Map) {
+      return _clubCountry(Map<String, dynamic>.from(clubData));
+    }
+    return '';
+  }
+
+  String _resolveTryoutMode(Map<String, dynamic> tryout) {
+    final virtualFlag = tryout['is_virtual'] == true ||
+        (tryout['virtual']?.toString().toLowerCase() == 'true');
+    final presentialFlag = tryout['is_presencial'] == true ||
+        tryout['is_in_person'] == true ||
+        (tryout['presencial']?.toString().toLowerCase() == 'true');
+    if (virtualFlag && presentialFlag) return 'Híbrida';
+    if (virtualFlag) return 'Virtual';
+    if (presentialFlag) return 'Presencial';
+
+    final raw = _firstNonEmpty([
+          tryout['modalidad'],
+          tryout['modality'],
+          tryout['tipo_modalidad'],
+          tryout['formato'],
+          tryout['format'],
+          tryout['tipo'],
+        ]) ??
+        '';
+    final normalized = raw.toLowerCase();
+    if (normalized.contains('hibr')) return 'Híbrida';
+    if (normalized.contains('virtual') ||
+        normalized.contains('online') ||
+        normalized.contains('remote') ||
+        normalized.contains('remot')) {
+      return 'Virtual';
+    }
+    if (normalized.contains('presencial') ||
+        normalized.contains('in person') ||
+        normalized.contains('presential')) {
+      return 'Presencial';
+    }
+    return 'Presencial';
+  }
+
+  Color _tryoutModeColor(String mode) {
+    switch (mode) {
+      case 'Virtual':
+        return const Color(0xFF0EA5E9);
+      case 'Híbrida':
+        return const Color(0xFF7C3AED);
+      default:
+        return const Color(0xFF16A34A);
+    }
+  }
+
+  int _readPlanId(dynamic rawValue) {
+    if (rawValue is int) return rawValue;
+    return int.tryParse(rawValue?.toString() ?? '') ?? 0;
+  }
+
+  bool _isProSuggestedPlayer(Map<String, dynamic>? user) {
+    if (user == null) return false;
+    final planId = _readPlanId(user['plan_id']);
+    return planId >= 2 ||
+        user['full_profile'] == true ||
+        user['is_test_account'] == true;
+  }
+
+  String _formatRelative(dynamic rawDate) {
+    final parsed =
+        rawDate == null ? null : DateTime.tryParse(rawDate.toString());
+    if (parsed == null) return '';
+    return dateTimeFormat('relative', parsed, locale: 'es');
+  }
+
+  bool get _isSearchMode => _searchQuery.trim().length >= 2;
+
+  List<Map<String, dynamic>> get _filteredSearchPlayers {
+    Iterable<Map<String, dynamic>> filtered = _searchPlayers;
+
+    if (_playerFilterCategory != null) {
+      filtered = filtered.where(
+        (player) => _playerCategory(player).toLowerCase() ==
+            _playerFilterCategory!.toLowerCase(),
+      );
+    }
+    if (_playerFilterPosition != null) {
+      filtered = filtered.where(
+        (player) => _playerPosition(player).toLowerCase() ==
+            _playerFilterPosition!.toLowerCase(),
+      );
+    }
+    if (_playerFilterCountry != null) {
+      filtered = filtered.where(
+        (player) => _playerCountry(player).toLowerCase() ==
+            _playerFilterCountry!.toLowerCase(),
+      );
+    }
+    if (_playerFilterCity != null) {
+      filtered = filtered.where(
+        (player) => _playerCity(player).toLowerCase() ==
+            _playerFilterCity!.toLowerCase(),
+      );
+    }
+    if (_playerFilterLevel != null) {
+      filtered = filtered.where(
+        (player) => _playerLevel(player).toLowerCase() ==
+            _playerFilterLevel!.toLowerCase(),
+      );
+    }
+
+    return filtered.toList();
+  }
+
+  List<Map<String, dynamic>> get _filteredSearchClubs {
+    Iterable<Map<String, dynamic>> filtered = _searchClubs;
+
+    if (_clubFilterCountry != null) {
+      filtered = filtered.where(
+        (club) => _clubCountry(club).toLowerCase() ==
+            _clubFilterCountry!.toLowerCase(),
+      );
+    }
+    if (_clubFilterCity != null) {
+      filtered = filtered.where(
+        (club) =>
+            _clubCity(club).toLowerCase() == _clubFilterCity!.toLowerCase(),
+      );
+    }
+    if (_clubFilterLeague != null) {
+      filtered = filtered.where(
+        (club) => _clubLeague(club).toLowerCase() ==
+            _clubFilterLeague!.toLowerCase(),
+      );
+    }
+
+    return filtered.toList();
+  }
+
+  List<Map<String, dynamic>> get _filteredSearchTryouts {
+    Iterable<Map<String, dynamic>> filtered = _searchTryouts;
+
+    if (_tryoutFilterCategory != null) {
+      filtered = filtered.where(
+        (tryout) => _resolveTryoutCategory(tryout).toLowerCase() ==
+            _tryoutFilterCategory!.toLowerCase(),
+      );
+    }
+    if (_tryoutFilterPosition != null) {
+      filtered = filtered.where(
+        (tryout) => _resolveTryoutPosition(tryout).toLowerCase() ==
+            _tryoutFilterPosition!.toLowerCase(),
+      );
+    }
+    if (_tryoutFilterCountry != null) {
+      filtered = filtered.where(
+        (tryout) => _resolveTryoutCountry(tryout).toLowerCase() ==
+            _tryoutFilterCountry!.toLowerCase(),
+      );
+    }
+
+    return filtered.toList();
+  }
+
+  int get _searchResultsCount {
+    switch (_homeScope) {
+      case 'clubes':
+        return _filteredSearchClubs.length;
+      case 'tryouts':
+        return _filteredSearchTryouts.length;
+      default:
+        return _filteredSearchPlayers.length;
+    }
+  }
+
+  void _openPublicClubProfile(Map<String, dynamic> club) {
+    final clubRef = _clubRefFromMap(club);
+    if (clubRef.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PerfilPublicoClubWidget(
+          clubRef: clubRef,
+          initialClubData: Map<String, dynamic>.from(club),
+        ),
+      ),
+    );
+  }
+
+  void _openSearchMode() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DashboardClubWidget(
+          searchOnly: true,
+          initialSearchQuery: _searchController.text.trim(),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleSavePlayer(Map<String, dynamic> player) async {
+    if (_savingPlayerId != null) return;
+    if (!_canUseSensitiveActions) {
+      _showUpsellDialog();
+      return;
+    }
+
+    final playerId = player['user_id']?.toString() ?? '';
+    if (playerId.isEmpty || currentUserUid.isEmpty) return;
+
+    setState(() => _savingPlayerId = playerId);
+    try {
+      if (_savedPlayerIds.contains(playerId)) {
+        try {
+          await SupaFlow.client
+              .from('jugadores_guardados')
+              .delete()
+              .eq('club_id', currentUserUid)
+              .eq('jugador_id', playerId);
+        } catch (_) {}
+        try {
+          await SupaFlow.client
+              .from('jugadores_guardados')
+              .delete()
+              .eq('scout_id', currentUserUid)
+              .eq('jugador_id', playerId);
+        } catch (_) {}
+        _savedPlayerIds.remove(playerId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Jugador removido de guardados')),
+          );
+        }
+      } else {
+        try {
+          await SupaFlow.client.from('jugadores_guardados').insert({
+            'club_id': currentUserUid,
+            'jugador_id': playerId,
+          });
+        } catch (_) {
+          await SupaFlow.client.from('jugadores_guardados').insert({
+            'scout_id': currentUserUid,
+            'jugador_id': playerId,
+          });
+        }
+        _savedPlayerIds.add(playerId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Jugador guardado para seguimiento')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo guardar el jugador: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _savingPlayerId = null);
+      }
+    }
+  }
+
+  Future<void> _invitePlayerToConvocatoria({
+    required Map<String, dynamic> player,
+    required Map<String, dynamic> convocatoria,
+  }) async {
+    if (_invitingPlayerId != null) return;
+    if (!_canUseSensitiveActions) {
+      _showUpsellDialog();
+      return;
+    }
+
+    final playerId = player['user_id']?.toString() ?? '';
+    final convocatoriaId = convocatoria['id']?.toString() ?? '';
+    if (playerId.isEmpty || convocatoriaId.isEmpty) return;
+
+    setState(() => _invitingPlayerId = playerId);
+    try {
+      bool saved = false;
+
+      try {
+        final existing = await SupaFlow.client
+            .from('aplicaciones_convocatoria')
+            .select('id')
+            .eq('convocatoria_id', convocatoriaId)
+            .eq('jugador_id', playerId)
+            .maybeSingle();
+
+        if (existing != null) {
+          await SupaFlow.client.from('aplicaciones_convocatoria').update({
+            'estado': 'invitar_prueba',
+            'mensaje': 'Invitación enviada por el club',
+          }).eq('id', existing['id']);
+        } else {
+          await SupaFlow.client.from('aplicaciones_convocatoria').insert({
+            'convocatoria_id': convocatoriaId,
+            'jugador_id': playerId,
+            'estado': 'invitar_prueba',
+            'mensaje': 'Invitación enviada por el club',
+          });
+        }
+        saved = true;
+      } catch (_) {}
+
+      if (!saved) {
+        final existing = await SupaFlow.client
+            .from('postulaciones')
+            .select('id')
+            .eq('convocatoria_id', convocatoriaId)
+            .eq('player_id', playerId)
+            .maybeSingle();
+        if (existing != null) {
+          await SupaFlow.client.from('postulaciones').update({
+            'estado': 'invitar_prueba',
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('id', existing['id']);
+        } else {
+          await SupaFlow.client.from('postulaciones').insert({
+            'convocatoria_id': convocatoriaId,
+            'player_id': playerId,
+            'estado': 'invitar_prueba',
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        }
+      }
+
+      await ActivityNotificationsService.notifyPlayerApplicationStatusUpdated(
+        playerId: playerId,
+        convocatoriaId: convocatoriaId,
+        convocatoriaTitle:
+            convocatoria['titulo']?.toString() ?? 'Convocatoria',
+        clubName: _clubName ?? 'Club',
+        status: 'invitar_prueba',
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invitación enviada a la convocatoria'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo invitar al jugador: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _invitingPlayerId = null);
+      }
+    }
+  }
+
+  void _showInviteToConvocatoriaSheet(Map<String, dynamic> player) {
+    if (_activeConvocatorias.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Crea una convocatoria activa antes de invitar jugadores'),
+        ),
+      );
+      return;
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.72,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 48,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFCBD5E1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Invitar a convocatoria',
+                        style: GoogleFonts.inter(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Elegí una convocatoria propia para invitar al jugador.',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+              ),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                  itemCount: _activeConvocatorias.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, index) {
+                    final convocatoria = _activeConvocatorias[index];
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => _invitePlayerToConvocatoria(
+                        player: player,
+                        convocatoria: convocatoria,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F0FE),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.campaign_outlined,
+                                color: Color(0xFF0D3B66),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    convocatoria['titulo']?.toString() ??
+                                        'Convocatoria',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    [
+                                      _resolveTryoutCategory(convocatoria),
+                                      _resolveTryoutPosition(convocatoria),
+                                      _resolveTryoutLocation(convocatoria),
+                                    ]
+                                        .where((item) => item.trim().isNotEmpty)
+                                        .join(' • '),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_invitingPlayerId ==
+                                (player['user_id']?.toString() ?? ''))
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            else
+                              const Icon(
+                                Icons.chevron_right_rounded,
+                                color: Color(0xFF94A3B8),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _updatePipelineStatus(
@@ -1330,6 +2253,19 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final Widget content = _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : _errorMessage != null
+            ? _buildErrorState()
+            : RefreshIndicator(
+                onRefresh: _loadData,
+                child: SafeArea(
+                  child: widget.searchOnly
+                      ? _buildSearchModeBody()
+                      : _buildDashboardBody(),
+                ),
+              );
+
     return GestureDetector(
       onTap: () {
         FocusScope.of(context).unfocus();
@@ -1338,91 +2274,130 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       child: Scaffold(
         key: scaffoldKey,
         backgroundColor: Colors.white,
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _errorMessage != null
-                ? _buildErrorState()
-                : RefreshIndicator(
-                    onRefresh: _loadData,
-                    child: SafeArea(
-                      child: ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-                        children: [
-                          Row(
-                            children: [
-                              IconButton(
-                                onPressed: () => _openClubMenu(context),
-                                icon: const Icon(Icons.menu),
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  'Início',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 30,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Padding(
-                            padding:
-                                const EdgeInsets.only(left: 12, bottom: 14),
-                            child: Text(
-                              'Gestão de talento de ${_clubName ?? 'tu club'} a partir de convocatórias e pipeline.',
-                              style: GoogleFonts.inter(
-                                color: const Color(0xFF4A5568),
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                          _buildSearchBar(),
-                          const SizedBox(height: 10),
-                          _buildHomeScopeTabs(),
-                          const SizedBox(height: 16),
-                          if (_searchQuery.trim().length >= 2 ||
-                              _homeScope != 'jugadores') ...[
-                            _buildSectionHeader(
-                              title: _homeScope == 'jugadores'
-                                  ? 'Resultados de jugadores'
-                                  : _homeScope == 'clubes'
-                                      ? 'Resultados de clubes'
-                                      : 'Resultados de tryouts',
-                            ),
-                            _buildSearchResultsSection(),
-                          ] else ...[
-                            _buildSectionHeader(
-                              title: 'Necesidades activas',
-                              trailing: OutlinedButton.icon(
-                                onPressed: () => context.pushNamed(
-                                  ConvocatoriasClubWidget.routeName,
-                                ),
-                                icon: const Icon(Icons.add, size: 18),
-                                label: const Text('Mis necesidades'),
-                              ),
-                            ),
-                            _buildActiveConvocatoriasSection(),
-                            const SizedBox(height: 18),
-                            _buildSectionHeader(
-                                title: 'Postulaciones recientes'),
-                            _buildRecentPostulacionesSection(),
-                            const SizedBox(height: 18),
-                            _buildSectionHeader(
-                                title: 'Candidatos nuevos verificados'),
-                            _buildSuggestedPlayersSection(),
-                            const SizedBox(height: 18),
-                            _buildSectionHeader(
-                              title: 'Pipeline',
-                            ),
-                            _buildPipelineSection(),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
+        body: content,
       ),
+    );
+  }
+
+  Widget _buildDashboardBody() {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+      children: [
+        Row(
+          children: [
+            IconButton(
+              onPressed: () => _openClubMenu(context),
+              icon: const Icon(Icons.menu),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Início',
+                style: GoogleFonts.inter(
+                  fontSize: 30,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 12, bottom: 14),
+          child: Text(
+            'Gestão de talento de ${_clubName ?? 'tu club'} a partir de convocatórias e seguimento de candidatos.',
+            style: GoogleFonts.inter(
+              color: const Color(0xFF4A5568),
+              fontSize: 13,
+            ),
+          ),
+        ),
+        _buildSearchBar(),
+        const SizedBox(height: 16),
+        _buildSectionHeader(
+          title: 'Convocatórias ativas',
+          trailing: OutlinedButton.icon(
+            onPressed: () => context.pushNamed(
+              ConvocatoriasClubWidget.routeName,
+            ),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Mis convocatórias'),
+          ),
+        ),
+        _buildActiveConvocatoriasSection(),
+        const SizedBox(height: 18),
+        _buildSectionHeader(title: 'Postulações recentes'),
+        _buildRecentPostulacionesSection(),
+        const SizedBox(height: 18),
+        _buildSectionHeader(title: 'Jogadores novos verificados'),
+        _buildSuggestedPlayersSection(),
+        const SizedBox(height: 18),
+        _buildSectionHeader(title: 'Seguimento de candidatos'),
+        _buildPipelineSection(),
+      ],
+    );
+  }
+
+  Widget _buildSearchModeBody() {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+      children: [
+        Row(
+          children: [
+            IconButton(
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Buscar',
+                style: GoogleFonts.inter(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 12, bottom: 14),
+          child: Text(
+            'Buscá jugadores, clubes y convocatorias sin mezclar resultados con el dashboard.',
+            style: GoogleFonts.inter(
+              color: const Color(0xFF4A5568),
+              fontSize: 13,
+            ),
+          ),
+        ),
+        _buildSearchBar(),
+        if (_isSearchMode) ...[
+          const SizedBox(height: 10),
+          _buildHomeScopeTabs(),
+          const SizedBox(height: 16),
+          _buildSectionHeader(
+            title: _homeScope == 'jugadores'
+                ? 'Resultados de jugadores'
+                : _homeScope == 'clubes'
+                    ? 'Resultados de clubes'
+                    : 'Resultados de convocatorias',
+          ),
+          _buildSearchFilters(),
+          const SizedBox(height: 10),
+          _buildSearchResultsCounter(),
+          const SizedBox(height: 10),
+          _buildSearchResultsSection(),
+        ] else ...[
+          const SizedBox(height: 18),
+          _buildInlineStatus(
+            icon: Icons.search_rounded,
+            title: 'Empezá una búsqueda',
+            subtitle:
+                'Escribí al menos 2 letras para ver resultados en Jugadores, Clubes o Convocatorias.',
+          ),
+        ],
+      ],
     );
   }
 
@@ -1483,11 +2458,68 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }
 
   Widget _buildSearchBar() {
-    final hintText = _homeScope == 'clubes'
-        ? 'Buscar club, ciudad...'
-        : _homeScope == 'tryouts'
-            ? 'Buscar tryout, categoría, zona...'
-            : 'Buscar jugador, club, posición, año, ciudad...';
+    final hintText = !widget.searchOnly
+        ? 'Buscar jugador, club o convocatoria...'
+        : _homeScope == 'clubes'
+            ? 'Buscar club, ciudad...'
+            : _homeScope == 'tryouts'
+                ? 'Buscar convocatoria, categoría, posición, país...'
+                : 'Buscar jugador, club, posición, año, ciudad...';
+
+    if (!widget.searchOnly) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: _openSearchMode,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFD8E0EC)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x140D3B66),
+                blurRadius: 14,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF4FB),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.search,
+                  color: Color(0xFF4F6788),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  hintText,
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF94A3B8),
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: Color(0xFF64748B),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
@@ -1521,6 +2553,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           Expanded(
             child: TextField(
               controller: _searchController,
+              autofocus: true,
               decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: hintText,
@@ -1552,7 +2585,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     }
 
     if (_homeScope == 'clubes') {
-      if (_searchClubs.isEmpty) {
+      final clubs = _filteredSearchClubs;
+      if (clubs.isEmpty) {
         return _buildInlineStatus(
           icon: Icons.shield_outlined,
           title: 'Sem resultados',
@@ -1560,24 +2594,26 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         );
       }
       return Column(
-        children: _searchClubs.map(_buildSearchClubCard).toList(),
+        children: clubs.map(_buildSearchClubCard).toList(),
       );
     }
 
     if (_homeScope == 'tryouts') {
-      if (_searchTryouts.isEmpty) {
+      final tryouts = _filteredSearchTryouts;
+      if (tryouts.isEmpty) {
         return _buildInlineStatus(
           icon: Icons.campaign_outlined,
           title: 'Sem resultados',
-          subtitle: 'No se encontraron tryouts para esta búsqueda.',
+          subtitle: 'No se encontraron convocatorias para esta búsqueda.',
         );
       }
       return Column(
-        children: _searchTryouts.map(_buildSearchTryoutCard).toList(),
+        children: tryouts.map(_buildSearchTryoutCard).toList(),
       );
     }
 
-    if (_searchPlayers.isEmpty) {
+    final players = _filteredSearchPlayers;
+    if (players.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.search_off,
         title: 'Sem resultados',
@@ -1586,87 +2622,400 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     }
 
     return Column(
-      children: _searchPlayers.map(_buildSearchPlayerCard).toList(),
+      children: players.map(_buildSearchPlayerCard).toList(),
+    );
+  }
+
+  Widget _buildSearchFilters() {
+    if (_homeScope == 'clubes') {
+      final countries =
+          _extractUniqueStrings(_searchClubs.map((club) => _clubCountry(club)));
+      final cities =
+          _extractUniqueStrings(_searchClubs.map((club) => _clubCity(club)));
+      final leagues =
+          _extractUniqueStrings(_searchClubs.map((club) => _clubLeague(club)));
+
+      return _buildFiltersWrap([
+        _buildFilterPill(
+          label: 'País',
+          value: _clubFilterCountry,
+          options: countries,
+          onSelected: (value) => setState(() => _clubFilterCountry = value),
+        ),
+        _buildFilterPill(
+          label: 'Ciudad',
+          value: _clubFilterCity,
+          options: cities,
+          onSelected: (value) => setState(() => _clubFilterCity = value),
+        ),
+        _buildFilterPill(
+          label: 'Liga',
+          value: _clubFilterLeague,
+          options: leagues,
+          onSelected: (value) => setState(() => _clubFilterLeague = value),
+        ),
+      ]);
+    }
+
+    if (_homeScope == 'tryouts') {
+      final categories = _extractUniqueStrings(
+        _searchTryouts.map((tryout) => _resolveTryoutCategory(tryout)),
+      );
+      final positions = _extractUniqueStrings(
+        _searchTryouts.map((tryout) => _resolveTryoutPosition(tryout)),
+      );
+
+      return _buildFiltersWrap([
+        _buildFilterPill(
+          label: 'Categoría',
+          value: _tryoutFilterCategory,
+          options: categories,
+          onSelected: (value) => setState(() => _tryoutFilterCategory = value),
+        ),
+        _buildFilterPill(
+          label: 'Posición',
+          value: _tryoutFilterPosition,
+          options: positions,
+          onSelected: (value) => setState(() => _tryoutFilterPosition = value),
+        ),
+        _buildFilterPill(
+          label: 'País',
+          value: _tryoutFilterCountry,
+          options: _extractUniqueStrings(
+            _searchTryouts.map((tryout) => _resolveTryoutCountry(tryout)),
+          ),
+          onSelected: (value) => setState(() => _tryoutFilterCountry = value),
+        ),
+      ]);
+    }
+
+    final categories = _extractUniqueStrings(
+      _searchPlayers.map((player) => _playerCategory(player)),
+    );
+    final positions = _extractUniqueStrings(
+      _searchPlayers.map((player) => _playerPosition(player)),
+    );
+    final countries = _extractUniqueStrings(
+      _searchPlayers.map((player) => _playerCountry(player)),
+    );
+    final cities = _extractUniqueStrings(
+      _searchPlayers.map((player) => _playerCity(player)),
+    );
+    final levels = _extractUniqueStrings(
+      _searchPlayers.map((player) => _playerLevel(player)),
+    );
+
+    return _buildFiltersWrap([
+      _buildFilterPill(
+        label: 'Categoría',
+        value: _playerFilterCategory,
+        options: categories,
+        onSelected: (value) => setState(() => _playerFilterCategory = value),
+      ),
+      _buildFilterPill(
+        label: 'Posición',
+        value: _playerFilterPosition,
+        options: positions,
+        onSelected: (value) => setState(() => _playerFilterPosition = value),
+      ),
+      _buildFilterPill(
+        label: 'País',
+        value: _playerFilterCountry,
+        options: countries,
+        onSelected: (value) => setState(() => _playerFilterCountry = value),
+      ),
+      _buildFilterPill(
+        label: 'Ciudad',
+        value: _playerFilterCity,
+        options: cities,
+        onSelected: (value) => setState(() => _playerFilterCity = value),
+      ),
+      _buildFilterPill(
+        label: 'Nivel',
+        value: _playerFilterLevel,
+        options: levels,
+        onSelected: (value) => setState(() => _playerFilterLevel = value),
+      ),
+    ]);
+  }
+
+  Widget _buildFiltersWrap(List<Widget> children) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: children
+            .expand((widget) => [widget, const SizedBox(width: 8)])
+            .toList()
+          ..removeLast(),
+      ),
+    );
+  }
+
+  Widget _buildFilterPill({
+    required String label,
+    required String? value,
+    required List<String> options,
+    required ValueChanged<String?> onSelected,
+  }) {
+    final hasOptions = options.isNotEmpty;
+    final display = value == null || value.isEmpty ? label : '$label: $value';
+
+    return PopupMenuButton<String>(
+      enabled: hasOptions || value != null,
+      onSelected: (raw) {
+        onSelected(raw == '__all__' ? null : raw);
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem<String>(
+          value: '__all__',
+          child: Text('Todos'),
+        ),
+        ...options.map(
+          (option) => PopupMenuItem<String>(
+            value: option,
+            child: Text(option),
+          ),
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: value != null ? const Color(0xFF0D3B66) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color:
+                value != null ? const Color(0xFF0D3B66) : const Color(0xFFD8E2EF),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              display,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color:
+                    value != null ? Colors.white : const Color(0xFF334155),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 18,
+              color: value != null ? Colors.white : const Color(0xFF64748B),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchResultsCounter() {
+    return Text(
+      '$_searchResultsCount resultados encontrados',
+      style: GoogleFonts.inter(
+        fontSize: 13,
+        color: const Color(0xFF64748B),
+        fontWeight: FontWeight.w600,
+      ),
     );
   }
 
   Widget _buildSearchPlayerCard(Map<String, dynamic> player) {
     final userId = player['user_id']?.toString() ?? '';
     final name = '${player['name'] ?? ''} ${player['lastname'] ?? ''}'.trim();
-    final position = player['posicion']?.toString() ?? 'Sin posición';
-    final city = player['city']?.toString() ?? 'Sin ubicación';
+    final category = _playerCategory(player);
+    final position = _playerPosition(player);
+    final country = _playerCountry(player);
+    final city = _playerCity(player);
     final club = player['club']?.toString() ?? '';
     final latestVideo = player['latest_video'] as Map<String, dynamic>?;
     final hasVideo = (player['video_count'] as int? ?? 0) > 0;
+    final mediaUrl = latestVideo?['thumbnail_url']?.toString().trim() ?? '';
+    final photoUrl = player['photo_url']?.toString().trim() ?? '';
+    final isSaved = _savedPlayerIds.contains(userId);
+    final isSaving = _savingPlayerId == userId;
+    final isInviting = _invitingPlayerId == userId;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x120D3B66),
+            blurRadius: 16,
+            offset: Offset(0, 6),
+          ),
+        ],
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: const Color(0xFFE8F0FE),
-            backgroundImage:
-                (player['photo_url']?.toString().isNotEmpty ?? false)
-                    ? NetworkImage(player['photo_url'])
-                    : null,
-            child: (player['photo_url']?.toString().isNotEmpty ?? false)
-                ? null
-                : const Icon(Icons.person, color: Color(0xFF0D3B66)),
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            child: Container(
+              height: 170,
+              width: double.infinity,
+              color: const Color(0xFFEAF1FC),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (mediaUrl.isNotEmpty)
+                    Image.network(
+                      mediaUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    )
+                  else if (photoUrl.isNotEmpty)
+                    Image.network(
+                      photoUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    )
+                  else
+                    const Icon(
+                      Icons.person_outline,
+                      size: 62,
+                      color: Color(0xFF0D3B66),
+                    ),
+                  if (hasVideo)
+                    Align(
+                      alignment: Alignment.center,
+                      child: Container(
+                        width: 54,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.36),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: 32,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
+          Padding(
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   name.isNotEmpty ? name : 'Jugador',
                   style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1A202C),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF0F172A),
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  [position, if (club.isNotEmpty) club, city].join(' • '),
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: const Color(0xFF64748B),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    OutlinedButton(
-                      onPressed: userId.isEmpty
-                          ? null
-                          : () {
-                              context.pushNamed(
-                                'perfil_profesional_solicitar_Contato',
-                                queryParameters: {'userId': userId},
-                              );
-                            },
-                      child: const Text('Ver perfil'),
+                    _metaChip('Categoría: $category'),
+                    _metaChip('Posición: $position'),
+                    _metaChip('País: ${country.isNotEmpty ? country : 'N/A'}'),
+                    if (city.isNotEmpty) _metaChip(city),
+                  ],
+                ),
+                if (club.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    club,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: const Color(0xFF64748B),
+                      fontWeight: FontWeight.w600,
                     ),
-                    OutlinedButton(
-                      onPressed:
-                          hasVideo ? () => _openPlayerVideo(latestVideo) : null,
-                      child: const Text('Ver vídeo'),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: userId.isEmpty
+                            ? null
+                            : () {
+                                context.pushNamed(
+                                  'perfil_profesional_solicitar_Contato',
+                                  queryParameters: {'userId': userId},
+                                );
+                              },
+                        child: const Text('Ver perfil'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed:
+                            isSaving ? null : () => _toggleSavePlayer(player),
+                        icon: isSaving
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Icon(
+                                isSaved
+                                    ? Icons.bookmark_rounded
+                                    : Icons.bookmark_border_rounded,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                        label: Text(
+                          isSaved ? 'Guardado' : 'Salvar jugador',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isSaved
+                              ? const Color(0xFF16A34A)
+                              : const Color(0xFF0D3B66),
+                        ),
+                      ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: isInviting
+                          ? null
+                          : () => _showInviteToConvocatoriaSheet(player),
+                    icon: isInviting
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.campaign_outlined, size: 18),
+                    label: const Text('Invitar a convocatoria'),
+                  ),
+                ),
+                if (hasVideo) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => _openPlayerVideo(latestVideo),
+                      icon: const Icon(Icons.play_circle_outline),
+                      label: const Text('Ver preview'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1678,19 +3027,30 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   Widget _buildSearchClubCard(Map<String, dynamic> club) {
     final name = (club['nombre'] ?? club['name'] ?? club['club_name'] ?? 'Club')
         .toString();
-    final city =
-        (club['city'] ?? club['ubicacion'] ?? 'Sin ubicación').toString();
+    final country = _clubCountry(club);
+    final city = _clubCity(club);
+    final league = _clubLeague(club);
     final logo =
         (club['logo_url'] ?? club['photo_url'] ?? club['avatar_url'] ?? '')
             .toString();
 
-    return Container(
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => _openPublicClubProfile(club),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x100D3B66),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -1710,46 +3070,62 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                 Text(
                   name,
                   style: GoogleFonts.inter(
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF1A202C),
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  city,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: const Color(0xFF64748B),
-                  ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    if (country.isNotEmpty) _metaChip('País: $country'),
+                    if (league.isNotEmpty) _metaChip('Liga: $league'),
+                    if (city.isNotEmpty) _metaChip(city),
+                  ],
                 ),
               ],
             ),
           ),
+          const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildSearchTryoutCard(Map<String, dynamic> tryout) {
     final title = (tryout['titulo'] ?? tryout['title'] ?? 'Tryout').toString();
-    final zone =
-        (tryout['ubicacion'] ?? tryout['location'] ?? 'Sin zona').toString();
+    final zone = _resolveTryoutLocation(tryout);
     final desc = (tryout['descripcion'] ?? tryout['description'] ?? '')
         .toString()
         .trim();
-    final minAge = tryout['edad_minima'] ?? tryout['edad_min'];
-    final maxAge = tryout['edad_maxima'] ?? tryout['edad_max'];
-    final ageLabel = (minAge != null || maxAge != null)
-        ? '${minAge ?? '-'}-${maxAge ?? '-'}'
-        : 'N/A';
+    final clubName = _resolveTryoutClubName(tryout);
+    final category = _resolveTryoutCategory(tryout);
+    final position = _resolveTryoutPosition(tryout);
+    final mode = _resolveTryoutMode(tryout);
+    final clubData = tryout['club_data'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(tryout['club_data'] as Map)
+        : null;
+    final clubTarget = clubData ??
+        {
+          'id': tryout['club_id'],
+          'club_name': clubName,
+        };
 
-    return Container(
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () {
+        if (_clubRefFromMap(clubTarget).isNotEmpty) {
+          _openPublicClubProfile(clubTarget);
+        }
+      },
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFDDE4EF)),
         boxShadow: const [
           BoxShadow(
@@ -1782,16 +3158,42 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                 child: Text(
                   title,
                   style: GoogleFonts.inter(
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.w800,
                     color: const Color(0xFF1A202C),
                     height: 1.15,
                   ),
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _tryoutModeColor(mode).withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  mode,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: _tryoutModeColor(mode),
+                  ),
+                ),
+              ),
             ],
           ),
+          if (clubName.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              clubName,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF0D3B66),
+              ),
+            ),
+          ],
           if (desc.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
@@ -1809,13 +3211,14 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             spacing: 8,
             runSpacing: 6,
             children: [
-              _metaChip('Zona: $zone'),
-              _metaChip('Categoria: $ageLabel'),
+              if (category.isNotEmpty) _metaChip('Categoría: $category'),
+              if (position.isNotEmpty) _metaChip('Posición: $position'),
+              if (zone.isNotEmpty) _metaChip('Ubicación: $zone'),
             ],
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildHomeScopeTabs() {
@@ -1842,7 +3245,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           const SizedBox(width: 6),
           Expanded(
               child: _homeScopeChip(
-                  label: 'Tryouts',
+                  label: 'Convocatorias',
                   value: 'tryouts',
                   icon: Icons.campaign_outlined)),
         ],
@@ -1914,73 +3317,124 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       );
     }
 
-    return Column(
-      children: _activeConvocatorias.map((conv) {
-        final title = conv['titulo']?.toString() ?? 'Convocatoria';
-        final zone = conv['ubicacion']?.toString() ?? 'Sin zona';
-        final minAge = conv['edad_minima'] ?? conv['edad_min'];
-        final maxAge = conv['edad_maxima'] ?? conv['edad_max'];
-        final category = (minAge != null || maxAge != null)
-            ? '${minAge ?? '-'}-${maxAge ?? '-'}'
-            : 'N/A';
-        final postulaciones = conv['postulaciones_count'] ?? 0;
-        final saved = conv['saved_count'] ?? 0;
+    final previewItems = _activeConvocatorias.take(3).toList();
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                  color: const Color(0xFF1A202C),
+    return SizedBox(
+      height: 208,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: previewItems.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, index) {
+          final conv = previewItems[index];
+          final title = conv['titulo']?.toString() ?? 'Convocatoria';
+          final zone = conv['ubicacion']?.toString() ?? 'Sin zona';
+          final minAge = conv['edad_minima'] ?? conv['edad_min'];
+          final maxAge = conv['edad_maxima'] ?? conv['edad_max'];
+          final category = (minAge != null || maxAge != null)
+              ? '${minAge ?? '-'}-${maxAge ?? '-'}'
+              : 'N/A';
+          final postulaciones = conv['postulaciones_count'] ?? 0;
+          final saved = conv['saved_count'] ?? 0;
+
+          return Container(
+            width: 286,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F0FE),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        'Activa',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0D3B66),
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${index + 1}/${previewItems.length}',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  _metaChip('Zona: $zone'),
-                  _metaChip('Categoria: $category'),
-                  _metaChip('Nº postulações: $postulaciones'),
-                  _metaChip('Nº jogadores salvos: $saved'),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  ElevatedButton(
-                    onPressed: () => _showCandidatesSheet(conv),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0D3B66),
-                    ),
-                    child: const Text(
-                      'Ver candidatos',
-                      style: TextStyle(color: Colors.white),
-                    ),
+                const SizedBox(height: 10),
+                Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: const Color(0xFF1A202C),
                   ),
-                  const SizedBox(width: 8),
-                  OutlinedButton(
-                    onPressed: () =>
-                        context.pushNamed(PostulacionesWidget.routeName),
-                    child: const Text('Abrir Postulações'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      }).toList(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    _metaChip('Zona: $zone'),
+                    _metaChip('Categoria: $category'),
+                    _metaChip('Nº postulações: $postulaciones'),
+                    _metaChip('En seguimiento: $saved'),
+                  ],
+                ),
+                const Spacer(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _showCandidatesSheet(conv),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D3B66),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                        ),
+                        child: const Text(
+                          'Ver candidatos',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () =>
+                            context.pushNamed(PostulacionesWidget.routeName),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                        ),
+                        child: const Text('Postulações'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -1993,20 +3447,123 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       );
     }
 
-    return SizedBox(
-      height: 298,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _recentPostulaciones.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (_, index) {
-          final post = _recentPostulaciones[index];
-          return SizedBox(
-            width: 330,
-            child: _buildPostulacionCard(post, compact: true),
-          );
-        },
-      ),
+    final items = _recentPostulaciones.take(4).toList();
+
+    return Column(
+      children: items
+          .map(
+            (post) => Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  final playerId = _postulacionPlayerId(post);
+                  if (playerId.isEmpty) {
+                    context.pushNamed(PostulacionesWidget.routeName);
+                    return;
+                  }
+                  context.pushNamed(
+                    'perfil_profesional_solicitar_Contato',
+                    queryParameters: {'userId': playerId},
+                  );
+                },
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 22,
+                      backgroundColor: const Color(0xFFE8F0FE),
+                      backgroundImage:
+                          (post['player_data']?['photo_url']?.toString().isNotEmpty ??
+                                  false)
+                              ? NetworkImage(post['player_data']['photo_url'])
+                              : null,
+                      child: (post['player_data']?['photo_url']
+                                  ?.toString()
+                                  .isNotEmpty ??
+                              false)
+                          ? null
+                          : const Icon(
+                              Icons.person_outline,
+                              color: Color(0xFF0D3B66),
+                            ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${post['player_data']?['name'] ?? ''} ${post['player_data']?['lastname'] ?? ''}'
+                                    .trim()
+                                    .isEmpty
+                                ? 'Jugador'
+                                : '${post['player_data']?['name'] ?? ''} ${post['player_data']?['lastname'] ?? ''}'
+                                    .trim(),
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF1A202C),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            post['convocatoria_titulo']?.toString() ??
+                                'Convocatoria',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: const Color(0xFF475569),
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _formatRelative(post['created_at']).isEmpty
+                                ? 'Ahora'
+                                : _formatRelative(post['created_at']),
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: const Color(0xFF94A3B8),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        _pipelineLabel(post['estado']?.toString() ?? ''),
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0D3B66),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+          .toList(),
     );
   }
 
@@ -2218,14 +3775,14 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   Widget _buildSuggestedPlayersSection() {
     if (_suggestedPlayers.isEmpty) {
       return _buildInlineStatus(
-        icon: Icons.videocam_outlined,
+        icon: Icons.workspace_premium_outlined,
         title: 'Sem resultados',
-        subtitle: 'No hay sugerencias por zona/categoría todavía.',
+        subtitle: 'Todavía no hay jugadores Pro recientes para recomendar.',
       );
     }
 
     return SizedBox(
-      height: 234,
+      height: 196,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _suggestedPlayers.length,
@@ -2233,76 +3790,80 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         itemBuilder: (_, index) {
           final row = _suggestedPlayers[index];
           final user = row['user_data'] as Map<String, dynamic>;
-          final video = row['video_data'] as Map<String, dynamic>?;
           final userId = row['user_id']?.toString() ?? '';
           final name = '${user['name'] ?? ''} ${user['lastname'] ?? ''}'.trim();
           final category = _categoryFromBirthday(user['birthday']);
           final position = user['posicion']?.toString() ?? 'Sin posición';
+          final city = user['city']?.toString() ?? '';
 
           return Container(
-            width: 210,
+            width: 230,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(12)),
-                  child: Container(
-                    height: 110,
-                    color: const Color(0xFF102A43),
-                    child: (video?['thumbnail_url']?.toString().isNotEmpty ??
-                            false)
-                        ? Image.network(
-                            video!['thumbnail_url'],
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            errorBuilder: (_, __, ___) => const Center(
-                              child: Icon(
-                                Icons.play_circle_outline,
-                                color: Colors.white,
-                                size: 34,
-                              ),
-                            ),
-                          )
-                        : const Center(
-                            child: Icon(
-                              Icons.play_circle_outline,
-                              color: Colors.white,
-                              size: 34,
-                            ),
-                          ),
-                  ),
-                ),
                 Padding(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        name.isNotEmpty ? name : 'Jugador',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                        ),
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 22,
+                            backgroundColor: const Color(0xFFE8F0FE),
+                            backgroundImage:
+                                (user['photo_url']?.toString().isNotEmpty ??
+                                        false)
+                                    ? NetworkImage(user['photo_url'])
+                                    : null,
+                            child: (user['photo_url']?.toString().isNotEmpty ??
+                                    false)
+                                ? null
+                                : const Icon(
+                                    Icons.person_outline,
+                                    color: Color(0xFF0D3B66),
+                                  ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              name.isNotEmpty ? name : 'Jugador',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          _metaChip('Plan Pro'),
+                          _metaChip('Verificado'),
+                          _metaChip(category),
+                          _metaChip(position),
+                          if (city.isNotEmpty) _metaChip(city),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
                       Text(
-                        '$category • $position',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        'Recomendación ligera para seguimiento reciente.',
                         style: GoogleFonts.inter(
-                          color: const Color(0xFF718096),
+                          color: const Color(0xFF64748B),
                           fontSize: 12,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
@@ -2316,10 +3877,10 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                                 },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0D3B66),
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           child: const Text(
-                            'Ver',
+                            'Ver perfil',
                             style: TextStyle(color: Colors.white),
                           ),
                         ),
@@ -2340,7 +3901,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       return _buildInlineStatus(
         icon: Icons.alt_route,
         title: 'Sem resultados',
-        subtitle: 'El pipeline aparecerá cuando existan convocatorias activas.',
+        subtitle:
+            'El seguimiento aparecerá cuando existan convocatorias activas.',
       );
     }
 
@@ -2353,13 +3915,17 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               'saved': 0,
               'interest': 0,
             };
+        final postulated = stats['postulated'] ?? 0;
+        final saved = stats['saved'] ?? 0;
+        final interest = stats['interest'] ?? 0;
+        final total = max(postulated, 1);
 
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
           child: Column(
@@ -2374,32 +3940,36 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                 ),
               ),
               const SizedBox(height: 10),
+              _pipelineProgressBar(
+                total: total,
+                postulated: postulated,
+                saved: saved,
+                interest: interest,
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
-                    child: _pipelineMetric(
+                    child: _seguimientoMetric(
                       'Postulados',
-                      (stats['postulated'] ?? 0).toString(),
+                      postulated.toString(),
+                      const Color(0xFFCBD5E1),
                     ),
                   ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: Icon(Icons.arrow_forward, color: Color(0xFF718096)),
-                  ),
+                  const SizedBox(width: 8),
                   Expanded(
-                    child: _pipelineMetric(
-                      'Salvos',
-                      (stats['saved'] ?? 0).toString(),
+                    child: _seguimientoMetric(
+                      'Guardados',
+                      saved.toString(),
+                      const Color(0xFF0D3B66),
                     ),
                   ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: Icon(Icons.arrow_forward, color: Color(0xFF718096)),
-                  ),
+                  const SizedBox(width: 8),
                   Expanded(
-                    child: _pipelineMetric(
-                      'Interesse iniciado',
-                      (stats['interest'] ?? 0).toString(),
+                    child: _seguimientoMetric(
+                      'En acción',
+                      interest.toString(),
+                      const Color(0xFF22C55E),
                     ),
                   ),
                 ],
@@ -2411,19 +3981,72 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     );
   }
 
-  Widget _pipelineMetric(String label, String value) {
+  Widget _pipelineProgressBar({
+    required int total,
+    required int postulated,
+    required int saved,
+    required int interest,
+  }) {
+    final pendingFlex = max(postulated - saved, 0);
+    final savedFlex = max(saved - interest, 0);
+    final interestFlex = max(interest, 0);
+    final safeTotal = max(pendingFlex + savedFlex + interestFlex, max(total, 1));
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: SizedBox(
+        height: 10,
+        child: Row(
+          children: [
+            if (pendingFlex > 0)
+              Expanded(
+                flex: pendingFlex,
+                child: Container(color: const Color(0xFFCBD5E1)),
+              ),
+            if (savedFlex > 0)
+              Expanded(
+                flex: savedFlex,
+                child: Container(color: const Color(0xFF0D3B66)),
+              ),
+            if (interestFlex > 0)
+              Expanded(
+                flex: interestFlex,
+                child: Container(color: const Color(0xFF22C55E)),
+              ),
+            if (savedFlex + interestFlex < safeTotal)
+              Expanded(
+                flex: safeTotal - savedFlex - interestFlex,
+                child: Container(color: Colors.transparent),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _seguimientoMetric(String label, String value, Color accentColor) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accentColor.withValues(alpha: 0.18)),
       ),
       child: Column(
         children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: accentColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(height: 6),
           Text(
             value,
             style: GoogleFonts.inter(
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
               color: const Color(0xFF0D3B66),
             ),

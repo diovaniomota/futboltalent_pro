@@ -956,10 +956,6 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           _buildSocialButton(
               context, 'Registrarse con Apple', Icons.apple, buttonWidth,
               onPressed: () => _signInWithProvider(OAuthProvider.apple)),
-          SizedBox(height: 10 * scale),
-          _buildSocialButton(
-              context, 'Registrarse con TikTok', Icons.tiktok, buttonWidth,
-              onPressed: () => _showSnackBar('TikTok login próximamente')),
           SizedBox(height: 40 * scale),
           _buildPrimaryButton(
             context: context,

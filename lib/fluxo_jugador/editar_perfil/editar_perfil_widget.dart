@@ -971,65 +971,17 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                   focusNode: _usernameFocusNode,
                   hintText: 'Usuario',
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 20.0),
-                  child: GestureDetector(
-                    onTap: () {
-                      debugPrint('Editar Ficha Completa pressed');
-                    },
-                    child: Container(
-                      width: double.infinity,
-                      height: 56.0,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8.0),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Editar Ficha Completa',
-                            style: GoogleFonts.inter(
-                              color: const Color(0xFF1A202C),
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(
-                            Icons.arrow_forward,
-                            size: 20,
-                            color: Color(0xFF1A202C),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
                 _buildTextField(
                   label: 'Posición Principal',
                   controller: _posicaoController,
                   focusNode: _posicaoFocusNode,
                   hintText: 'Defensor Central',
-                  readOnly: true,
-                  onTap: () {},
-                  suffixIcon: const Icon(
-                    Icons.unfold_more,
-                    color: Color(0xFF718096),
-                  ),
                 ),
                 _buildTextField(
                   label: 'Pie Dominante',
                   controller: _pieDominanteController,
                   focusNode: _pieDominanteFocusNode,
                   hintText: 'Derecho',
-                  readOnly: true,
-                  onTap: () {},
-                  suffixIcon: const Icon(
-                    Icons.unfold_more,
-                    color: Color(0xFF718096),
-                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.only(top: 28.0),

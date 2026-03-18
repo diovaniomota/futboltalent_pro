@@ -2,10 +2,13 @@ import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/gamification/gamification_service.dart';
+import '/index.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'admin_videos_model.dart';
 export 'admin_videos_model.dart';
+
+enum _AdminVideoTab { ugc, challenge, tutorials }
 
 class AdminVideosWidget extends StatefulWidget {
   const AdminVideosWidget({super.key});
@@ -22,7 +25,10 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
   final scaffoldKey = GlobalKey<ScaffoldState>();
 
   bool _isLoading = true;
-  List<Map<String, dynamic>> _videos = [];
+  _AdminVideoTab _selectedTab = _AdminVideoTab.ugc;
+  List<Map<String, dynamic>> _ugcVideos = [];
+  List<Map<String, dynamic>> _challengeVideos = [];
+  List<Map<String, dynamic>> _tutorialVideos = [];
   final Map<String, String> _userNameById = {};
 
   @override
@@ -41,14 +47,29 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
   Future<void> _loadVideos() async {
     setState(() => _isLoading = true);
     try {
-      final videosResponse = await SupaFlow.client
-          .from('videos')
-          .select()
-          .eq('is_public', true)
-          .order('created_at', ascending: false);
+      final responses = await Future.wait([
+        SupaFlow.client
+            .from('videos')
+            .select()
+            .eq('is_public', true)
+            .order('created_at', ascending: false),
+        SupaFlow.client.from('users').select('user_id, name, lastname'),
+        SupaFlow.client
+            .from('courses')
+            .select(
+                'id, title, thumbnail_url, video_url, created_at, updated_at, is_active')
+            .order('updated_at', ascending: false),
+        SupaFlow.client
+            .from('exercises')
+            .select(
+                'id, title, thumbnail_url, video_url, created_at, updated_at, is_active')
+            .order('updated_at', ascending: false),
+      ]);
 
-      final usersResponse =
-          await SupaFlow.client.from('users').select('user_id, name, lastname');
+      final videosResponse = responses[0];
+      final usersResponse = responses[1];
+      final coursesResponse = responses[2];
+      final exercisesResponse = responses[3];
 
       final userNameById = <String, String>{};
       for (final row
@@ -60,9 +81,51 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
             fullName.isEmpty ? 'Usuario desconocido' : fullName;
       }
 
+      final allVideos = List<Map<String, dynamic>>.from(videosResponse as List);
+      final ugcVideos = <Map<String, dynamic>>[];
+      final challengeVideos = <Map<String, dynamic>>[];
+      for (final video in allVideos) {
+        final type = _resolveVideoType(video);
+        if (type == 'challenge') {
+          challengeVideos.add(video);
+        } else {
+          ugcVideos.add(video);
+        }
+      }
+
+      final tutorialVideos = <Map<String, dynamic>>[];
+      for (final row in List<Map<String, dynamic>>.from(coursesResponse as List)) {
+        final url = (row['video_url'] ?? '').toString().trim();
+        if (url.isEmpty || row['is_active'] == false) continue;
+        tutorialVideos.add({
+          ...row,
+          '_tutorial_source': 'course',
+          '_tutorial_label': 'Curso',
+        });
+      }
+      for (final row
+          in List<Map<String, dynamic>>.from(exercisesResponse as List)) {
+        final url = (row['video_url'] ?? '').toString().trim();
+        if (url.isEmpty || row['is_active'] == false) continue;
+        tutorialVideos.add({
+          ...row,
+          '_tutorial_source': 'exercise',
+          '_tutorial_label': 'Ejercicio',
+        });
+      }
+      tutorialVideos.sort((a, b) {
+        final aDate =
+            (a['updated_at'] ?? a['created_at'] ?? '').toString().trim();
+        final bDate =
+            (b['updated_at'] ?? b['created_at'] ?? '').toString().trim();
+        return bDate.compareTo(aDate);
+      });
+
       if (mounted) {
         setState(() {
-          _videos = List<Map<String, dynamic>>.from(videosResponse as List);
+          _ugcVideos = ugcVideos;
+          _challengeVideos = challengeVideos;
+          _tutorialVideos = tutorialVideos;
           _userNameById
             ..clear()
             ..addAll(userNameById);
@@ -72,6 +135,56 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
     } catch (e) {
       debugPrint('Error loading videos: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  String _resolveVideoType(Map<String, dynamic> video) {
+    final persistedType = (video['videoType'] ?? '').toString().trim().toLowerCase();
+    if (persistedType == 'ugc' || persistedType == 'challenge') {
+      return persistedType;
+    }
+
+    final title = (video['title'] ?? '').toString().trim().toLowerCase();
+    final description =
+        (video['description'] ?? '').toString().trim().toLowerCase();
+    final looksLikeChallenge =
+        description.contains('[challenge_ref:') ||
+            title.startsWith('desafío:') ||
+            title.startsWith('desafio:') ||
+            title.startsWith('challenge:');
+    return looksLikeChallenge ? 'challenge' : 'ugc';
+  }
+
+  List<Map<String, dynamic>> _currentItems() {
+    switch (_selectedTab) {
+      case _AdminVideoTab.ugc:
+        return _ugcVideos;
+      case _AdminVideoTab.challenge:
+        return _challengeVideos;
+      case _AdminVideoTab.tutorials:
+        return _tutorialVideos;
+    }
+  }
+
+  String _tabLabel(_AdminVideoTab tab) {
+    switch (tab) {
+      case _AdminVideoTab.ugc:
+        return 'Feed (UGC)';
+      case _AdminVideoTab.challenge:
+        return 'Desafíos';
+      case _AdminVideoTab.tutorials:
+        return 'Tutoriales oficiales';
+    }
+  }
+
+  String _emptyMessage() {
+    switch (_selectedTab) {
+      case _AdminVideoTab.ugc:
+        return 'No hay videos UGC publicados en el feed.';
+      case _AdminVideoTab.challenge:
+        return 'No hay videos enviados desde desafíos.';
+      case _AdminVideoTab.tutorials:
+        return 'No hay tutoriales oficiales cargados.';
     }
   }
 
@@ -164,7 +277,10 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
 
       if (mounted) {
         setState(() {
-          _videos.removeWhere(
+          _ugcVideos.removeWhere(
+            (item) => (item['id'] ?? '').toString() == videoId,
+          );
+          _challengeVideos.removeWhere(
             (item) => (item['id'] ?? '').toString() == videoId,
           );
         });
@@ -241,17 +357,107 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _videos.isEmpty
-              ? const Center(child: Text('No hay videos'))
+          : _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    final items = _currentItems();
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: _buildTabSelector(),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Row(
+            children: [
+              Text(
+                '${items.length} resultado(s)',
+                style: FlutterFlowTheme.of(context).bodyMedium.override(
+                      fontFamily: 'Poppins',
+                      color: const Color(0xFF475569),
+                      letterSpacing: 0.0,
+                    ),
+              ),
+              const Spacer(),
+              if (_selectedTab == _AdminVideoTab.tutorials)
+                TextButton.icon(
+                  onPressed: () =>
+                      context.pushNamed(AdminDesafiosWidget.routeName),
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: const Text('Abrir desafíos'),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: items.isEmpty
+              ? Center(child: Text(_emptyMessage()))
               : RefreshIndicator(
                   onRefresh: _loadVideos,
                   child: ListView.builder(
                     padding: const EdgeInsets.all(16),
-                    itemCount: _videos.length,
+                    itemCount: items.length,
                     itemBuilder: (context, index) =>
-                        _buildVideoCard(_videos[index]),
+                        _selectedTab == _AdminVideoTab.tutorials
+                            ? _buildTutorialCard(items[index])
+                            : _buildVideoCard(items[index]),
                   ),
                 ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabSelector() {
+    Widget buildTab(_AdminVideoTab tab) {
+      final selected = _selectedTab == tab;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _selectedTab = tab),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xFF0D3B66) : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected ? const Color(0xFF0D3B66) : const Color(0xFFE2E8F0),
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF0D3B66).withValues(alpha: 0.18),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Text(
+              _tabLabel(tab),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: selected ? Colors.white : const Color(0xFF334155),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        buildTab(_AdminVideoTab.ugc),
+        const SizedBox(width: 8),
+        buildTab(_AdminVideoTab.challenge),
+        const SizedBox(width: 8),
+        buildTab(_AdminVideoTab.tutorials),
+      ],
     );
   }
 
@@ -265,6 +471,8 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
     final dateStr = createdAt != null
         ? '${createdAt.day}/${createdAt.month}/${createdAt.year}'
         : '';
+    final type = _resolveVideoType(video);
+    final typeLabel = type == 'challenge' ? 'Desafío' : 'UGC';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -372,6 +580,33 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
                             ),
                           ),
                         ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: type == 'challenge'
+                                ? const Color(0xFFDCFCE7)
+                                : const Color(0xFFDBEAFE),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: type == 'challenge'
+                                  ? const Color(0xFF22C55E)
+                                  : const Color(0xFF60A5FA),
+                            ),
+                          ),
+                          child: Text(
+                            typeLabel,
+                            style: TextStyle(
+                              color: type == 'challenge'
+                                  ? const Color(0xFF166534)
+                                  : const Color(0xFF1D4ED8),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -404,6 +639,122 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
                             'Eliminar',
                             style: TextStyle(color: Colors.red),
                           ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTutorialCard(Map<String, dynamic> tutorial) {
+    final title = (tutorial['title'] ?? 'Tutorial').toString();
+    final sourceLabel = (tutorial['_tutorial_label'] ?? 'Tutorial').toString();
+    final thumb = (tutorial['thumbnail_url'] ?? '').toString().trim();
+    final createdAt = tutorial['updated_at'] ?? tutorial['created_at'];
+    final parsedDate =
+        createdAt != null ? DateTime.tryParse(createdAt.toString()) : null;
+    final dateStr = parsedDate != null
+        ? '${parsedDate.day}/${parsedDate.month}/${parsedDate.year}'
+        : '';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _openVideo(tutorial),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: 96,
+                  height: 68,
+                  color: Colors.grey.shade300,
+                  child: thumb.isNotEmpty
+                      ? Image.network(
+                          thumb,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.ondemand_video, size: 30),
+                        )
+                      : const Icon(Icons.ondemand_video, size: 30),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: FlutterFlowTheme.of(context).titleSmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Tutorial oficial · $sourceLabel',
+                      style: FlutterFlowTheme.of(context).bodySmall,
+                    ),
+                    if (dateStr.isNotEmpty)
+                      Text(
+                        dateStr,
+                        style: FlutterFlowTheme.of(context).bodySmall.override(
+                              fontFamily: 'Poppins',
+                              fontSize: 11,
+                              letterSpacing: 0.0,
+                            ),
+                      ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          child: const Text(
+                            'Tutorial oficial',
+                            style: TextStyle(
+                              color: Color(0xFF475569),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => _openVideo(tutorial),
+                          icon: const Icon(Icons.play_circle_outline, size: 16),
+                          label: const Text('Ver'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              context.pushNamed(AdminDesafiosWidget.routeName),
+                          icon: const Icon(Icons.open_in_new, size: 16),
+                          label: const Text('Administrar'),
                         ),
                       ],
                     ),

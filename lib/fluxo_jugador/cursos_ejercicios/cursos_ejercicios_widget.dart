@@ -453,6 +453,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           'title': 'Desafío: ${item['title'] ?? itemType}',
           'description':
               'Video enviado al intentar un desafío de entrenamiento. $challengeRef',
+          'videoType': 'challenge',
           'is_public': true,
           'likes_count': 0,
           'created_at': DateTime.now().toIso8601String(),
@@ -461,8 +462,13 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
         try {
           await SupaFlow.client.from('videos').insert(payload);
         } catch (_) {
-          payload.remove('moderation_status');
-          await SupaFlow.client.from('videos').insert(payload);
+          try {
+            payload.remove('moderation_status');
+            await SupaFlow.client.from('videos').insert(payload);
+          } catch (_) {
+            payload.remove('videoType');
+            await SupaFlow.client.from('videos').insert(payload);
+          }
         }
         try {
           final lookup = await SupaFlow.client

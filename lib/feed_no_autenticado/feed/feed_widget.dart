@@ -1,7 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart';
-import '/gamification/gamification_service.dart';
 import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
@@ -9,7 +8,6 @@ import '/modal/comments_sheet/comments_sheet_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import '/flutter_flow/nav/nav.dart';
 import 'feed_model.dart';
@@ -696,11 +694,21 @@ class _FeedWidgetState extends State<FeedWidget>
 
         try {
           if (videoId.isNotEmpty) {
-            final commentsResponse = await SupaFlow.client
-                .from('comments')
-                .select('id')
-                .eq('video_id', videoId);
-            video['comments_count'] = (commentsResponse as List).length;
+            try {
+              final commentsResponse = await SupaFlow.client
+                  .from('comments')
+                  .select('id')
+                  .eq('video_id', videoId)
+                  .isFilter('deleted_at', null)
+                  .eq('moderation_status', GuardianMvpService.approvedStatus);
+              video['comments_count'] = (commentsResponse as List).length;
+            } catch (_) {
+              final commentsResponse = await SupaFlow.client
+                  .from('comments')
+                  .select('id')
+                  .eq('video_id', videoId);
+              video['comments_count'] = (commentsResponse as List).length;
+            }
           } else {
             video['comments_count'] = 0;
           }
@@ -1138,10 +1146,34 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
     return current.isNotEmpty && owner.isNotEmpty && owner == current;
   }
 
-  bool get _isScoutViewer =>
-      FFAppState.normalizeUserType(FFAppState().userType) == 'profesional';
+  bool get _canSeeAuthorMetadata {
+    if ((widget.currentUserId?.trim().isEmpty ?? true)) return false;
+    final viewerType = FFAppState.normalizeUserType(FFAppState().userType);
+    return viewerType == 'jugador' || viewerType == 'profesional';
+  }
+
+  bool get _isChallengeVideo => _videoKindLabel() == 'Desafío';
+
+  bool get _isPlayerAuthor {
+    final rawUserData = widget.videoData['user_data'];
+    if (rawUserData is! Map) return false;
+    final userData = Map<String, dynamic>.from(rawUserData);
+    final authorType = FFAppState.normalizeUserType(
+      userData['userType'] ?? userData['usertype'] ?? userData['user_type'],
+    );
+    return authorType == 'jugador';
+  }
 
   String _videoKindLabel() {
+    final persistedType = (widget.videoData['videoType'] ??
+            widget.videoData['video_type'] ??
+            widget.videoData['type'])
+        ?.toString()
+        .trim()
+        .toLowerCase();
+    if (persistedType == 'challenge') return 'Desafío';
+    if (persistedType == 'ugc') return 'UGC';
+
     final description = widget.videoData['description']?.toString() ?? '';
     final title =
         widget.videoData['title']?.toString().trim().toLowerCase() ?? '';
@@ -1182,6 +1214,15 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
     }
   }
 
+  String? _birthYearFromRaw(dynamic rawDate) {
+    if (rawDate == null) return null;
+    try {
+      return DateTime.parse(rawDate.toString()).year.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Widget _buildScoutOverlayChip({
     required IconData icon,
     required String label,
@@ -1213,37 +1254,72 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
     );
   }
 
-  Widget _buildGamificationOverlay() {
-    final progress = widget.videoData['user_progress'] is Map
-        ? Map<String, dynamic>.from(widget.videoData['user_progress'] as Map)
-        : <String, dynamic>{};
-    final hasAnyData =
-        progress.isNotEmpty || (widget.videoData['user_data'] is Map);
-    if (!hasAnyData) return const SizedBox.shrink();
+  Widget _buildChallengeFeedBadge() {
+    if (!_isChallengeVideo) return const SizedBox.shrink();
 
-    final totalXp = GamificationService.toInt(progress['total_xp']);
-    final levelName = GamificationService.levelNameFromPoints(totalXp);
-
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        _buildScoutOverlayChip(
-          icon: Icons.workspace_premium_outlined,
-          label: levelName,
-          backgroundColor: Colors.black.withOpacity(0.34),
-        ),
-        _buildScoutOverlayChip(
-          icon: Icons.bolt,
-          label: '$totalXp XP',
-          backgroundColor: const Color(0xFF0D3B66).withOpacity(0.82),
-        ),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFF7C2D12).withOpacity(0.9),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.22)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.18),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.track_changes,
+            size: 13,
+            color: Colors.white,
+          ),
+          SizedBox(width: 6),
+          Text(
+            'Desafío',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              height: 1.0,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildScoutVideoContextOverlay(dynamic rawUserData) {
-    if (!_isScoutViewer) return const SizedBox.shrink();
+  Widget _buildChallengeTypeLabel() {
+    if (!_isChallengeVideo) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+      ),
+      child: const Text(
+        'Tipo: Desafío',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          height: 1.0,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAuthorMetadataOverlay(dynamic rawUserData) {
+    if (!_canSeeAuthorMetadata || !_isPlayerAuthor) {
+      return const SizedBox.shrink();
+    }
 
     final userData = rawUserData is Map
         ? Map<String, dynamic>.from(rawUserData)
@@ -1252,8 +1328,17 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
     final category = _firstNonEmpty([
           userData['category'],
           userData['categoria'],
+          _birthYearFromRaw(
+            userData['birthday'] ??
+                userData['birth_date'] ??
+                userData['fecha_nacimiento'] ??
+                userData['data_nascimento'],
+          ),
           _categoryFromBirthday(
-            userData['birthday'] ?? userData['birth_date'],
+            userData['birthday'] ??
+                userData['birth_date'] ??
+                userData['fecha_nacimiento'] ??
+                userData['data_nascimento'],
           ),
         ]) ??
         '';
@@ -1262,43 +1347,48 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
           userData['position'],
           userData['posicion'],
           userData['posição'],
-        ]) ??
-        '';
-
-    final city = _firstNonEmpty([
-          userData['city'],
-          userData['ciudad'],
-          userData['location'],
-          userData['lugar'],
+          userData['position_name'],
         ]) ??
         '';
 
     final country = _firstNonEmpty([
           userData['country'],
           userData['pais'],
+          userData['país'],
           userData['country_name'],
+          userData['nationality'],
+          userData['nacionalidad'],
         ]) ??
         '';
 
-    final location = [city, country].where((p) => p.isNotEmpty).join(' · ');
-    final videoKind = _videoKindLabel();
+    final club = _firstNonEmpty([
+          userData['club'],
+          userData['club_actual'],
+          userData['current_club'],
+          userData['club_name'],
+          userData['team'],
+          userData['team_name'],
+        ]) ??
+        '';
 
     final chips = <Widget>[
-      _buildScoutOverlayChip(
-        icon:
-            videoKind == 'Desafío' ? Icons.track_changes : Icons.ondemand_video,
-        label: videoKind,
-        backgroundColor: videoKind == 'Desafío'
-            ? const Color(0xFF7C2D12).withOpacity(0.85)
-            : const Color(0xFF1E3A8A).withOpacity(0.85),
-      ),
       if (category.isNotEmpty)
         _buildScoutOverlayChip(icon: Icons.category_outlined, label: category),
       if (position.isNotEmpty)
-        _buildScoutOverlayChip(icon: Icons.shield_outlined, label: position),
-      if (location.isNotEmpty)
         _buildScoutOverlayChip(
-            icon: Icons.location_on_outlined, label: location),
+          icon: Icons.shield_outlined,
+          label: position,
+        ),
+      if (country.isNotEmpty)
+        _buildScoutOverlayChip(
+          icon: Icons.flag_outlined,
+          label: country,
+        ),
+      if (club.isNotEmpty)
+        _buildScoutOverlayChip(
+          icon: Icons.groups_outlined,
+          label: club,
+        ),
     ];
 
     if (chips.isEmpty) return const SizedBox.shrink();
@@ -1489,7 +1579,9 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
       widget.onSaveChanged(vid, _isSaved);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(_isSaved ? 'Video guardado' : 'Video eliminado'),
+            content: Text(_isSaved
+                ? 'Video guardado en Guardados'
+                : 'Video removido de Guardados'),
             duration: const Duration(seconds: 1)));
       }
     } catch (e) {}
@@ -1670,10 +1762,6 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
         () => setState(() => _showLikeAnimation = false));
   }
 
-  void _shareVideo() {
-    Share.share('${widget.videoData['title'] ?? ''}\n\n${widget.videoUrl}');
-  }
-
   void _openComments() {
     final uid = widget.currentUserId;
     if (uid == null) {
@@ -1681,12 +1769,39 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
       return;
     }
     showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (ctx) => CommentsSheetWidget(
-            videoID: widget.videoData['id']?.toString(),
-            height: MediaQuery.of(context).size.height * 0.7));
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (ctx) => CommentsSheetWidget(
+                videoID: widget.videoData['id']?.toString(),
+                height: MediaQuery.of(context).size.height * 0.7))
+        .whenComplete(_refreshCommentsCount);
+  }
+
+  Future<void> _refreshCommentsCount() async {
+    final videoId = widget.videoData['id']?.toString().trim() ?? '';
+    if (videoId.isEmpty) return;
+    try {
+      int count = 0;
+      try {
+        final response = await SupaFlow.client
+            .from('comments')
+            .select('id')
+            .eq('video_id', videoId)
+            .isFilter('deleted_at', null)
+            .eq('moderation_status', GuardianMvpService.approvedStatus);
+        count = (response as List).length;
+      } catch (_) {
+        final response = await SupaFlow.client
+            .from('comments')
+            .select('id')
+            .eq('video_id', videoId);
+        count = (response as List).length;
+      }
+      if (!mounted) return;
+      setState(() => _commentsCount = count);
+      widget.videoData['comments_count'] = count;
+    } catch (_) {}
   }
 
   @override
@@ -1836,13 +1951,15 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (_isScoutViewer) ...[
-                        _buildScoutVideoContextOverlay(userData),
+                      if (_isChallengeVideo) ...[
+                        _buildChallengeFeedBadge(),
+                        const SizedBox(height: 12),
+                      ],
+                      if (_canSeeAuthorMetadata && _isPlayerAuthor) ...[
+                        _buildAuthorMetadataOverlay(userData),
                         const SizedBox(height: 14),
                       ],
                       _buildUserIdentityRow(userName),
-                      const SizedBox(height: 10),
-                      _buildGamificationOverlay(),
                       const SizedBox(height: 10),
                       Text(
                         widget.videoData['title'] ?? '',
@@ -1854,6 +1971,10 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                           height: 1.25,
                         ),
                       ),
+                      if (_isChallengeVideo) ...[
+                        const SizedBox(height: 10),
+                        _buildChallengeTypeLabel(),
+                      ],
                       const SizedBox(height: 2),
                     ])),
             // Buttons
@@ -1887,7 +2008,6 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                       _isSaved,
                       _isSaved ? 'Guardado' : 'Guardar',
                       _toggleSave),
-                  _buildSideBtn(Icons.share, false, 'Share', _shareVideo),
                 ])),
             if (_isPaused)
               Center(

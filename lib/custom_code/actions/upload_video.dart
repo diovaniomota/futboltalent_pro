@@ -66,6 +66,7 @@ Future<bool> uploadVideo(
       'description': description ?? '',
       'video_url': publicUrl,
       'user_id': userId,
+      'videoType': 'ugc',
       'is_public': isPublic,
       'created_at': DateTime.now().toIso8601String(),
       'likes_count': 0,
@@ -74,8 +75,13 @@ Future<bool> uploadVideo(
     try {
       await SupaFlow.client.from('videos').insert(payload);
     } catch (_) {
-      payload.remove('moderation_status');
-      await SupaFlow.client.from('videos').insert(payload);
+      try {
+        payload.remove('moderation_status');
+        await SupaFlow.client.from('videos').insert(payload);
+      } catch (_) {
+        payload.remove('videoType');
+        await SupaFlow.client.from('videos').insert(payload);
+      }
     }
 
     return true;

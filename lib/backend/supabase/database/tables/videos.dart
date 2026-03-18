@@ -40,4 +40,7 @@ class VideosRow extends SupabaseDataRow {
 
   int get likesCount => getField<int>('likes_count')!;
   set likesCount(int value) => setField<int>('likes_count', value);
+
+  String? get videoType => getField<String>('videoType');
+  set videoType(String? value) => setField<String>('videoType', value);
 }

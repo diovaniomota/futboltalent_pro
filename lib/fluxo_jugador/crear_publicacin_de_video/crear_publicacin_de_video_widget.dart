@@ -225,6 +225,7 @@ class _CrearPublicacinDeVideoWidgetState
         'title': _tituloController.text.trim(),
         'description': _descripcionController.text.trim(),
         'tags': _etiquetasController.text.trim(),
+        'videoType': 'ugc',
         'is_public': _isPublic,
         'likes_count': 0,
         'created_at': DateTime.now().toIso8601String(),
@@ -233,8 +234,13 @@ class _CrearPublicacinDeVideoWidgetState
       try {
         await SupaFlow.client.from('videos').insert(payload);
       } catch (_) {
-        payload.remove('moderation_status');
-        await SupaFlow.client.from('videos').insert(payload);
+        try {
+          payload.remove('moderation_status');
+          await SupaFlow.client.from('videos').insert(payload);
+        } catch (_) {
+          payload.remove('videoType');
+          await SupaFlow.client.from('videos').insert(payload);
+        }
       }
       await GamificationService.recalculateUserProgress(userId: user.id);
       if (mounted) {

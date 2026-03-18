@@ -54,6 +54,7 @@ Future<bool> insertVideo(
       'video_url': videoUrl,
       'title': title,
       'description': description ?? '',
+      'videoType': 'ugc',
       'is_public': isPublic,
       'user_id': userId,
       'likes_count': 0,
@@ -63,8 +64,13 @@ Future<bool> insertVideo(
     try {
       await SupaFlow.client.from('videos').insert(payload);
     } catch (_) {
-      payload.remove('moderation_status');
-      await SupaFlow.client.from('videos').insert(payload);
+      try {
+        payload.remove('moderation_status');
+        await SupaFlow.client.from('videos').insert(payload);
+      } catch (_) {
+        payload.remove('videoType');
+        await SupaFlow.client.from('videos').insert(payload);
+      }
     }
 
     debugPrint('Vídeo salvo no banco de dados');
