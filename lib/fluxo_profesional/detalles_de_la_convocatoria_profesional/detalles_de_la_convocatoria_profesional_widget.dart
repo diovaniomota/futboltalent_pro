@@ -1,5 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -34,6 +35,8 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
   bool _isLoading = true;
   bool _hasApplied = false;
   bool _isApplying = false;
+  List<Map<String, dynamic>> _requiredChallenges = [];
+  final Map<String, bool> _requiredChallengeCompletion = {};
 
   @override
   void initState() {
@@ -82,6 +85,7 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
             debugPrint('Error loading club data: $e');
           }
         }
+        await _loadRequiredChallengesProgress();
         await _checkIfApplied();
       }
       if (mounted) setState(() => _isLoading = false);
@@ -108,10 +112,284 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
     }
   }
 
+  List<Map<String, dynamic>> _parseRequiredChallenges(dynamic raw) {
+    dynamic source = raw;
+    if (source is String) {
+      final trimmed = source.trim();
+      if (trimmed.isEmpty) return const [];
+      try {
+        source = jsonDecode(trimmed);
+      } catch (_) {
+        return const [];
+      }
+    }
+
+    if (source is! List) return const [];
+
+    final result = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    for (final entry in source) {
+      final map = entry is Map<String, dynamic>
+          ? Map<String, dynamic>.from(entry)
+          : entry is Map
+              ? Map<String, dynamic>.from(entry)
+              : null;
+      if (map == null) continue;
+
+      final id = map['id']?.toString().trim() ?? '';
+      final type = map['type']?.toString().trim().toLowerCase() ?? '';
+      if (id.isEmpty || (type != 'course' && type != 'exercise')) continue;
+
+      final key = '$type:$id';
+      if (!seen.add(key)) continue;
+      result.add({
+        ...map,
+        'id': id,
+        'type': type,
+        'title': map['title']?.toString().trim() ?? '',
+      });
+    }
+    return result;
+  }
+
+  String _requiredChallengeKey(Map<String, dynamic> challenge) {
+    final type = challenge['type']?.toString().trim().toLowerCase() ?? '';
+    final id = challenge['id']?.toString().trim() ?? '';
+    return '$type:$id';
+  }
+
+  bool _isRequiredChallengeCompleted(Map<String, dynamic> challenge) {
+    return _requiredChallengeCompletion[_requiredChallengeKey(challenge)] ==
+        true;
+  }
+
+  int get _completedRequirementsCount => _requiredChallenges
+      .where((challenge) => _isRequiredChallengeCompleted(challenge))
+      .length;
+
+  bool get _canSubmitApplication {
+    if (_requiredChallenges.isEmpty) return true;
+    if (currentUserUid.isEmpty) return true;
+    return _requiredChallenges.every(_isRequiredChallengeCompleted);
+  }
+
+  Future<void> _loadRequiredChallengesProgress() async {
+    final requiredChallenges =
+        _parseRequiredChallenges(_convocatoria?['required_challenges']);
+    _requiredChallengeCompletion.clear();
+
+    if (currentUserUid.isNotEmpty) {
+      final courseIds = requiredChallenges
+          .where((item) => item['type'] == 'course')
+          .map((item) => item['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final exerciseIds = requiredChallenges
+          .where((item) => item['type'] == 'exercise')
+          .map((item) => item['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      try {
+        if (courseIds.isNotEmpty) {
+          final rows = await SupaFlow.client
+              .from('user_courses')
+              .select('course_id, status')
+              .eq('user_id', currentUserUid)
+              .inFilter('course_id', courseIds);
+          for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+            final id = row['course_id']?.toString().trim() ?? '';
+            final status = row['status']?.toString().trim().toLowerCase() ?? '';
+            if (id.isNotEmpty && status == 'completed') {
+              _requiredChallengeCompletion['course:$id'] = true;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Error loading required courses progress: $e');
+      }
+
+      try {
+        if (exerciseIds.isNotEmpty) {
+          final rows = await SupaFlow.client
+              .from('user_exercises')
+              .select('exercise_id, status')
+              .eq('user_id', currentUserUid)
+              .inFilter('exercise_id', exerciseIds);
+          for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+            final id = row['exercise_id']?.toString().trim() ?? '';
+            final status = row['status']?.toString().trim().toLowerCase() ?? '';
+            if (id.isNotEmpty && status == 'completed') {
+              _requiredChallengeCompletion['exercise:$id'] = true;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Error loading required exercises progress: $e');
+      }
+    }
+
+    _requiredChallenges = requiredChallenges;
+  }
+
+  void _openRequiredChallenge(Map<String, dynamic> challenge) {
+    final challengeId = challenge['id']?.toString().trim() ?? '';
+    final challengeType =
+        challenge['type']?.toString().trim().toLowerCase() ?? '';
+    if (challengeId.isEmpty || challengeType.isEmpty) return;
+
+    context.pushNamed(
+      'cursos_ejercicios',
+      queryParameters: {
+        'initialChallengeId': serializeParam(challengeId, ParamType.String),
+        'initialChallengeType': serializeParam(challengeType, ParamType.String),
+      }.withoutNulls,
+    );
+  }
+
+  Widget _buildRequiredChallengesSection() {
+    final missingCount =
+        _requiredChallenges.length - _completedRequirementsCount;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFA0AEC0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Desafíos requeridos',
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${_completedRequirementsCount}/${_requiredChallenges.length} completos',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF0D3B66),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ..._requiredChallenges.map((challenge) {
+            final isCompleted = _isRequiredChallengeCompleted(challenge);
+            final challengeTitle = challenge['title']?.toString().trim() ?? '';
+            final title = challengeTitle.isNotEmpty
+                ? challengeTitle
+                : (challenge['type'] == 'course' ? 'Curso' : 'Desafío');
+            final typeLabel =
+                challenge['type'] == 'course' ? 'Curso' : 'Desafío';
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isCompleted
+                    ? const Color(0xFFF0FDF4)
+                    : const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isCompleted
+                      ? const Color(0xFF86EFAC)
+                      : const Color(0xFFFCD34D),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isCompleted
+                        ? Icons.check_circle_rounded
+                        : Icons.schedule_rounded,
+                    color: isCompleted
+                        ? const Color(0xFF15803D)
+                        : const Color(0xFFD97706),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF1E293B),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$typeLabel · ${isCompleted ? 'Completo' : 'Pendiente'}',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isCompleted
+                                ? const Color(0xFF15803D)
+                                : const Color(0xFFD97706),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  TextButton(
+                    onPressed: () => _openRequiredChallenge(challenge),
+                    child: const Text('Abrir'),
+                  ),
+                ],
+              ),
+            );
+          }),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: missingCount == 0
+                  ? const Color(0xFFF0FDF4)
+                  : const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              missingCount == 0
+                  ? 'Todo listo. Ya podés enviar tu postulación.'
+                  : 'Te faltan $missingCount desafío(s) para habilitar la postulación.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: missingCount == 0
+                    ? const Color(0xFF15803D)
+                    : const Color(0xFF9A3412),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _apply() async {
     final uid = currentUserUid;
     if (uid.isEmpty) {
       _login();
+      return;
+    }
+    if (!_canSubmitApplication) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Debes completar todos los desafíos requeridos antes de enviar tu postulación.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
       return;
     }
     setState(() => _isApplying = true);
@@ -203,6 +481,23 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
 
   @override
   Widget build(BuildContext context) {
+    if (FFAppState().isFeatureEnabled('convocatorias') &&
+        !FFAppState().canAccessFeature('convocatorias')) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: PlanPaywallCard(
+              title: 'Convocatórias no Plano Pro',
+              message:
+                  'Esse fluxo faz parte do Plano Pro. Se o modo piloto estiver ON, ele é liberado automaticamente.',
+            ),
+          ),
+        ),
+      );
+    }
+
     if (_isLoading) {
       return Container(
           color: Colors.white,
@@ -326,6 +621,10 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
                       fontWeight: FontWeight.w500,
                       color: Colors.grey[600],
                       height: 1.5)),
+              if (_requiredChallenges.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _buildRequiredChallengesSection(),
+              ],
               const SizedBox(height: 20),
               if (!_hasApplied) ...[
                 Text('Mensaje Personalizado (Opcional)',

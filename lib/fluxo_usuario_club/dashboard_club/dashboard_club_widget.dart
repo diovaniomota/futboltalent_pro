@@ -2,6 +2,7 @@ import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
+import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/gamification/gamification_service.dart';
 import '/index.dart';
@@ -111,7 +112,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }
 
   bool get _canUseSensitiveActions =>
-      _currentPlanId != null && _currentUserVerified;
+      FFAppState().unlockSensitiveActions ||
+      (_currentPlanId != null && _currentUserVerified);
 
   Future<void> _loadData() async {
     if (currentUserUid.isEmpty) {
@@ -512,17 +514,20 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           .limit(140);
       final allClubs = List<Map<String, dynamic>>.from(response);
       final clubs = allClubs.where((club) {
-        final name = (club['nombre'] ?? club['name'] ?? club['club_name'] ?? 'Club')
-            .toString()
-            .toLowerCase();
+        final name =
+            (club['nombre'] ?? club['name'] ?? club['club_name'] ?? 'Club')
+                .toString()
+                .toLowerCase();
         final city =
             (club['city'] ?? club['ubicacion'] ?? '').toString().toLowerCase();
-        final league = (club['liga'] ?? club['league'] ?? club['league_name'] ?? '')
-            .toString()
-            .toLowerCase();
-        final country = (club['pais'] ?? club['country'] ?? club['country_name'] ?? '')
-            .toString()
-            .toLowerCase();
+        final league =
+            (club['liga'] ?? club['league'] ?? club['league_name'] ?? '')
+                .toString()
+                .toLowerCase();
+        final country =
+            (club['pais'] ?? club['country'] ?? club['country_name'] ?? '')
+                .toString()
+                .toLowerCase();
         return name.contains(query) ||
             city.contains(query) ||
             league.contains(query) ||
@@ -579,8 +584,9 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         final desc = (row['descripcion'] ?? row['description'] ?? '')
             .toString()
             .toLowerCase();
-        final zone =
-            (row['ubicacion'] ?? row['location'] ?? '').toString().toLowerCase();
+        final zone = (row['ubicacion'] ?? row['location'] ?? '')
+            .toString()
+            .toLowerCase();
         final category = _resolveTryoutCategory(row).toLowerCase();
         final position = _resolveTryoutPosition(row).toLowerCase();
         final clubName = _resolveTryoutClubName(row).toLowerCase();
@@ -767,8 +773,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           .from('users')
           .select(
               'user_id, name, lastname, username, posicion, city, country_id, club, birthday, photo_url, userType, plan_id, full_profile, is_test_account, verification_status, is_verified, created_at')
-          .inFilter('userType',
-              ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
+          .inFilter(
+              'userType', ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
           .order('created_at', ascending: false)
           .limit(40);
 
@@ -1156,31 +1162,36 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
     if (_playerFilterCategory != null) {
       filtered = filtered.where(
-        (player) => _playerCategory(player).toLowerCase() ==
+        (player) =>
+            _playerCategory(player).toLowerCase() ==
             _playerFilterCategory!.toLowerCase(),
       );
     }
     if (_playerFilterPosition != null) {
       filtered = filtered.where(
-        (player) => _playerPosition(player).toLowerCase() ==
+        (player) =>
+            _playerPosition(player).toLowerCase() ==
             _playerFilterPosition!.toLowerCase(),
       );
     }
     if (_playerFilterCountry != null) {
       filtered = filtered.where(
-        (player) => _playerCountry(player).toLowerCase() ==
+        (player) =>
+            _playerCountry(player).toLowerCase() ==
             _playerFilterCountry!.toLowerCase(),
       );
     }
     if (_playerFilterCity != null) {
       filtered = filtered.where(
-        (player) => _playerCity(player).toLowerCase() ==
+        (player) =>
+            _playerCity(player).toLowerCase() ==
             _playerFilterCity!.toLowerCase(),
       );
     }
     if (_playerFilterLevel != null) {
       filtered = filtered.where(
-        (player) => _playerLevel(player).toLowerCase() ==
+        (player) =>
+            _playerLevel(player).toLowerCase() ==
             _playerFilterLevel!.toLowerCase(),
       );
     }
@@ -1193,7 +1204,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
     if (_clubFilterCountry != null) {
       filtered = filtered.where(
-        (club) => _clubCountry(club).toLowerCase() ==
+        (club) =>
+            _clubCountry(club).toLowerCase() ==
             _clubFilterCountry!.toLowerCase(),
       );
     }
@@ -1205,8 +1217,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     }
     if (_clubFilterLeague != null) {
       filtered = filtered.where(
-        (club) => _clubLeague(club).toLowerCase() ==
-            _clubFilterLeague!.toLowerCase(),
+        (club) =>
+            _clubLeague(club).toLowerCase() == _clubFilterLeague!.toLowerCase(),
       );
     }
 
@@ -1218,19 +1230,22 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
     if (_tryoutFilterCategory != null) {
       filtered = filtered.where(
-        (tryout) => _resolveTryoutCategory(tryout).toLowerCase() ==
+        (tryout) =>
+            _resolveTryoutCategory(tryout).toLowerCase() ==
             _tryoutFilterCategory!.toLowerCase(),
       );
     }
     if (_tryoutFilterPosition != null) {
       filtered = filtered.where(
-        (tryout) => _resolveTryoutPosition(tryout).toLowerCase() ==
+        (tryout) =>
+            _resolveTryoutPosition(tryout).toLowerCase() ==
             _tryoutFilterPosition!.toLowerCase(),
       );
     }
     if (_tryoutFilterCountry != null) {
       filtered = filtered.where(
-        (tryout) => _resolveTryoutCountry(tryout).toLowerCase() ==
+        (tryout) =>
+            _resolveTryoutCountry(tryout).toLowerCase() ==
             _tryoutFilterCountry!.toLowerCase(),
       );
     }
@@ -1344,6 +1359,10 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     required Map<String, dynamic> convocatoria,
   }) async {
     if (_invitingPlayerId != null) return;
+    if (!FFAppState().canSendConvocatoria) {
+      _showPlanRequiredForConvocatoriaSend();
+      return;
+    }
     if (!_canUseSensitiveActions) {
       _showUpsellDialog();
       return;
@@ -1406,8 +1425,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       await ActivityNotificationsService.notifyPlayerApplicationStatusUpdated(
         playerId: playerId,
         convocatoriaId: convocatoriaId,
-        convocatoriaTitle:
-            convocatoria['titulo']?.toString() ?? 'Convocatoria',
+        convocatoriaTitle: convocatoria['titulo']?.toString() ?? 'Convocatoria',
         clubName: _clubName ?? 'Club',
         status: 'invitar_prueba',
       );
@@ -1433,10 +1451,16 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }
 
   void _showInviteToConvocatoriaSheet(Map<String, dynamic> player) {
+    if (!FFAppState().canSendConvocatoria) {
+      _showPlanRequiredForConvocatoriaSend();
+      return;
+    }
+
     if (_activeConvocatorias.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Crea una convocatoria activa antes de invitar jugadores'),
+          content:
+              Text('Crea una convocatoria activa antes de invitar jugadores'),
         ),
       );
       return;
@@ -1576,7 +1600,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             else
                               const Icon(
@@ -1594,6 +1619,15 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           ),
         );
       },
+    );
+  }
+
+  void _showPlanRequiredForConvocatoriaSend() {
+    showPlanRequiredDialog(
+      context,
+      featureName: 'Envio de convocatórias',
+      message:
+          'Enviar convites para uma convocatória é um benefício do Plano Pro. Com modo piloto ON, esse bloqueio some.',
     );
   }
 
@@ -2783,8 +2817,9 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           color: value != null ? const Color(0xFF0D3B66) : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color:
-                value != null ? const Color(0xFF0D3B66) : const Color(0xFFD8E2EF),
+            color: value != null
+                ? const Color(0xFF0D3B66)
+                : const Color(0xFFD8E2EF),
           ),
         ),
         child: Row(
@@ -2795,8 +2830,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               style: GoogleFonts.inter(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color:
-                    value != null ? Colors.white : const Color(0xFF334155),
+                color: value != null ? Colors.white : const Color(0xFF334155),
               ),
             ),
             const SizedBox(width: 6),
@@ -2991,10 +3025,10 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: isInviting
-                          ? null
-                          : () => _showInviteToConvocatoriaSheet(player),
+                  child: OutlinedButton.icon(
+                    onPressed: isInviting
+                        ? null
+                        : () => _showInviteToConvocatoriaSheet(player),
                     icon: isInviting
                         ? const SizedBox(
                             width: 14,
@@ -3035,63 +3069,63 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             .toString();
 
     return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => _openPublicClubProfile(club),
-      child: Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x100D3B66),
-            blurRadius: 10,
-            offset: Offset(0, 4),
+        onTap: () => _openPublicClubProfile(club),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x100D3B66),
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: const Color(0xFFE8F0FE),
-            backgroundImage: logo.isNotEmpty ? NetworkImage(logo) : null,
-            child: logo.isNotEmpty
-                ? null
-                : const Icon(Icons.shield, color: Color(0xFF0D3B66)),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1A202C),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: const Color(0xFFE8F0FE),
+                backgroundImage: logo.isNotEmpty ? NetworkImage(logo) : null,
+                child: logo.isNotEmpty
+                    ? null
+                    : const Icon(Icons.shield, color: Color(0xFF0D3B66)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (country.isNotEmpty) _metaChip('País: $country'),
-                    if (league.isNotEmpty) _metaChip('Liga: $league'),
-                    if (city.isNotEmpty) _metaChip(city),
+                    Text(
+                      name,
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1A202C),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        if (country.isNotEmpty) _metaChip('País: $country'),
+                        if (league.isNotEmpty) _metaChip('Liga: $league'),
+                        if (city.isNotEmpty) _metaChip(city),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+            ],
           ),
-          const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
-        ],
-      ),
-    ));
+        ));
   }
 
   Widget _buildSearchTryoutCard(Map<String, dynamic> tryout) {
@@ -3114,111 +3148,111 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         };
 
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: () {
-        if (_clubRefFromMap(clubTarget).isNotEmpty) {
-          _openPublicClubProfile(clubTarget);
-        }
-      },
-      child: Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFDDE4EF)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x11000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
+        onTap: () {
+          if (_clubRefFromMap(clubTarget).isNotEmpty) {
+            _openPublicClubProfile(clubTarget);
+          }
+        },
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFDDE4EF)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x11000000),
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEAF1FC),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.campaign_outlined,
-                  color: Color(0xFF0D3B66),
-                  size: 19,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  title,
-                  style: GoogleFonts.inter(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF1A202C),
-                    height: 1.15,
+              Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF1FC),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.campaign_outlined,
+                      color: Color(0xFF0D3B66),
+                      size: 19,
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF1A202C),
+                        height: 1.15,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _tryoutModeColor(mode).withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      mode,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: _tryoutModeColor(mode),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _tryoutModeColor(mode).withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  mode,
+              if (clubName.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  clubName,
                   style: GoogleFonts.inter(
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: _tryoutModeColor(mode),
+                    color: const Color(0xFF0D3B66),
                   ),
                 ),
+              ],
+              if (desc.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  desc,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  if (category.isNotEmpty) _metaChip('Categoría: $category'),
+                  if (position.isNotEmpty) _metaChip('Posición: $position'),
+                  if (zone.isNotEmpty) _metaChip('Ubicación: $zone'),
+                ],
               ),
             ],
           ),
-          if (clubName.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              clubName,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF0D3B66),
-              ),
-            ),
-          ],
-          if (desc.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              desc,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                color: const Color(0xFF64748B),
-              ),
-            ),
-          ],
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              if (category.isNotEmpty) _metaChip('Categoría: $category'),
-              if (position.isNotEmpty) _metaChip('Posición: $position'),
-              if (zone.isNotEmpty) _metaChip('Ubicación: $zone'),
-            ],
-          ),
-        ],
-      ),
-    ));
+        ));
   }
 
   Widget _buildHomeScopeTabs() {
@@ -3478,11 +3512,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                     CircleAvatar(
                       radius: 22,
                       backgroundColor: const Color(0xFFE8F0FE),
-                      backgroundImage:
-                          (post['player_data']?['photo_url']?.toString().isNotEmpty ??
-                                  false)
-                              ? NetworkImage(post['player_data']['photo_url'])
-                              : null,
+                      backgroundImage: (post['player_data']?['photo_url']
+                                  ?.toString()
+                                  .isNotEmpty ??
+                              false)
+                          ? NetworkImage(post['player_data']['photo_url'])
+                          : null,
                       child: (post['player_data']?['photo_url']
                                   ?.toString()
                                   .isNotEmpty ??
@@ -3990,7 +4025,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     final pendingFlex = max(postulated - saved, 0);
     final savedFlex = max(saved - interest, 0);
     final interestFlex = max(interest, 0);
-    final safeTotal = max(pendingFlex + savedFlex + interestFlex, max(total, 1));
+    final safeTotal =
+        max(pendingFlex + savedFlex + interestFlex, max(total, 1));
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),

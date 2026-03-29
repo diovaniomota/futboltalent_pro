@@ -1,5 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/flutter_flow/app_modals.dart';
 import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
@@ -20,10 +21,17 @@ import 'cursos_ejercicios_model.dart';
 export 'cursos_ejercicios_model.dart';
 
 class CursosEjerciciosWidget extends StatefulWidget {
-  const CursosEjerciciosWidget({super.key});
+  const CursosEjerciciosWidget({
+    super.key,
+    this.initialChallengeId,
+    this.initialChallengeType,
+  });
 
   static String routeName = 'cursos_ejercicios';
   static String routePath = '/cursosEjercicios';
+
+  final String? initialChallengeId;
+  final String? initialChallengeType;
 
   @override
   State<CursosEjerciciosWidget> createState() => _CursosEjerciciosWidgetState();
@@ -49,13 +57,24 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   final Map<String, String> _userCourseStatus = {};
   final Map<String, String> _userExerciseStatus = {};
   final Map<String, _ChallengeAttempt> _attemptByItemKey = {};
+  bool _didHandleInitialChallenge = false;
 
-  final List<String> _filters = [
-    'Todos',
-    'Cursos',
-    'Ejercicios',
-    'Completados'
-  ];
+  bool get _coursesEnabled => FFAppState().isFeatureEnabled('cursos');
+  bool get _exercisesEnabled => FFAppState().isFeatureEnabled('desafios');
+  bool get _hasCourseAccess => FFAppState().canAccessFeature('cursos');
+  bool get _hasExerciseAccess => FFAppState().canAccessFeature('desafios');
+
+  List<String> get _availableFilters {
+    final filters = <String>['Todos'];
+    if (_coursesEnabled && _hasCourseAccess) {
+      filters.add('Cursos');
+    }
+    if (_exercisesEnabled && _hasExerciseAccess) {
+      filters.add('Ejercicios');
+    }
+    filters.add('Completados');
+    return filters;
+  }
 
   final List<String> _placeholderImages = [
     'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=800',
@@ -121,6 +140,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       ]);
 
       _combineAndFilterItems();
+      _openInitialChallengeIfNeeded();
     } catch (e) {
       debugPrint('Error loading data: $e');
       setState(() => _errorMessage = 'Error al cargar datos');
@@ -368,8 +388,13 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     Map<String, dynamic> item,
   ) async {
     _showSnack(
-      'Se abrirá la cámara para grabar tu intento.',
+      FFAppState().uiText(
+        'challenge_upload_message',
+        fallback: 'Se abrirá la cámara para grabar tu intento.',
+      ),
       background: const Color(0xFF0D3B66),
+      icon: Icons.videocam_rounded,
+      title: 'Subí tu vídeo',
     );
 
     try {
@@ -383,6 +408,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
         _showSnack(
           'No se grabó ningún video. El desafío sigue pendiente.',
           background: Colors.orange,
+          icon: Icons.pause_circle_outline_rounded,
+          title: 'Vídeo não enviado',
         );
         return null;
       }
@@ -486,6 +513,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
         _showSnack(
           'No se pudo registrar el video en tu perfil. Intentá de nuevo.',
           background: Colors.red,
+          icon: Icons.error_outline_rounded,
+          title: 'Falha ao registrar',
         );
         return null;
       }
@@ -525,8 +554,14 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       _showSnack(
         moderationStatus == GuardianMvpService.pendingStatus
             ? 'Intento enviado. Quedará visible cuando el responsable apruebe la cuenta.'
-            : 'Intento enviado. Ya aparece en tu perfil y en Explorer (si es público).',
+            : FFAppState().uiText(
+                'challenge_upload_success',
+                fallback:
+                    'Intento enviado. Ya aparece en tu perfil y en Explorer (si es público).',
+              ),
         background: const Color(0xFF48BB78),
+        icon: Icons.emoji_events_rounded,
+        title: 'Vídeo enviado com sucesso',
       );
       return attempt;
     } catch (e) {
@@ -534,6 +569,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       _showSnack(
         'No se pudo subir el video. Revisá permisos e intentá de nuevo.',
         background: Colors.red,
+        icon: Icons.cloud_off_rounded,
+        title: 'Erro no upload',
       );
       return null;
     } finally {
@@ -548,12 +585,71 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   void _showSnack(
     String message, {
     required Color background,
+    IconData icon = Icons.info_outline_rounded,
+    String? title,
   }) {
     if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
-        backgroundColor: background,
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x33000000),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if ((title ?? '').trim().isNotEmpty)
+                      Text(
+                        title!.trim(),
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    Text(
+                      message,
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -580,31 +676,39 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
 
   void _combineAndFilterItems() {
     _allItems = [];
-    for (int i = 0; i < _courses.length; i++) {
-      final course = _courses[i];
-      _allItems.add({
-        ...course,
-        'type': 'course',
-        'status': _userCourseStatus[course['id'].toString()] ?? 'not_started',
-        'placeholder_image': _placeholderImages[i % _placeholderImages.length]
-      });
+    if (_coursesEnabled && _hasCourseAccess) {
+      for (int i = 0; i < _courses.length; i++) {
+        final course = _courses[i];
+        _allItems.add({
+          ...course,
+          'type': 'course',
+          'status': _userCourseStatus[course['id'].toString()] ?? 'not_started',
+          'placeholder_image': _placeholderImages[i % _placeholderImages.length]
+        });
+      }
     }
-    for (int i = 0; i < _exercises.length; i++) {
-      final exercise = _exercises[i];
-      _allItems.add({
-        ...exercise,
-        'type': 'exercise',
-        'status':
-            _userExerciseStatus[exercise['id'].toString()] ?? 'not_started',
-        'placeholder_image':
-            _placeholderImages[(i + 3) % _placeholderImages.length]
-      });
+    if (_exercisesEnabled && _hasExerciseAccess) {
+      for (int i = 0; i < _exercises.length; i++) {
+        final exercise = _exercises[i];
+        _allItems.add({
+          ...exercise,
+          'type': 'exercise',
+          'status':
+              _userExerciseStatus[exercise['id'].toString()] ?? 'not_started',
+          'placeholder_image':
+              _placeholderImages[(i + 3) % _placeholderImages.length]
+        });
+      }
     }
     _applyFilter();
   }
 
   void _applyFilter() {
     setState(() {
+      final availableFilters = _availableFilters;
+      if (!availableFilters.contains(_selectedFilter)) {
+        _selectedFilter = 'Todos';
+      }
       switch (_selectedFilter) {
         case 'Cursos':
           _filteredItems =
@@ -629,6 +733,49 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   void _onFilterSelected(String filter) {
     setState(() => _selectedFilter = filter);
     _applyFilter();
+  }
+
+  void _openInitialChallengeIfNeeded() {
+    if (_didHandleInitialChallenge) return;
+    if (currentUserUid.isEmpty) {
+      _didHandleInitialChallenge = true;
+      return;
+    }
+
+    final challengeId = widget.initialChallengeId?.trim() ?? '';
+    final challengeType =
+        widget.initialChallengeType?.trim().toLowerCase() ?? '';
+    if (challengeId.isEmpty) return;
+
+    Map<String, dynamic>? targetItem;
+    for (final item in _allItems) {
+      final itemId = item['id']?.toString() ?? '';
+      final itemType = item['type']?.toString().toLowerCase() ?? '';
+      final sameId = itemId == challengeId;
+      final sameType = challengeType.isEmpty || itemType == challengeType;
+      if (sameId && sameType) {
+        targetItem = item;
+        break;
+      }
+    }
+
+    _didHandleInitialChallenge = true;
+    if (targetItem == null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      final targetIndex = _filteredItems.indexWhere(
+        (item) =>
+            item['id']?.toString() == challengeId &&
+            (challengeType.isEmpty ||
+                item['type']?.toString().toLowerCase() == challengeType),
+      );
+      if (targetIndex >= 0 && _pageController.hasClients) {
+        _pageController.jumpToPage(targetIndex);
+      }
+      await _onItemTap(targetItem!);
+    });
   }
 
   Future<void> _onItemTap(Map<String, dynamic> item) async {
@@ -695,13 +842,11 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     if (startedNow) {
       await GamificationService.recalculateUserProgress(userId: currentUserUid);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Participaste en el desafío. +${GamificationService.challengeParticipatedPoints} XP',
-            ),
-            backgroundColor: const Color(0xFF0D3B66),
-          ),
+        _showSnack(
+          '🔥 +${GamificationService.challengeParticipatedPoints} XP por activar este desafío.',
+          background: const Color(0xFF0D3B66),
+          icon: Icons.local_fire_department_rounded,
+          title: 'Desafio ativado',
         );
       }
     }
@@ -719,6 +864,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final isCourse = item['type'] == 'course';
     final itemId = item['id'].toString();
     final itemKey = _itemKey(item);
+    final completionCallout = '🔥 +$pointsReward XP ao completar';
+    final uploadCallout = '🎥 +$participationReward XP ao subir o vídeo';
     final imageUrl = item['thumbnail_url'] ??
         item['image_url'] ??
         item['placeholder_image'] ??
@@ -726,8 +873,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     _ChallengeAttempt? modalAttempt = _attemptByItemKey[itemKey];
     bool isSendingAttempt = false;
     String uploadStateMessage = modalAttempt != null
-        ? 'Video enviado para este desafío. Ya figura en tu perfil.'
-        : 'Todavía no enviaste video.';
+        ? 'Seu vídeo já foi enviado. Agora finalize para somar todo o XP.'
+        : 'Passo 1 de 2: suba um vídeo para validar este desafio.';
 
     showModalBottomSheet(
       context: context,
@@ -823,34 +970,74 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                               ),
                             ),
                             SizedBox(height: 8 * scale),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.bolt,
-                                  color: const Color(0xFFFFD700),
-                                  size: 20 * scale,
+                            Container(
+                              width: double.infinity,
+                              padding: EdgeInsets.all(14 * scale),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFFF97316),
+                                    Color(0xFFF59E0B),
+                                  ],
                                 ),
-                                SizedBox(width: 4 * scale),
-                                Text(
-                                  '+$pointsReward XP al completar',
-                                  style: GoogleFonts.inter(
-                                    color: const Color(0xFFFFD700),
-                                    fontSize: 16 * scale,
-                                    fontWeight: FontWeight.w600,
+                                borderRadius: BorderRadius.circular(18),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x33F59E0B),
+                                    blurRadius: 20,
+                                    offset: Offset(0, 10),
                                   ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 6 * scale),
-                            Text(
-                              '+$participationReward XP al participar',
-                              style: GoogleFonts.inter(
-                                color: Colors.white70,
-                                fontSize: 13 * scale,
-                                fontWeight: FontWeight.w600,
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    completionCallout,
+                                    style: GoogleFonts.inter(
+                                      color: Colors.white,
+                                      fontSize: 17 * scale,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  SizedBox(height: 6 * scale),
+                                  Text(
+                                    'Envia teu intento, conclui o desafio e sobe no ranking com feedback imediato.',
+                                    style: GoogleFonts.inter(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.92),
+                                      fontSize: 12.5 * scale,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                  SizedBox(height: 10 * scale),
+                                  Wrap(
+                                    spacing: 8 * scale,
+                                    runSpacing: 8 * scale,
+                                    children: [
+                                      _buildMotivationChip(
+                                        icon: Icons.videocam_rounded,
+                                        label: uploadCallout,
+                                        backgroundColor: Colors.white
+                                            .withValues(alpha: 0.18),
+                                        borderColor: Colors.white
+                                            .withValues(alpha: 0.24),
+                                      ),
+                                      _buildMotivationChip(
+                                        icon: Icons.auto_awesome_rounded,
+                                        label: 'Conclusão libera o XP total',
+                                        backgroundColor: Colors.white
+                                            .withValues(alpha: 0.18),
+                                        borderColor: Colors.white
+                                            .withValues(alpha: 0.24),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
-                            SizedBox(height: 18 * scale),
+                            SizedBox(height: 22 * scale),
                             Text(
                               'Tutorial dentro del app',
                               style: GoogleFonts.inter(
@@ -886,25 +1073,27 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                             Container(
                               width: double.infinity,
                               padding: EdgeInsets.symmetric(
-                                horizontal: 12 * scale,
-                                vertical: 10 * scale,
+                                horizontal: 14 * scale,
+                                vertical: 12 * scale,
                               ),
                               decoration: BoxDecoration(
                                 color: isSendingAttempt
                                     ? const Color(0xFF1E40AF)
                                     : (modalAttempt != null
                                         ? const Color(0xFF0F9D58)
-                                        : Colors.white12),
+                                        : const Color(0xFF172033)),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
                                   color: isSendingAttempt
                                       ? const Color(0xFF60A5FA)
                                       : (modalAttempt != null
                                           ? const Color(0xFF86EFAC)
-                                          : Colors.white24),
+                                          : Colors.white
+                                              .withValues(alpha: 0.18)),
                                 ),
                               ),
                               child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   if (isSendingAttempt)
                                     SizedBox(
@@ -925,13 +1114,33 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                     ),
                                   SizedBox(width: 8 * scale),
                                   Expanded(
-                                    child: Text(
-                                      uploadStateMessage,
-                                      style: GoogleFonts.inter(
-                                        color: Colors.white,
-                                        fontSize: 13 * scale,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          isSendingAttempt
+                                              ? 'Subindo teu vídeo'
+                                              : (modalAttempt != null
+                                                  ? 'Vídeo pronto para validar'
+                                                  : 'Suba um vídeo para avançar'),
+                                          style: GoogleFonts.inter(
+                                            color: Colors.white,
+                                            fontSize: 13 * scale,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        SizedBox(height: 2 * scale),
+                                        Text(
+                                          uploadStateMessage,
+                                          style: GoogleFonts.inter(
+                                            color: Colors.white,
+                                            fontSize: 12.5 * scale,
+                                            fontWeight: FontWeight.w600,
+                                            height: 1.3,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
@@ -957,14 +1166,14 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                             ],
                             SizedBox(
                               width: double.infinity,
-                              child: OutlinedButton.icon(
+                              child: ElevatedButton.icon(
                                 onPressed: isSendingAttempt
                                     ? null
                                     : () async {
                                         setModalState(() {
                                           isSendingAttempt = true;
                                           uploadStateMessage =
-                                              'Subiendo video... esto puede tardar unos segundos.';
+                                              'Estamos subindo teu vídeo. Isso pode levar alguns segundos.';
                                         });
                                         safeSetState(() {});
 
@@ -976,19 +1185,21 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                             if (attempt != null) {
                                               modalAttempt = attempt;
                                               uploadStateMessage =
-                                                  'Video enviado correctamente. Ya puede verse en tu perfil y Explorer.';
+                                                  'Vídeo enviado corretamente. Agora você já pode concluir o desafio.';
                                             } else {
                                               uploadStateMessage =
-                                                  'No se pudo enviar el video. Intentá nuevamente.';
+                                                  'Não foi possível subir o vídeo. Tenta novamente.';
                                             }
                                           },
                                         );
                                         safeSetState(() {});
                                       },
-                                style: OutlinedButton.styleFrom(
+                                style: ElevatedButton.styleFrom(
                                   minimumSize:
                                       Size(double.infinity, 52 * scale),
-                                  side: const BorderSide(color: Colors.white54),
+                                  elevation: 0,
+                                  backgroundColor: const Color(0xFFFF8A00),
+                                  foregroundColor: Colors.white,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -1008,7 +1219,9 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                         size: 20 * scale,
                                       ),
                                 label: Text(
-                                  'Tentar Desafío',
+                                  modalAttempt != null
+                                      ? 'Reenviar vídeo'
+                                      : 'Subir vídeo e ganhar XP',
                                   style: GoogleFonts.inter(
                                     color: Colors.white,
                                     fontSize: 15 * scale,
@@ -1047,6 +1260,44 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   Widget build(BuildContext context) {
     final userType = context.watch<FFAppState>().userType;
     final scale = _scaleFactor(context);
+    final trainingCatalogEnabled = _coursesEnabled || _exercisesEnabled;
+    final hasTrainingAccess = _hasCourseAccess || _hasExerciseAccess;
+    if (!trainingCatalogEnabled) {
+      return Scaffold(
+        key: scaffoldKey,
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Cursos e desafios desativados temporariamente.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF0D3B66),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (!hasTrainingAccess) {
+      return Scaffold(
+        key: scaffoldKey,
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: PlanPaywallCard(
+              title: 'Desafios e cursos no Plano Pro',
+              message:
+                  'Esse módulo de treino fica disponível para usuários Pro. Se o modo piloto estiver ON, o acesso fica livre.',
+            ),
+          ),
+        ),
+      );
+    }
     return GestureDetector(
       onTap: () {
         FocusScope.of(context).unfocus();
@@ -1066,9 +1317,9 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                         child: Column(
                           children: [
                             _buildHeader(context),
-                            SizedBox(height: 16 * scale),
-                            _buildFilters(context),
                             SizedBox(height: 20 * scale),
+                            _buildFilters(context),
+                            SizedBox(height: 24 * scale),
                             Expanded(
                               child: _filteredItems.isEmpty
                                   ? _buildEmptyState(context)
@@ -1079,7 +1330,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                             if (!_isLargeScreen(context) &&
                                 _filteredItems.isNotEmpty)
                               _buildPageIndicators(context),
-                            const SizedBox(height: 80),
+                            const SizedBox(height: 92),
                           ],
                         ),
                       ),
@@ -1214,10 +1465,10 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-        itemCount: _filters.length,
+        itemCount: _availableFilters.length,
         separatorBuilder: (_, __) => SizedBox(width: 10 * scale),
         itemBuilder: (context, index) {
-          final filter = _filters[index];
+          final filter = _availableFilters[index];
           final isSelected = _selectedFilter == filter;
           return GestureDetector(
             onTap: () => _onFilterSelected(filter),
@@ -1262,6 +1513,41 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
               style: GoogleFonts.inter(
                   fontSize: 16 * scale, color: Colors.grey[600]),
               textAlign: TextAlign.center),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMotivationChip({
+    required IconData icon,
+    required String label,
+    Color backgroundColor = const Color(0x1FFFFFFF),
+    Color borderColor = const Color(0x33FFFFFF),
+    Color iconColor = Colors.white,
+    Color textColor = Colors.white,
+    EdgeInsetsGeometry padding =
+        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  }) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: iconColor, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              color: textColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
     );
@@ -1394,7 +1680,9 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                 blurRadius: 8)
                           ]),
                       child: Icon(
-                          isCourse ? Icons.school : Icons.fitness_center,
+                          isCourse
+                              ? Icons.auto_stories_rounded
+                              : Icons.sports_score_rounded,
                           color: const Color(0xFF0D3B66),
                           size: 22 * scale))),
               Positioned(
@@ -1437,15 +1725,29 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                           ),
                           SizedBox(height: 6 * scale),
                         ],
-                        Text(
-                          '+$participationReward XP al intentar',
-                          style: GoogleFonts.inter(
-                            color: Colors.white70,
-                            fontSize: 12 * scale,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        Wrap(
+                          spacing: 8 * scale,
+                          runSpacing: 8 * scale,
+                          children: [
+                            _buildMotivationChip(
+                              icon: Icons.local_fire_department_rounded,
+                              label: '🔥 +$pointsReward XP ao completar',
+                              backgroundColor:
+                                  Colors.white.withValues(alpha: 0.18),
+                              borderColor: Colors.white.withValues(alpha: 0.18),
+                            ),
+                            _buildMotivationChip(
+                              icon: Icons.videocam_rounded,
+                              label: '+$participationReward XP ao subir vídeo',
+                              backgroundColor:
+                                  Colors.white.withValues(alpha: 0.12),
+                              borderColor: Colors.white.withValues(alpha: 0.14),
+                              textColor: Colors.white70,
+                              iconColor: Colors.white70,
+                            ),
+                          ],
                         ),
-                        SizedBox(height: 6 * scale),
+                        SizedBox(height: 10 * scale),
                         Row(children: [
                           Text(statusText,
                               style: GoogleFonts.inter(
@@ -1520,6 +1822,77 @@ class _CompletarButton extends StatefulWidget {
 
 class _CompletarButtonState extends State<_CompletarButton> {
   bool _isLoading = false;
+
+  void _showActionSnack({
+    required String title,
+    required String message,
+    required Color background,
+    required IconData icon,
+  }) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x33000000),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      message,
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _markAsCompleted() async {
     setState(() => _isLoading = true);
     try {
@@ -1531,9 +1904,12 @@ class _CompletarButtonState extends State<_CompletarButton> {
             .eq('course_id', widget.itemId)
             .maybeSingle();
         if (existing != null && existing['status'] == 'completed') {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Este curso ya fue completado'),
-              backgroundColor: Colors.orange));
+          _showActionSnack(
+            title: 'Desafio já concluído',
+            message: 'Esse curso já foi marcado como concluído.',
+            background: Colors.orange,
+            icon: Icons.check_circle_outline_rounded,
+          );
           widget.onComplete();
           return;
         }
@@ -1567,9 +1943,12 @@ class _CompletarButtonState extends State<_CompletarButton> {
             .eq('exercise_id', widget.itemId)
             .maybeSingle();
         if (existing != null && existing['status'] == 'completed') {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Este ejercicio ya fue completado'),
-              backgroundColor: Colors.orange));
+          _showActionSnack(
+            title: 'Desafio já concluído',
+            message: 'Esse exercício já foi marcado como concluído.',
+            background: Colors.orange,
+            icon: Icons.check_circle_outline_rounded,
+          );
           widget.onComplete();
           return;
         }
@@ -1594,16 +1973,22 @@ class _CompletarButtonState extends State<_CompletarButton> {
         }
         await _updateUserProgress();
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(widget.isCourse
-              ? '¡Curso completado! +${widget.pointsReward} XP'
-              : '¡Ejercicio completado! +${widget.pointsReward} XP'),
-          backgroundColor: const Color(0xFF48BB78)));
+      _showActionSnack(
+        title: widget.isCourse ? 'Curso concluído' : 'Desafio concluído',
+        message:
+            '🔥 +${widget.pointsReward} XP ao completar. Seu progresso já foi atualizado.',
+        background: const Color(0xFF48BB78),
+        icon: Icons.emoji_events_rounded,
+      );
       widget.onComplete();
     } catch (e) {
       debugPrint('Error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      _showActionSnack(
+        title: 'Não foi possível concluir',
+        message: 'Ocorreu um erro ao finalizar este desafio.',
+        background: Colors.red,
+        icon: Icons.error_outline_rounded,
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -1623,25 +2008,61 @@ class _CompletarButtonState extends State<_CompletarButton> {
         onPressed:
             (_isLoading || !widget.canComplete) ? null : _markAsCompleted,
         style: ElevatedButton.styleFrom(
+            elevation: 0,
             backgroundColor: const Color(0xFF48BB78),
-            disabledBackgroundColor: Colors.grey,
-            minimumSize: const Size(double.infinity, 56),
+            disabledBackgroundColor: const Color(0xFF94A3B8),
+            minimumSize: const Size(double.infinity, 62),
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12))),
+                borderRadius: BorderRadius.circular(16))),
         child: _isLoading
             ? const SizedBox(
                 width: 24,
                 height: 24,
                 child: CircularProgressIndicator(
                     color: Colors.white, strokeWidth: 2))
-            : Text(
-                widget.canComplete
-                    ? 'Marcar como Completado'
-                    : 'Subí un video para completar',
-                style: GoogleFonts.inter(
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    widget.canComplete
+                        ? Icons.emoji_events_rounded
+                        : Icons.lock_clock_rounded,
                     color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600)));
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.canComplete
+                              ? 'Concluir e receber +${widget.pointsReward} XP'
+                              : 'Suba um vídeo para liberar a conclusão',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.canComplete
+                              ? 'Feedback imediato e progresso atualizado'
+                              : 'Primeiro validamos teu intento com vídeo',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withValues(alpha: 0.88),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ));
   }
 }
 

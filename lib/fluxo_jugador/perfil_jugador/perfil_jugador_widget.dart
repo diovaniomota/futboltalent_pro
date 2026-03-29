@@ -39,6 +39,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   String? _updatingFeaturedVideoId;
   int _userRanking = 0;
   int _pendingContactRequests = 0;
+  int _profileViewsCount = 0;
 
   @override
   void initState() {
@@ -112,6 +113,16 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       int ranking = await _loadCategoryRanking(uid, mergedUserData);
 
       final requests = await _loadContactRequests(uid);
+      int profileViewsCount = 0;
+      try {
+        final profileViewsResponse = await SupaFlow.client
+            .from('player_profile_views')
+            .select('id')
+            .eq('player_user_id', uid);
+        profileViewsCount = (profileViewsResponse as List).length;
+      } catch (e) {
+        debugPrint('Erro ao carregar visualizações do perfil: $e');
+      }
 
       if (mounted) {
         setState(() {
@@ -124,6 +135,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
               .where((r) => _normalizeContactRequestStatus(r) == 'pending')
               .length;
           _userRanking = ranking;
+          _profileViewsCount = profileViewsCount;
           _isLoading = false;
         });
       }
@@ -740,8 +752,8 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                         await _activateMinorAccountWithGuardianCode(
                           codeController.text,
                         );
-                        final ok =
-                            await _updateContactRequestStatus(requestId, status);
+                        final ok = await _updateContactRequestStatus(
+                            requestId, status);
                         if (!dialogContext.mounted) return;
                         if (ok) {
                           handled = true;
@@ -1506,6 +1518,40 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     return n.toString();
   }
 
+  Widget _buildPlayerStatusChip(String status) {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3C7),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFFCD34D)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.track_changes_rounded,
+            size: 16,
+            color: Color(0xFF92400E),
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              status,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                color: const Color(0xFF92400E),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ===== TAB VIDEOS =====
   Widget _buildVideosTab() {
     if (_videos.isEmpty) {
@@ -1520,8 +1566,19 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
             ),
             const SizedBox(height: 16),
             Text(
-              'No hay videos',
-              style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 14),
+              'Subí tu jugada y mostrá quién sos',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                color: const Color(0xFF0D3B66),
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Este video puede ser visto por scouts y reforzar tu perfil dentro del app.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 13),
             ),
             const SizedBox(height: 16),
             GestureDetector(
@@ -1542,7 +1599,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'Subir video',
+                  'Subí tu jugada',
                   style: GoogleFonts.inter(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
@@ -1810,6 +1867,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
         'No definido';
     final height = _userData?['height'] ?? _userData?['altura'] ?? '';
     final weight = _userData?['weight'] ?? _userData?['peso'] ?? '';
+    final playerStatus = _userData?['player_status']?.toString().trim() ?? '';
     final age = _calculateAge(birthDate.toString());
 
     return SingleChildScrollView(
@@ -1839,6 +1897,16 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           _buildInfoRow(
             Icons.fitness_center,
             weight.toString().isNotEmpty ? '$weight kg' : 'No definido',
+          ),
+          _buildInfoRow(
+            Icons.track_changes_rounded,
+            playerStatus.isNotEmpty
+                ? playerStatus
+                : 'Status del jugador no definido',
+          ),
+          _buildInfoRow(
+            Icons.remove_red_eye_outlined,
+            '${_formatNumber(_profileViewsCount)} visualizaciones de perfil',
           ),
           const SizedBox(height: 20),
           Text(
@@ -2064,10 +2132,10 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                     video['thumbnail'] ??
                     video['cover_url'] ??
                     '';
-                final title = video['title']?.toString().trim().isNotEmpty ==
-                        true
-                    ? video['title'].toString().trim()
-                    : 'Video guardado';
+                final title =
+                    video['title']?.toString().trim().isNotEmpty == true
+                        ? video['title'].toString().trim()
+                        : 'Video guardado';
                 final owner = video['owner_data'] is Map<String, dynamic>
                     ? Map<String, dynamic>.from(video['owner_data'] as Map)
                     : <String, dynamic>{};
@@ -2128,8 +2196,9 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                           top: 10,
                           right: 10,
                           child: GestureDetector(
-                            onTap:
-                                isRemoving ? null : () => _removeSavedVideo(video),
+                            onTap: isRemoving
+                                ? null
+                                : () => _removeSavedVideo(video),
                             child: Container(
                               width: 34,
                               height: 34,
@@ -2264,6 +2333,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     final dominantFoot = _userData?['dominant_foot'] ??
         _userData?['pie_dominante'] ??
         'No definido';
+    final playerStatus = _userData?['player_status']?.toString().trim() ?? '';
     final location = _userData?['location'] ??
         _userData?['ubicacion'] ??
         _userData?['club'] ??
@@ -2687,6 +2757,8 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                       fontSize: isCompactProfile ? 13 : 14,
                                     ),
                                   ),
+                                  if (playerStatus.isNotEmpty)
+                                    _buildPlayerStatusChip(playerStatus),
                                 ],
                               );
 
@@ -2710,6 +2782,11 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                   _buildStatColumn(
                                     xpInt.toString(),
                                     'XP',
+                                    compact: isCompactProfile,
+                                  ),
+                                  _buildStatColumn(
+                                    _formatNumber(_profileViewsCount),
+                                    'Vistas',
                                     compact: isCompactProfile,
                                   ),
                                 ],

@@ -154,7 +154,16 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: CursosEjerciciosWidget.routeName,
           path: CursosEjerciciosWidget.routePath,
-          builder: (context, params) => CursosEjerciciosWidget(),
+          builder: (context, params) => CursosEjerciciosWidget(
+            initialChallengeId: params.getParam(
+              'challengeId',
+              ParamType.String,
+            ),
+            initialChallengeType: params.getParam(
+              'challengeType',
+              ParamType.String,
+            ),
+          ),
         ),
         FFRoute(
           name: RankingWidget.routeName,
@@ -250,22 +259,44 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: AdminDashboardWidget.routeName,
           path: AdminDashboardWidget.routePath,
+          requireAdmin: true,
           builder: (context, params) => AdminDashboardWidget(),
         ),
         FFRoute(
           name: AdminUsuariosWidget.routeName,
           path: AdminUsuariosWidget.routePath,
+          requireAdmin: true,
           builder: (context, params) => AdminUsuariosWidget(),
         ),
         FFRoute(
           name: AdminVideosWidget.routeName,
           path: AdminVideosWidget.routePath,
+          requireAdmin: true,
           builder: (context, params) => AdminVideosWidget(),
         ),
         FFRoute(
           name: AdminDesafiosWidget.routeName,
           path: AdminDesafiosWidget.routePath,
+          requireAdmin: true,
           builder: (context, params) => AdminDesafiosWidget(),
+        ),
+        FFRoute(
+          name: AdminConvocatoriasWidget.routeName,
+          path: AdminConvocatoriasWidget.routePath,
+          requireAdmin: true,
+          builder: (context, params) => AdminConvocatoriasWidget(),
+        ),
+        FFRoute(
+          name: AdminSettingsWidget.routeName,
+          path: AdminSettingsWidget.routePath,
+          requireAdmin: true,
+          builder: (context, params) => AdminSettingsWidget(),
+        ),
+        FFRoute(
+          name: AdminCategoriesWidget.routeName,
+          path: AdminCategoriesWidget.routePath,
+          requireAdmin: true,
+          builder: (context, params) => AdminCategoriesWidget(),
         )
       ].map((r) => r.toRoute(appStateNotifier)).toList(),
     );
@@ -411,6 +442,7 @@ class FFRoute {
     required this.path,
     required this.builder,
     this.requireAuth = false,
+    this.requireAdmin = false,
     this.asyncParams = const {},
     this.routes = const [],
   });
@@ -418,6 +450,7 @@ class FFRoute {
   final String name;
   final String path;
   final bool requireAuth;
+  final bool requireAdmin;
   final Map<String, Future<dynamic> Function(String)> asyncParams;
   final Widget Function(BuildContext, FFParameters) builder;
   final List<GoRoute> routes;
@@ -435,6 +468,15 @@ class FFRoute {
           if (requireAuth && !appStateNotifier.loggedIn) {
             appStateNotifier.setRedirectLocationIfUnset(state.uri.toString());
             return '/login';
+          }
+          if (requireAdmin) {
+            if (!appStateNotifier.loggedIn) {
+              appStateNotifier.setRedirectLocationIfUnset(state.uri.toString());
+              return '/login';
+            }
+            if (!FFAppState().isAdminSession) {
+              return '/';
+            }
           }
           return null;
         },

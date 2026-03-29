@@ -1,4 +1,5 @@
 import '/backend/supabase/supabase.dart';
+import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
@@ -183,6 +184,45 @@ class _ConvocatoriaProfesionalWidgetState
   @override
   Widget build(BuildContext context) {
     final userType = context.watch<FFAppState>().userType;
+    final convocatoriasEnabled = FFAppState().isFeatureEnabled('convocatorias');
+    final hasConvocatoriasAccess =
+        FFAppState().canAccessFeature('convocatorias');
+    if (!convocatoriasEnabled) {
+      return Scaffold(
+        key: scaffoldKey,
+        backgroundColor: FlutterFlowTheme.of(context).primaryBackground,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Convocatorias desactivadas temporalmente.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF0D3B66),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (!hasConvocatoriasAccess) {
+      return Scaffold(
+        key: scaffoldKey,
+        backgroundColor: FlutterFlowTheme.of(context).primaryBackground,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: PlanPaywallCard(
+              title: 'Convocatórias no Plano Pro',
+              message:
+                  'Esse acesso fica disponível apenas no Plano Pro. Com o modo piloto ligado, o bloqueio deixa de valer.',
+            ),
+          ),
+        ),
+      );
+    }
     return GestureDetector(
       onTap: () {
         FocusScope.of(context).unfocus();

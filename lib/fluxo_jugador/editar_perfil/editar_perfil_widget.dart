@@ -46,6 +46,14 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
 
   // Opção selecionada (club ou sin club)
   bool _juegaEnClub = false;
+  String? _selectedPlayerStatus;
+
+  static const List<String> _playerStatusOptions = [
+    'Buscando club',
+    'Federado',
+    'En prueba',
+    'En inferiores',
+  ];
 
   // Image picker
   final ImagePicker _picker = ImagePicker();
@@ -118,6 +126,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             TextEditingController(text: response['pie_dominante'] ?? '');
         _lugarController = TextEditingController(text: response['lugar'] ?? '');
         _juegaEnClub = response['juega_en_club'] ?? false;
+        _selectedPlayerStatus =
+            _normalizePlayerStatus(response['player_status']);
         _photoUrl = response['photo_url'];
         _coverUrl = response['cover_url'];
       } else {
@@ -495,6 +505,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         'pie_dominante': _pieDominanteController?.text ?? '',
         'lugar': _lugarController?.text ?? '',
         'juega_en_club': _juegaEnClub,
+        'player_status': _selectedPlayerStatus,
       }).eq('user_id', uid);
 
       if (mounted) {
@@ -565,6 +576,24 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     );
   }
 
+  String? _normalizePlayerStatus(dynamic rawValue) {
+    final raw = rawValue?.toString().trim() ?? '';
+    if (raw.isEmpty) return null;
+
+    switch (raw.toLowerCase()) {
+      case 'buscando club':
+        return 'Buscando club';
+      case 'federado':
+        return 'Federado';
+      case 'en prueba':
+        return 'En prueba';
+      case 'en inferiores':
+        return 'En inferiores';
+      default:
+        return null;
+    }
+  }
+
   Widget _buildTextField({
     required String label,
     required TextEditingController? controller,
@@ -602,6 +631,67 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               fontSize: 16,
               color: const Color(0xFF1A202C),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDropdownField({
+    required String label,
+    required String hintText,
+    required String? value,
+    required ValueChanged<String?> onChanged,
+    required List<String> options,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w500,
+                fontSize: 14,
+                color: const Color(0xFF1A202C),
+              ),
+            ),
+          ),
+          DropdownButtonFormField<String>(
+            value: value,
+            onChanged: onChanged,
+            isExpanded: true,
+            decoration: _buildInputDecoration(
+              hintText,
+              suffixIcon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: Color(0xFF718096),
+              ),
+            ),
+            hint: Text(
+              hintText,
+              style: GoogleFonts.inter(
+                color: const Color(0xFF718096),
+                fontSize: 16,
+              ),
+            ),
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              color: const Color(0xFF1A202C),
+            ),
+            dropdownColor: Colors.white,
+            icon: const SizedBox.shrink(),
+            items: options
+                .map(
+                  (option) => DropdownMenuItem<String>(
+                    value: option,
+                    child: Text(option),
+                  ),
+                )
+                .toList(),
           ),
         ],
       ),
@@ -976,6 +1066,15 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                   controller: _posicaoController,
                   focusNode: _posicaoFocusNode,
                   hintText: 'Defensor Central',
+                ),
+                _buildDropdownField(
+                  label: 'Status del jugador',
+                  hintText: 'Selecciona tu momento actual',
+                  value: _selectedPlayerStatus,
+                  onChanged: (value) {
+                    setState(() => _selectedPlayerStatus = value);
+                  },
+                  options: _playerStatusOptions,
                 ),
                 _buildTextField(
                   label: 'Pie Dominante',

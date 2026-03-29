@@ -1,6 +1,10 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/flutter_flow/app_modals.dart';
+import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/fluxo_jugador/cursos_ejercicios/cursos_ejercicios_widget.dart';
+import '/gamification/gamification_service.dart';
 import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
@@ -35,6 +39,7 @@ class _FeedWidgetState extends State<FeedWidget>
   // Video Feed State
   String _selectedTab = 'todos';
   List<Map<String, dynamic>> _videos = [];
+  List<Map<String, dynamic>> _challengeCards = [];
   bool _isLoading = true;
   bool _isFollowingAnyone = true;
   PageController? _pageController;
@@ -163,8 +168,15 @@ class _FeedWidgetState extends State<FeedWidget>
   String? get _currentUserId =>
       currentUserUid.isNotEmpty ? currentUserUid : null;
   bool get _isUserLoggedIn => currentUserUid.isNotEmpty;
-  bool get _isScoutViewer =>
-      FFAppState.normalizeUserType(FFAppState().userType) == 'profesional';
+  String get _normalizedViewerType =>
+      FFAppState.normalizeUserType(FFAppState().userType);
+  bool get _isScoutViewer => _normalizedViewerType == 'profesional';
+  bool get _shouldShowChallengeFeedCards =>
+      FFAppState().isFeatureEnabled('desafios') &&
+      _selectedTab == 'todos' &&
+      _normalizedViewerType != 'profesional' &&
+      _normalizedViewerType != 'club' &&
+      _normalizedViewerType != 'admin';
 
   String? _firstNonEmpty(Iterable<dynamic> values) {
     for (final value in values) {
@@ -297,6 +309,220 @@ class _FeedWidgetState extends State<FeedWidget>
 
       return true;
     }).toList();
+  }
+
+  List<Map<String, dynamic>> get _visibleFeedItems {
+    final visibleVideos = _isScoutViewer ? _scoutFilteredVideos : _videos;
+    if (!_shouldShowChallengeFeedCards || _challengeCards.isEmpty) {
+      return visibleVideos
+          .map(
+            (video) => {
+              'feed_item_type': 'video',
+              'payload': video,
+            },
+          )
+          .toList();
+    }
+
+    return _mixFeedItems(visibleVideos, _challengeCards);
+  }
+
+  List<Map<String, dynamic>> _mixFeedItems(
+    List<Map<String, dynamic>> videos,
+    List<Map<String, dynamic>> challenges,
+  ) {
+    final items = <Map<String, dynamic>>[];
+    var videoIndex = 0;
+    var challengeIndex = 0;
+
+    if (videos.isNotEmpty) {
+      items.add({
+        'feed_item_type': 'video',
+        'payload': videos.first,
+      });
+      videoIndex = 1;
+    }
+
+    while (videoIndex < videos.length || challengeIndex < challenges.length) {
+      if (challengeIndex < challenges.length) {
+        items.add({
+          'feed_item_type': 'challenge',
+          'payload': challenges[challengeIndex],
+        });
+        challengeIndex += 1;
+      }
+
+      for (var i = 0; i < 3 && videoIndex < videos.length; i++) {
+        items.add({
+          'feed_item_type': 'video',
+          'payload': videos[videoIndex],
+        });
+        videoIndex += 1;
+      }
+    }
+
+    return items;
+  }
+
+  Future<List<Map<String, dynamic>>> _loadChallengeFeedCards({
+    required String? userId,
+  }) async {
+    if (!_shouldShowChallengeFeedCards) {
+      return <Map<String, dynamic>>[];
+    }
+
+    try {
+      final results = await Future.wait([
+        SupaFlow.client
+            .from('courses')
+            .select(
+              'id, title, description, thumbnail_url, video_url, difficulty, duration_minutes, order_index, created_at',
+            )
+            .eq('is_active', true)
+            .order('order_index', ascending: true)
+            .limit(6),
+        SupaFlow.client
+            .from('exercises')
+            .select(
+              'id, title, description, thumbnail_url, video_url, difficulty, duration_minutes, order_index, created_at',
+            )
+            .eq('is_active', true)
+            .order('order_index', ascending: true)
+            .limit(6),
+      ]);
+
+      final courses = List<Map<String, dynamic>>.from(results[0] as List);
+      final exercises = List<Map<String, dynamic>>.from(results[1] as List);
+
+      final courseStatusById = <String, String>{};
+      final exerciseStatusById = <String, String>{};
+      final attemptStatusByKey = <String, String>{};
+
+      if (userId != null) {
+        try {
+          final userResults = await Future.wait([
+            SupaFlow.client
+                .from('user_courses')
+                .select('course_id, status')
+                .eq('user_id', userId),
+            SupaFlow.client
+                .from('user_exercises')
+                .select('exercise_id, status')
+                .eq('user_id', userId),
+            SupaFlow.client
+                .from('user_challenge_attempts')
+                .select('item_id, item_type, status')
+                .eq('user_id', userId),
+          ]);
+
+          for (final row in (userResults[0] as List)) {
+            final itemId = row['course_id']?.toString() ?? '';
+            if (itemId.isNotEmpty) {
+              courseStatusById[itemId] = row['status']?.toString() ?? '';
+            }
+          }
+
+          for (final row in (userResults[1] as List)) {
+            final itemId = row['exercise_id']?.toString() ?? '';
+            if (itemId.isNotEmpty) {
+              exerciseStatusById[itemId] = row['status']?.toString() ?? '';
+            }
+          }
+
+          for (final row in (userResults[2] as List)) {
+            final itemId = row['item_id']?.toString() ?? '';
+            final itemType = row['item_type']?.toString() ?? '';
+            if (itemId.isEmpty || itemType.isEmpty) continue;
+            attemptStatusByKey['$itemType:$itemId'] =
+                row['status']?.toString() ?? '';
+          }
+        } catch (e) {
+          debugPrint('Feed challenge statuses load failed: $e');
+        }
+      }
+
+      final combined = <Map<String, dynamic>>[
+        ...courses.map((item) => {
+              ...item,
+              'type': 'course',
+            }),
+        ...exercises.map((item) => {
+              ...item,
+              'type': 'exercise',
+            }),
+      ];
+
+      combined.sort((a, b) {
+        final orderCompare = GamificationService.toInt(a['order_index'])
+            .compareTo(GamificationService.toInt(b['order_index']));
+        if (orderCompare != 0) return orderCompare;
+        final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '') ??
+            DateTime(1970);
+        final bDate = DateTime.tryParse(b['created_at']?.toString() ?? '') ??
+            DateTime(1970);
+        return bDate.compareTo(aDate);
+      });
+
+      String resolveFeedStatus(Map<String, dynamic> challenge) {
+        final itemId = challenge['id']?.toString() ?? '';
+        final itemType = challenge['type']?.toString() ?? '';
+        if (itemId.isEmpty || itemType.isEmpty) return 'available';
+
+        final baseStatus = (itemType == 'course'
+                ? courseStatusById[itemId]
+                : exerciseStatusById[itemId])
+            ?.trim()
+            .toLowerCase();
+        final attemptStatus =
+            attemptStatusByKey['$itemType:$itemId']?.trim().toLowerCase();
+
+        if (baseStatus == 'completed' || attemptStatus == 'completed') {
+          return 'completed';
+        }
+        if (attemptStatus == 'submitted') return 'submitted';
+        if (baseStatus == 'in_progress' || attemptStatus == 'in_progress') {
+          return 'in_progress';
+        }
+        return 'available';
+      }
+
+      return combined.take(4).map((challenge) {
+        return {
+          ...challenge,
+          'feed_status': resolveFeedStatus(challenge),
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('Feed challenge cards load failed: $e');
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  void _openChallengeFromFeed(Map<String, dynamic> challenge) {
+    if (!FFAppState().canAccessFeature('desafios')) {
+      showPlanRequiredDialog(
+        context,
+        featureName: 'Desafios e cursos',
+        message:
+            'Este conteúdo do feed ativa desafios do Plano Pro. Com modo piloto ON, ele fica liberado automaticamente.',
+      );
+      return;
+    }
+
+    final challengeId = challenge['id']?.toString().trim() ?? '';
+    final challengeType = challenge['type']?.toString().trim() ?? '';
+
+    _pauseAllVideos();
+    _isActiveRoute = false;
+    FeedWidget.activeInstanceId = null;
+
+    context.pushNamed(
+      CursosEjerciciosWidget.routeName,
+      queryParameters: {
+        if (challengeId.isNotEmpty) 'challengeId': challengeId,
+        if (challengeType.isNotEmpty) 'challengeType': challengeType,
+      },
+    );
   }
 
   Future<void> _openScoutFeedFilters() async {
@@ -758,9 +984,12 @@ class _FeedWidgetState extends State<FeedWidget>
         video['user_progress'] = progressByUserId[uid];
       }
 
+      final challengeFeedCards = await _loadChallengeFeedCards(userId: userId);
+
       if (mounted) {
         setState(() {
           _videos = visibleVideos;
+          _challengeCards = challengeFeedCards;
           _isLoading = false;
           _currentIndex = 0;
         });
@@ -774,6 +1003,7 @@ class _FeedWidgetState extends State<FeedWidget>
       if (mounted) {
         setState(() {
           _videos = [];
+          _challengeCards = [];
           _isLoading = false;
         });
       }
@@ -794,15 +1024,41 @@ class _FeedWidgetState extends State<FeedWidget>
 
   void _onPageChanged(int index) {
     setState(() => _currentIndex = index);
-    _checkLoginModal();
+    final feedItems = _visibleFeedItems;
+    if (index >= 0 &&
+        index < feedItems.length &&
+        feedItems[index]['feed_item_type'] == 'video') {
+      _checkLoginModal();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final userType = context.watch<FFAppState>().userType;
+    final feedEnabled = FFAppState().isFeatureEnabled('feed');
 
     final size = MediaQuery.of(context).size;
     final feedHeight = size.height;
+
+    if (!feedEnabled) {
+      return Scaffold(
+        key: scaffoldKey,
+        backgroundColor: FlutterFlowTheme.of(context).primaryBackground,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              FFAppState().uiText(
+                'feed_empty_label',
+                fallback: 'No hay videos disponibles por ahora.',
+              ),
+              textAlign: TextAlign.center,
+              style: FlutterFlowTheme.of(context).titleMedium,
+            ),
+          ),
+        ),
+      );
+    }
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -952,17 +1208,18 @@ class _FeedWidgetState extends State<FeedWidget>
     if (_selectedTab == 'siguiendo' && !_isFollowingAnyone) {
       return _buildNoFollowingContent();
     }
-    if (_videos.isEmpty) return _buildNoVideosContent();
-
     final visibleVideos = _isScoutViewer ? _scoutFilteredVideos : _videos;
-    if (visibleVideos.isEmpty) {
-      if (_isScoutViewer && _activeScoutFeedFiltersCount > 0) {
+    final feedItems = _visibleFeedItems;
+    if (feedItems.isEmpty) {
+      if (_isScoutViewer &&
+          _activeScoutFeedFiltersCount > 0 &&
+          visibleVideos.isEmpty) {
         return _buildNoFilteredVideosContent();
       }
       return _buildNoVideosContent();
     }
 
-    if (_currentIndex >= visibleVideos.length) {
+    if (_currentIndex >= feedItems.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         setState(() => _currentIndex = 0);
@@ -975,10 +1232,34 @@ class _FeedWidgetState extends State<FeedWidget>
     return PageView.builder(
         controller: _pageController,
         scrollDirection: Axis.vertical,
-        itemCount: visibleVideos.length,
+        itemCount: feedItems.length,
         onPageChanged: _onPageChanged,
         itemBuilder: (context, index) {
-          final video = visibleVideos[index];
+          final feedItem = feedItems[index];
+          final payload = feedItem['payload'];
+          final itemData = payload is Map
+              ? Map<String, dynamic>.from(payload)
+              : <String, dynamic>{};
+          if (feedItem['feed_item_type'] == 'challenge') {
+            return _ChallengeFeedItem(
+              key: ValueKey(
+                'challenge-${itemData['type']}-${itemData['id']}-$_selectedTab-$_instanceId',
+              ),
+              challengeData: itemData,
+              isLoggedIn: _isUserLoggedIn,
+              hasAccess: FFAppState().canAccessFeature('desafios'),
+              onRequireLogin: _showCreateProfileModal,
+              onOpenChallenge: () => _openChallengeFromFeed(itemData),
+              onLockedTap: () => showPlanRequiredDialog(
+                context,
+                featureName: 'Desafios e cursos',
+                message:
+                    'Os desafios do feed fazem parte do Plano Pro. Com modo piloto ON, o bloqueio desaparece.',
+              ),
+            );
+          }
+
+          final video = itemData;
           return _VideoPlayerItem(
             key: ValueKey('${video['id']}-$_selectedTab-$_instanceId'),
             videoUrl: video['video_url'] ?? '',
@@ -1084,6 +1365,363 @@ class _FeedWidgetState extends State<FeedWidget>
               backgroundColor: const Color(0xFF0D3B66)),
           child: const Text('Actualizar')),
     ]));
+  }
+}
+
+class _ChallengeFeedItem extends StatelessWidget {
+  const _ChallengeFeedItem({
+    super.key,
+    required this.challengeData,
+    required this.isLoggedIn,
+    required this.hasAccess,
+    required this.onRequireLogin,
+    required this.onOpenChallenge,
+    required this.onLockedTap,
+  });
+
+  final Map<String, dynamic> challengeData;
+  final bool isLoggedIn;
+  final bool hasAccess;
+  final VoidCallback onRequireLogin;
+  final VoidCallback onOpenChallenge;
+  final VoidCallback onLockedTap;
+
+  String get _status {
+    return (challengeData['feed_status'] ?? 'available')
+        .toString()
+        .trim()
+        .toLowerCase();
+  }
+
+  String get _title {
+    final title = challengeData['title']?.toString().trim() ?? '';
+    return title.isNotEmpty ? title : 'Desafio disponível';
+  }
+
+  String get _description {
+    return challengeData['description']?.toString().trim() ?? '';
+  }
+
+  String get _typeLabel {
+    return challengeData['type'] == 'course' ? 'Curso' : 'Exercício';
+  }
+
+  String get _statusLabel {
+    switch (_status) {
+      case 'completed':
+        return 'Concluído';
+      case 'submitted':
+        return 'Tentativa enviada';
+      case 'in_progress':
+        return 'Em andamento';
+      default:
+        return 'Novo desafio';
+    }
+  }
+
+  Color get _statusColor {
+    switch (_status) {
+      case 'completed':
+        return const Color(0xFF15803D);
+      case 'submitted':
+        return const Color(0xFFD97706);
+      case 'in_progress':
+        return const Color(0xFF0D3B66);
+      default:
+        return Colors.white.withOpacity(0.18);
+    }
+  }
+
+  String get _headline {
+    final reward = GamificationService.challengeCompletedPoints;
+    if (!hasAccess) {
+      return 'Esse desafio aparece no feed, mas a ativação completa fica liberada no Plano Pro.';
+    }
+    switch (_status) {
+      case 'completed':
+        return 'Desafio concluído. Seus $reward pontos já contam no progresso.';
+      case 'submitted':
+        return 'Sua tentativa já foi enviada. Abra o desafio para revisar os próximos passos.';
+      case 'in_progress':
+        return 'Você já ativou este desafio. Falta só avançar até os $reward pontos.';
+      default:
+        return 'Completá o desafio $_title. 🔥 +$reward XP ao completar.';
+    }
+  }
+
+  String get _primaryActionLabel {
+    if (!isLoggedIn) return 'Criar perfil para ativar';
+    if (!hasAccess) return 'Desbloquear no Pro';
+    switch (_status) {
+      case 'completed':
+        return 'Rever desafio';
+      case 'submitted':
+        return 'Ver tentativa';
+      case 'in_progress':
+        return 'Continuar desafio';
+      default:
+        return 'Ativar desafio';
+    }
+  }
+
+  IconData get _primaryActionIcon {
+    if (!isLoggedIn) return Icons.login_rounded;
+    if (!hasAccess) return Icons.workspace_premium_outlined;
+    switch (_status) {
+      case 'completed':
+        return Icons.check_circle_outline_rounded;
+      case 'submitted':
+        return Icons.ondemand_video_outlined;
+      case 'in_progress':
+        return Icons.play_arrow_rounded;
+      default:
+        return Icons.track_changes_rounded;
+    }
+  }
+
+  void _handleTap() {
+    if (!isLoggedIn) {
+      onRequireLogin();
+      return;
+    }
+    if (!hasAccess) {
+      onLockedTap();
+      return;
+    }
+    onOpenChallenge();
+  }
+
+  Widget _buildInfoChip({
+    required IconData icon,
+    required String label,
+    Color backgroundColor = const Color(0x1FFFFFFF),
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = challengeData['thumbnail_url']?.toString().trim() ?? '';
+    final difficulty = challengeData['difficulty']?.toString().trim() ?? '';
+    final durationMinutes =
+        GamificationService.toInt(challengeData['duration_minutes']);
+    final participationReward = GamificationService.challengeParticipatedPoints;
+
+    return GestureDetector(
+      onTap: _handleTap,
+      child: Container(
+        color: const Color(0xFF050816),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (imageUrl.isNotEmpty)
+              Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  color: const Color(0xFF071126),
+                ),
+              )
+            else
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF102542),
+                      Color(0xFF06111F),
+                      Color(0xFF1C3D5A),
+                    ],
+                  ),
+                ),
+              ),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.20),
+                    Colors.black.withOpacity(0.35),
+                    Colors.black.withOpacity(0.86),
+                  ],
+                  stops: const [0.0, 0.42, 1.0],
+                ),
+              ),
+            ),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF7C2D12).withOpacity(0.92),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.18),
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.local_fire_department_rounded,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'Desafio no feed',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Spacer(),
+                        _buildInfoChip(
+                          icon: Icons.bolt_rounded,
+                          label: _statusLabel,
+                          backgroundColor: _statusColor,
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildInfoChip(
+                          icon: challengeData['type'] == 'course'
+                              ? Icons.school_outlined
+                              : Icons.fitness_center_outlined,
+                          label: _typeLabel,
+                        ),
+                        _buildInfoChip(
+                          icon: Icons.stars_rounded,
+                          label:
+                              '🔥 +${GamificationService.challengeCompletedPoints} XP ao completar',
+                        ),
+                        _buildInfoChip(
+                          icon: Icons.videocam_rounded,
+                          label: '🎥 +$participationReward XP ao subir vídeo',
+                        ),
+                        if (difficulty.isNotEmpty)
+                          _buildInfoChip(
+                            icon: Icons.tune_rounded,
+                            label: difficulty,
+                          ),
+                        if (durationMinutes > 0)
+                          _buildInfoChip(
+                            icon: Icons.schedule_rounded,
+                            label: '$durationMinutes min',
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      _title,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 30,
+                        fontWeight: FontWeight.w800,
+                        height: 1.08,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _headline,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                      ),
+                    ),
+                    if (_description.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        _description,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.80),
+                          fontSize: 13,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _handleTap,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF071126),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          elevation: 6,
+                          shadowColor: const Color(0x33071126),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        icon: Icon(_primaryActionIcon),
+                        label: Text(
+                          _primaryActionLabel,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -1,4 +1,5 @@
 import '/backend/supabase/supabase.dart';
+import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
@@ -328,14 +329,14 @@ class _ConvocatoriaJugador1WidgetState
     if (presentialFlag) return 'Presencial';
 
     final raw = (_firstNonEmpty([
-          convocatoria['modalidad'],
-          convocatoria['modality'],
-          convocatoria['tipo_modalidad'],
-          convocatoria['formato'],
-          convocatoria['format'],
-          convocatoria['tipo'],
-        ]) ??
-        'Presencial')
+              convocatoria['modalidad'],
+              convocatoria['modality'],
+              convocatoria['tipo_modalidad'],
+              convocatoria['formato'],
+              convocatoria['format'],
+              convocatoria['tipo'],
+            ]) ??
+            'Presencial')
         .toLowerCase();
 
     if (raw.contains('hibr')) return 'Híbrida';
@@ -359,9 +360,77 @@ class _ConvocatoriaJugador1WidgetState
     }
   }
 
+  int _requiredChallengesCount(Map<String, dynamic> convocatoria) {
+    dynamic raw = convocatoria['required_challenges'];
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return 0;
+      try {
+        raw = jsonDecode(trimmed);
+      } catch (_) {
+        return 0;
+      }
+    }
+    if (raw is! List) return 0;
+
+    var count = 0;
+    for (final entry in raw) {
+      final map = entry is Map<String, dynamic>
+          ? entry
+          : entry is Map
+              ? Map<String, dynamic>.from(entry)
+              : null;
+      if (map == null) continue;
+      final id = map['id']?.toString().trim() ?? '';
+      final type = map['type']?.toString().trim().toLowerCase() ?? '';
+      if (id.isEmpty || (type != 'course' && type != 'exercise')) continue;
+      count++;
+    }
+    return count;
+  }
+
   @override
   Widget build(BuildContext context) {
     final userType = context.watch<FFAppState>().userType;
+    final convocatoriasEnabled = FFAppState().isFeatureEnabled('convocatorias');
+    final hasConvocatoriasAccess =
+        FFAppState().canAccessFeature('convocatorias');
+    if (!convocatoriasEnabled) {
+      return Scaffold(
+        key: scaffoldKey,
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Convocatorias desactivadas temporalmente.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF0D3B66),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (!hasConvocatoriasAccess) {
+      return Scaffold(
+        key: scaffoldKey,
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: PlanPaywallCard(
+              title: 'Convocatórias no Plano Pro',
+              message:
+                  'A navegação de convocatórias fica liberada no Pro. Se o modo piloto estiver ON, o bloqueio some automaticamente.',
+            ),
+          ),
+        ),
+      );
+    }
     return GestureDetector(
       onTap: () {
         FocusScope.of(context).unfocus();
@@ -615,6 +684,7 @@ class _ConvocatoriaJugador1WidgetState
     final clubSecondary = clubLeague.isNotEmpty ? clubLeague : clubCountry;
     final mode = _resolveConvocatoriaMode(convocatoria);
     final activeCount = convocatoria['active_convocatorias_count'] as int? ?? 0;
+    final requiredChallengesCount = _requiredChallengesCount(convocatoria);
 
     return GestureDetector(
       onTap: () => _navigateToDetail(convocatoria),
@@ -648,7 +718,8 @@ class _ConvocatoriaJugador1WidgetState
                           width: double.infinity,
                           height: 156,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _buildPlaceholderImage(),
+                          errorBuilder: (_, __, ___) =>
+                              _buildPlaceholderImage(),
                         )
                       : _buildPlaceholderImage(),
                   Positioned(
@@ -660,8 +731,8 @@ class _ConvocatoriaJugador1WidgetState
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color:
-                            _convocatoriaModeColor(mode).withValues(alpha: 0.14),
+                        color: _convocatoriaModeColor(mode)
+                            .withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
@@ -794,6 +865,11 @@ class _ConvocatoriaJugador1WidgetState
                         Icons.location_on_outlined,
                         'Ubicación: $ubicacion',
                       ),
+                      if (requiredChallengesCount > 0)
+                        _buildInfoTag(
+                          Icons.task_alt_rounded,
+                          'Desafíos requeridos: $requiredChallengesCount',
+                        ),
                     ],
                   ),
                 ],
@@ -816,7 +892,8 @@ class _ConvocatoriaJugador1WidgetState
       width: size,
       height: size,
       color: const Color(0xFF0D3B66),
-      child: Icon(Icons.shield_outlined, size: size * 0.58, color: Colors.white));
+      child:
+          Icon(Icons.shield_outlined, size: size * 0.58, color: Colors.white));
   Widget _buildInfoTag(IconData icon, String text) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(

@@ -29,6 +29,8 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
   int _totalVideos = 0;
   int _totalChallenges = 0;
   int _totalChallengeAttempts = 0;
+  int _totalConvocatorias = 0;
+  int _totalPostulaciones = 0;
 
   @override
   void initState() {
@@ -53,6 +55,8 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
           await SupaFlow.client.from('courses').select('id');
       final exercisesResponse =
           await SupaFlow.client.from('exercises').select('id');
+      final convocatoriasResponse =
+          await SupaFlow.client.from('convocatorias').select('id');
 
       int totalAttempts = 0;
       try {
@@ -62,6 +66,20 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
       } catch (_) {
         totalAttempts = 0;
       }
+
+      int totalPostulaciones = 0;
+      try {
+        final postulacionesResponse =
+            await SupaFlow.client.from('aplicaciones_convocatoria').select('id');
+        totalPostulaciones = (postulacionesResponse as List).length;
+      } catch (_) {
+        totalPostulaciones = 0;
+      }
+      try {
+        final postulacionesResponse =
+            await SupaFlow.client.from('postulaciones').select('id');
+        totalPostulaciones += (postulacionesResponse as List).length;
+      } catch (_) {}
 
       int jugadores = 0, profesionales = 0, clubes = 0;
       for (final user in usersResponse as List) {
@@ -75,7 +93,7 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
 
       if (mounted) {
         setState(() {
-          _totalUsers = (usersResponse as List).length;
+          _totalUsers = (usersResponse).length;
           _totalJugadores = jugadores;
           _totalProfesionales = profesionales;
           _totalClubes = clubes;
@@ -83,6 +101,8 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
           _totalChallenges = (coursesResponse as List).length +
               (exercisesResponse as List).length;
           _totalChallengeAttempts = totalAttempts;
+          _totalConvocatorias = (convocatoriasResponse as List).length;
+          _totalPostulaciones = totalPostulaciones;
           _isLoading = false;
         });
       }
@@ -167,6 +187,30 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
                       onTap: () =>
                           context.pushNamed(AdminDesafiosWidget.routeName),
                     ),
+                    const SizedBox(height: 12),
+                    _buildMenuCard(
+                      icon: Icons.campaign,
+                      title: 'Convocatorias',
+                      subtitle: '$_totalConvocatorias convocatorias',
+                      onTap: () =>
+                          context.pushNamed(AdminConvocatoriasWidget.routeName),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildMenuCard(
+                      icon: Icons.category,
+                      title: 'CategorÃ­as',
+                      subtitle: 'Gestionar categorÃ­as de desafÃ­os',
+                      onTap: () =>
+                          context.pushNamed(AdminCategoriesWidget.routeName),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildMenuCard(
+                      icon: Icons.settings,
+                      title: 'Configuraciones',
+                      subtitle: 'Piloto, flags y textos',
+                      onTap: () =>
+                          context.pushNamed(AdminSettingsWidget.routeName),
+                    ),
                   ],
                 ),
               ),
@@ -190,6 +234,14 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
         _buildStatCard(
             'Scouts', _totalProfesionales, Icons.search, Colors.orange),
         _buildStatCard('Clubes', _totalClubes, Icons.business, Colors.purple),
+        _buildStatCard(
+            'Videos', _totalVideos, Icons.video_library, Colors.redAccent),
+        _buildStatCard('Desafios', _totalChallenges, Icons.fitness_center,
+            Colors.deepOrange),
+        _buildStatCard('Convocatorias', _totalConvocatorias,
+            Icons.campaign, Colors.teal),
+        _buildStatCard('Postulaciones', _totalPostulaciones,
+            Icons.how_to_reg, Colors.indigo),
       ],
     );
   }

@@ -90,6 +90,7 @@ dependencies:
   video_player: ^2.7.2
   video_player_web: ^2.4.0
   visibility_detector: ^0.4.0+2
+  uuid: ^4.0.0
   webview_flutter: 4.13.0
   webview_flutter_android: 4.7.0
   webview_flutter_platform_interface: 2.13.1
@@ -175,4 +176,3 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/custom-fonts/#from-packages
-

@@ -88,6 +88,9 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                 .where((e) => e.isNotEmpty)
                 .toList();
         }
+        if (_isTargetPlayer) {
+          await _registerProfileView();
+        }
       }
       await _loadPlayerVideos();
       // Check if minor
@@ -151,6 +154,28 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     }
   }
 
+  Future<void> _registerProfileView() async {
+    final playerId = widget.userId?.trim() ?? '';
+    if (playerId.isEmpty ||
+        currentUserUid.isEmpty ||
+        currentUserUid == playerId) {
+      return;
+    }
+
+    if (_viewerType != 'profesional' && _viewerType != 'club') {
+      return;
+    }
+
+    try {
+      await SupaFlow.client.rpc(
+        'register_player_profile_view',
+        params: <String, dynamic>{'p_player_user_id': playerId},
+      );
+    } catch (e) {
+      debugPrint('Profile view register skipped: $e');
+    }
+  }
+
   String? _firstNonEmptyValue(List<dynamic> values) {
     for (final value in values) {
       final text = value?.toString().trim() ?? '';
@@ -181,12 +206,11 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   }
 
   bool _isChallengeVideo(Map<String, dynamic> video) {
-    final persistedType = (video['videoType'] ??
-            video['video_type'] ??
-            video['type'])
-        ?.toString()
-        .trim()
-        .toLowerCase();
+    final persistedType =
+        (video['videoType'] ?? video['video_type'] ?? video['type'])
+            ?.toString()
+            .trim()
+            .toLowerCase();
     if (persistedType == 'challenge') return true;
     if (persistedType == 'ugc') return false;
 
@@ -1056,6 +1080,9 @@ class _PerfilProfesionalSolicitarContatoWidgetState
       _userData?['club_actual'],
       _userData?['current_club'],
     ]);
+    final playerStatus = _firstNonEmptyValue([
+      _userData?['player_status'],
+    ]);
 
     Widget dataTile(IconData icon, String label, dynamic rawValue) {
       final value = rawValue?.toString().trim() ?? '';
@@ -1118,6 +1145,11 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           dataTile(Icons.flag_outlined, 'Nacionalidad / País', country),
           dataTile(Icons.location_on_outlined, 'Ciudad', city),
           dataTile(Icons.groups_outlined, 'Club', club),
+          dataTile(
+            Icons.track_changes_rounded,
+            'Status del jugador',
+            playerStatus,
+          ),
           if (position == null &&
               dominantFoot == null &&
               category == null &&
@@ -1126,7 +1158,8 @@ class _PerfilProfesionalSolicitarContatoWidgetState
               weight == null &&
               country == null &&
               city == null &&
-              club == null)
+              club == null &&
+              playerStatus == null)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),

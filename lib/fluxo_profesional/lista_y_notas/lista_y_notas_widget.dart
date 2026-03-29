@@ -106,7 +106,8 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
   }
 
   bool get _canUseSensitiveActions =>
-      _currentPlanId != null && _currentUserVerified;
+      FFAppState().unlockSensitiveActions ||
+      (_currentPlanId != null && _currentUserVerified);
 
   bool _resolveVerification(Map<String, dynamic>? user,
       {required bool defaultIfMissing}) {

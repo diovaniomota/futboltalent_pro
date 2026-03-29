@@ -36,6 +36,6 @@ class UserProgressViewRow extends SupabaseDataRow {
   int? get level => getField<int>('level');
   set level(int? value) => setField<int>('level', value);
 
-  dynamic? get badges => getField<dynamic>('badges');
-  set badges(dynamic? value) => setField<dynamic>('badges', value);
+  dynamic get badges => getField<dynamic>('badges');
+  set badges(dynamic value) => setField<dynamic>('badges', value);
 }

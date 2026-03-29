@@ -52,3 +52,9 @@ export '/fluxo_admin/admin_videos/admin_videos_widget.dart'
     show AdminVideosWidget;
 export '/fluxo_admin/admin_desafios/admin_desafios_widget.dart'
     show AdminDesafiosWidget;
+export '/fluxo_admin/admin_convocatorias/admin_convocatorias_widget.dart'
+    show AdminConvocatoriasWidget;
+export '/fluxo_admin/admin_settings/admin_settings_widget.dart'
+    show AdminSettingsWidget;
+export '/fluxo_admin/admin_categories/admin_categories_widget.dart'
+    show AdminCategoriesWidget;

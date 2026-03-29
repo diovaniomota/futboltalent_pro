@@ -247,8 +247,7 @@ class _CrearPublicacinDeVideoWidgetState
         final gained = GamificationService.videoUploadPoints +
             (isFirstVideo ? GamificationService.firstVideoBonusPoints : 0);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(moderationStatus ==
-                    GuardianMvpService.pendingStatus
+            content: Text(moderationStatus == GuardianMvpService.pendingStatus
                 ? 'Video recibido. Quedará visible cuando el responsable apruebe la cuenta. +$gained pts'
                 : '¡Video publicado con éxito! +$gained pts'),
             backgroundColor: Colors.green));
@@ -367,13 +366,19 @@ class _CrearPublicacinDeVideoWidgetState
       const Icon(Icons.file_upload_outlined,
           color: Color(0xFF0D3B66), size: 40),
       const SizedBox(height: 8),
-      Text('Haz click para subir',
+      Text('Subí tu jugada y mostrá quién sos',
           style: GoogleFonts.inter(
               fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
       const SizedBox(height: 8),
+      Text('Este video puede ser visto por scouts',
+          style: GoogleFonts.inter(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF444444))),
+      const SizedBox(height: 6),
       Text('MP4, MOV, AVI. Máx 500MB',
           style:
-              GoogleFonts.inter(fontSize: 14, color: const Color(0xFF444444))),
+              GoogleFonts.inter(fontSize: 12, color: const Color(0xFF718096))),
     ]);
   }
 
@@ -475,7 +480,7 @@ class _CrearPublicacinDeVideoWidgetState
       const SizedBox(height: 12),
       _buildPrivacyOption(
           title: 'Público',
-          subtitle: 'Todos pueden ver este video.',
+          subtitle: 'Todos pueden ver este video, incluidos scouts.',
           isSelected: _isPublic,
           onTap: () => setState(() => _isPublic = true)),
       const SizedBox(height: 12),

@@ -8,6 +8,55 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'convocatorias_club_model.dart';
 export 'convocatorias_club_model.dart';
 
+List<Map<String, dynamic>> _convocatoriaRequiredChallengesFrom(dynamic raw) {
+  dynamic source = raw;
+  if (source is String) {
+    final trimmed = source.trim();
+    if (trimmed.isEmpty) return const [];
+    try {
+      source = jsonDecode(trimmed);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  if (source is! List) return const [];
+
+  final result = <Map<String, dynamic>>[];
+  final seen = <String>{};
+
+  for (final entry in source) {
+    final map = entry is Map<String, dynamic>
+        ? Map<String, dynamic>.from(entry)
+        : entry is Map
+            ? Map<String, dynamic>.from(entry)
+            : null;
+    if (map == null) continue;
+
+    final id = map['id']?.toString().trim() ?? '';
+    final type = map['type']?.toString().trim().toLowerCase() ?? '';
+    if (id.isEmpty || (type != 'course' && type != 'exercise')) continue;
+
+    final key = '$type:$id';
+    if (!seen.add(key)) continue;
+
+    result.add({
+      ...map,
+      'id': id,
+      'type': type,
+      'title': map['title']?.toString().trim() ?? '',
+    });
+  }
+
+  return result;
+}
+
+String _convocatoriaChallengeTitle(Map<String, dynamic> challenge) {
+  final title = challenge['title']?.toString().trim() ?? '';
+  if (title.isNotEmpty) return title;
+  return challenge['type'] == 'course' ? 'Curso' : 'Desafío';
+}
+
 class ConvocatoriasClubWidget extends StatefulWidget {
   const ConvocatoriasClubWidget({super.key});
 
@@ -661,10 +710,15 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
     final estado = conv['estado']?.toString().toLowerCase() ?? 'activa';
     final categoria = conv['tipo'] ?? conv['categoria'] ?? 'Abierta';
     final postulaciones = conv['postulaciones_count'] ?? 0;
-    final fechaCreacion = _formatDate(conv['created_at']);
     final fechaCierre = _formatDate(conv['fecha_cierre']);
-    final ejercicios = conv['ejercicios'] as List? ?? [];
-    final convId = conv['id'].toString();
+    final requiredChallenges =
+        _convocatoriaRequiredChallengesFrom(conv['required_challenges']);
+    final challengeLabels = requiredChallenges.isNotEmpty
+        ? requiredChallenges.map(_convocatoriaChallengeTitle).toList()
+        : (conv['ejercicios'] as List? ?? [])
+            .map((item) => item.toString())
+            .where((item) => item.trim().isNotEmpty)
+            .toList();
 
     return Container(
       width: double.infinity,
@@ -760,16 +814,17 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildInfoColumn('Creada', fechaCreacion),
+              _buildInfoColumn(
+                  'Desafíos req.', challengeLabels.length.toString()),
               _buildInfoColumn('Cierra', fechaCierre),
             ],
           ),
 
-          // Ejercicios
-          if (ejercicios.isNotEmpty) ...[
+          // Desafíos requeridos
+          if (challengeLabels.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(
-              'Ejercicios incluidos:',
+              'Desafíos requeridos:',
               style: GoogleFonts.inter(
                 fontSize: 12,
                 color: const Color(0xFF818181),
@@ -779,8 +834,8 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: ejercicios
-                  .map<Widget>((e) => _buildExerciseTag(e.toString()))
+              children: challengeLabels
+                  .map<Widget>((challenge) => _buildExerciseTag(challenge))
                   .toList(),
             ),
           ],
@@ -885,6 +940,9 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
   String _tipo = 'Abierta';
   DateTime _fechaCierre = DateTime.now().add(const Duration(days: 30));
   bool _isSaving = false;
+  bool _isLoadingChallenges = true;
+  List<Map<String, dynamic>> _availableChallenges = [];
+  List<Map<String, dynamic>> _selectedRequiredChallenges = [];
   bool get _isEditing => widget.existingData != null;
 
   final List<String> _categorias = [
@@ -910,12 +968,111 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
           (data['edad_maxima'] ?? data['edad_max'])?.toString() ?? '';
       _categoria = data['categoria'] ?? 'Sub-17';
       _tipo = data['tipo'] ?? 'Abierta';
+      _selectedRequiredChallenges =
+          _convocatoriaRequiredChallengesFrom(data['required_challenges']);
       if (data['fecha_cierre'] != null) {
         try {
           _fechaCierre = DateTime.parse(data['fecha_cierre']);
         } catch (e) {}
       }
     }
+    _loadAvailableChallenges();
+  }
+
+  Future<void> _loadAvailableChallenges() async {
+    final available = <Map<String, dynamic>>[];
+
+    try {
+      final courses = await SupaFlow.client
+          .from('courses')
+          .select('id, title, is_active, order_index')
+          .eq('is_active', true)
+          .order('order_index');
+      for (final row in List<Map<String, dynamic>>.from(courses as List)) {
+        final id = row['id']?.toString().trim() ?? '';
+        if (id.isEmpty) continue;
+        available.add({
+          'id': id,
+          'type': 'course',
+          'title': row['title']?.toString().trim() ?? 'Curso',
+        });
+      }
+    } catch (e) {
+      debugPrint('Error cargando cursos para convocatoria: $e');
+    }
+
+    try {
+      final exercises = await SupaFlow.client
+          .from('exercises')
+          .select('id, title, is_active, order_index')
+          .eq('is_active', true)
+          .order('order_index');
+      for (final row in List<Map<String, dynamic>>.from(exercises as List)) {
+        final id = row['id']?.toString().trim() ?? '';
+        if (id.isEmpty) continue;
+        available.add({
+          'id': id,
+          'type': 'exercise',
+          'title': row['title']?.toString().trim() ?? 'Desafío',
+        });
+      }
+    } catch (e) {
+      debugPrint('Error cargando ejercicios para convocatoria: $e');
+    }
+
+    final titleByKey = <String, String>{
+      for (final item in available)
+        '${item['type']}:${item['id']}': item['title']?.toString().trim() ?? '',
+    };
+
+    final mergedSelection = _selectedRequiredChallenges
+        .map((item) {
+          final key = '${item['type']}:${item['id']}';
+          final title = item['title']?.toString().trim() ?? '';
+          return {
+            ...item,
+            'title': title.isNotEmpty ? title : (titleByKey[key] ?? ''),
+          };
+        })
+        .where((item) => ((item['id']?.toString() ?? '').trim().isNotEmpty))
+        .toList();
+
+    if (!mounted) return;
+    setState(() {
+      _availableChallenges = available;
+      _selectedRequiredChallenges = mergedSelection;
+      _isLoadingChallenges = false;
+    });
+  }
+
+  String _challengeKey(Map<String, dynamic> challenge) {
+    final type = challenge['type']?.toString().trim().toLowerCase() ?? '';
+    final id = challenge['id']?.toString().trim() ?? '';
+    return '$type:$id';
+  }
+
+  bool _isRequiredChallengeSelected(Map<String, dynamic> challenge) {
+    final key = _challengeKey(challenge);
+    return _selectedRequiredChallenges
+        .any((item) => _challengeKey(item) == key);
+  }
+
+  void _toggleRequiredChallenge(Map<String, dynamic> challenge) {
+    final key = _challengeKey(challenge);
+    setState(() {
+      final existingIndex = _selectedRequiredChallenges
+          .indexWhere((item) => _challengeKey(item) == key);
+      if (existingIndex >= 0) {
+        _selectedRequiredChallenges.removeAt(existingIndex);
+      } else {
+        _selectedRequiredChallenges.add({
+          'id': challenge['id'],
+          'type': challenge['type'],
+          'title': challenge['title'],
+          if (challenge['points'] != null) 'points': challenge['points'],
+        });
+      }
+    });
   }
 
   Future<void> _save() async {
@@ -931,6 +1088,18 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
     setState(() => _isSaving = true);
 
     try {
+      final requiredChallengesPayload = _selectedRequiredChallenges
+          .map((item) => {
+                'id': item['id']?.toString().trim(),
+                'type': item['type']?.toString().trim().toLowerCase(),
+                'title': item['title']?.toString().trim(),
+                if (item['points'] != null) 'points': item['points'],
+              })
+          .where((item) =>
+              (item['id']?.toString().isNotEmpty ?? false) &&
+              ((item['type'] == 'course') || (item['type'] == 'exercise')))
+          .toList();
+
       final data = {
         'club_id': widget.clubId,
         'titulo': _tituloController.text.trim(),
@@ -942,6 +1111,7 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
         'edad_maxima': int.tryParse(_edadMaxController.text) ?? 99,
         'fecha_cierre': _fechaCierre.toIso8601String(),
         'estado': 'activa',
+        'required_challenges': requiredChallengesPayload,
         'updated_at': DateTime.now().toIso8601String(),
       };
 
@@ -1124,6 +1294,97 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Desafíos requeridos',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF0D3B66),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'El jugador deberá completar todos estos desafíos antes de enviar su postulación.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_isLoadingChallenges)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF0D3B66),
+                        ),
+                      ),
+                    )
+                  else if (_availableChallenges.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Text(
+                        'No hay desafíos activos disponibles para vincular.',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    )
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _availableChallenges.map((challenge) {
+                        final selected =
+                            _isRequiredChallengeSelected(challenge);
+                        final typeLabel =
+                            challenge['type'] == 'course' ? 'Curso' : 'Desafío';
+                        return FilterChip(
+                          selected: selected,
+                          onSelected: (_) =>
+                              _toggleRequiredChallenge(challenge),
+                          label: Text(
+                            '$typeLabel · ${challenge['title']}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          selectedColor:
+                              const Color(0xFF0D3B66).withValues(alpha: 0.15),
+                          checkmarkColor: const Color(0xFF0D3B66),
+                          labelStyle: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: selected
+                                ? const Color(0xFF0D3B66)
+                                : const Color(0xFF444444),
+                          ),
+                          side: BorderSide(
+                            color: selected
+                                ? const Color(0xFF0D3B66)
+                                : const Color(0xFFCBD5E0),
+                          ),
+                          backgroundColor: Colors.white,
+                        );
+                      }).toList(),
+                    ),
+                  if (_selectedRequiredChallenges.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      '${_selectedRequiredChallenges.length} desafío(s) requerido(s)',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF0D3B66),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1244,6 +1505,14 @@ class _ViewConvocatoriaModal extends StatelessWidget {
     final tipo = convocatoria['tipo'] ?? '-';
     final estado = convocatoria['estado'] ?? 'activa';
     final postulaciones = convocatoria['postulaciones_count'] ?? 0;
+    final requiredChallenges = _convocatoriaRequiredChallengesFrom(
+        convocatoria['required_challenges']);
+    final challengeLabels = requiredChallenges.isNotEmpty
+        ? requiredChallenges.map(_convocatoriaChallengeTitle).toList()
+        : (convocatoria['ejercicios'] as List? ?? [])
+            .map((item) => item.toString())
+            .where((item) => item.trim().isNotEmpty)
+            .toList();
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.7,
@@ -1295,12 +1564,31 @@ class _ViewConvocatoriaModal extends StatelessWidget {
                   _buildDetailRow('Tipo', tipo),
                   _buildDetailRow('Estado', estado),
                   _buildDetailRow('Postulaciones', postulaciones.toString()),
+                  _buildDetailRow(
+                    'Desafíos requeridos',
+                    challengeLabels.length.toString(),
+                  ),
                   const SizedBox(height: 16),
                   Text('Descripción',
                       style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   Text(descripcion,
                       style: GoogleFonts.inter(color: Colors.grey[700])),
+                  if (challengeLabels.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      'Lista de desafíos requeridos',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: challengeLabels
+                          .map((challenge) => _buildChallengeTag(challenge))
+                          .toList(),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1319,6 +1607,25 @@ class _ViewConvocatoriaModal extends StatelessWidget {
           Text(label, style: GoogleFonts.inter(color: Colors.grey[600])),
           Text(value, style: GoogleFonts.inter(fontWeight: FontWeight.w500)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildChallengeTag(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFD6DEE8)),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: const Color(0xFF0D3B66),
+        ),
       ),
     );
   }

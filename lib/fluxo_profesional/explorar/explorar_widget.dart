@@ -253,7 +253,9 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           .eq('is_active', true)
           .order('created_at', ascending: false)
           .limit(80);
-      _convocatorias = List<Map<String, dynamic>>.from(response);
+      final convocatorias = List<Map<String, dynamic>>.from(response);
+      await _hydrateConvocatoriaApplicationCounts(convocatorias);
+      _convocatorias = convocatorias;
     } catch (_) {
       _convocatorias = [];
     }
@@ -426,6 +428,80 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     }).toList();
   }
 
+  Future<void> _hydrateConvocatoriaApplicationCounts(
+    List<Map<String, dynamic>> convocatorias,
+  ) async {
+    final ids = convocatorias
+        .map((conv) => conv['id']?.toString().trim() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+    if (ids.isEmpty) return;
+
+    final counts = <String, int>{};
+    var countsLoaded = false;
+
+    try {
+      final response = await SupaFlow.client
+          .from('aplicaciones_convocatoria')
+          .select('convocatoria_id')
+          .inFilter('convocatoria_id', ids);
+      for (final row in List<Map<String, dynamic>>.from(response as List)) {
+        final convocatoriaId = row['convocatoria_id']?.toString().trim() ?? '';
+        if (convocatoriaId.isEmpty) continue;
+        counts[convocatoriaId] = (counts[convocatoriaId] ?? 0) + 1;
+      }
+      countsLoaded = true;
+    } catch (_) {}
+
+    try {
+      final response = await SupaFlow.client
+          .from('postulaciones')
+          .select('convocatoria_id')
+          .inFilter('convocatoria_id', ids);
+      for (final row in List<Map<String, dynamic>>.from(response as List)) {
+        final convocatoriaId = row['convocatoria_id']?.toString().trim() ?? '';
+        if (convocatoriaId.isEmpty) continue;
+        counts[convocatoriaId] = (counts[convocatoriaId] ?? 0) + 1;
+      }
+      countsLoaded = true;
+    } catch (_) {}
+
+    if (!countsLoaded) {
+      try {
+        final response = await SupaFlow.client.rpc(
+          'public_convocatoria_application_counts',
+          params: <String, dynamic>{'p_convocatoria_ids': ids},
+        );
+        for (final row in List<Map<String, dynamic>>.from(response as List)) {
+          final convocatoriaId =
+              row['convocatoria_id']?.toString().trim() ?? '';
+          if (convocatoriaId.isEmpty) continue;
+          counts[convocatoriaId] =
+              _readIntValue(row['applications_count']) ?? 0;
+        }
+        countsLoaded = true;
+      } catch (_) {}
+    }
+
+    for (final convocatoria in convocatorias) {
+      final id = convocatoria['id']?.toString().trim() ?? '';
+      if (id.isEmpty) continue;
+
+      final fallbackCount = _readIntValue(
+        convocatoria['applications_count'] ??
+            convocatoria['postulaciones_count'] ??
+            convocatoria['candidatos_count'] ??
+            convocatoria['candidate_count'],
+      );
+
+      if (countsLoaded) {
+        convocatoria['applications_count'] = counts[id] ?? fallbackCount ?? 0;
+      } else if (fallbackCount != null) {
+        convocatoria['applications_count'] = fallbackCount;
+      }
+    }
+  }
+
   Future<void> _loadPlayerProgressData() async {
     final playerIds = _players
         .map((player) => player['user_id']?.toString() ?? '')
@@ -486,6 +562,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   bool get _canUseSensitiveActions =>
+      FFAppState().unlockSensitiveActions ||
       _currentUserFullAccess ||
       (_currentPlanId != null && _currentUserVerified);
 
@@ -722,6 +799,61 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         '';
   }
 
+  int? _readIntValue(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString().trim() ?? '');
+  }
+
+  DateTime? _resolveConvocatoriaClosingDate(Map<String, dynamic> convocatoria) {
+    final rawDate = _firstNonEmpty([
+      convocatoria['fecha_fin'],
+      convocatoria['fecha_cierre'],
+      convocatoria['due_date'],
+      convocatoria['closing_date'],
+    ]);
+    if (rawDate == null || rawDate.isEmpty) return null;
+    return DateTime.tryParse(rawDate)?.toLocal();
+  }
+
+  String? _convocatoriaClosingLabel(Map<String, dynamic> convocatoria) {
+    final closingDate = _resolveConvocatoriaClosingDate(convocatoria);
+    if (closingDate == null) return null;
+
+    final today = DateUtils.dateOnly(DateTime.now());
+    final target = DateUtils.dateOnly(closingDate);
+    final daysLeft = target.difference(today).inDays;
+
+    if (daysLeft < 0) {
+      return 'Fecha de cierre vencida';
+    }
+    if (daysLeft == 0) {
+      return 'Fecha de cierre hoy';
+    }
+    if (daysLeft == 1) {
+      return 'Fecha de cierre en 1 dia';
+    }
+    return 'Fecha de cierre en $daysLeft dias';
+  }
+
+  int? _convocatoriaApplicationsCount(Map<String, dynamic> convocatoria) {
+    return _readIntValue(
+      convocatoria['applications_count'] ??
+          convocatoria['postulaciones_count'] ??
+          convocatoria['candidatos_count'] ??
+          convocatoria['candidate_count'],
+    );
+  }
+
+  String? _convocatoriaApplicationsLabel(Map<String, dynamic> convocatoria) {
+    final applicationsCount = _convocatoriaApplicationsCount(convocatoria);
+    if (applicationsCount == null) return null;
+    if (applicationsCount == 1) {
+      return '1 candidato aplicado';
+    }
+    return '$applicationsCount candidatos aplicados';
+  }
+
   String _resolvePlayerLevel(Map<String, dynamic> player) {
     final direct = player['level_name']?.toString().trim() ?? '';
     if (direct.isNotEmpty) return direct;
@@ -766,7 +898,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       filtered = filtered.where((u) {
         final text =
             '${u['name'] ?? ''} ${u['lastname'] ?? ''} ${u['posicion'] ?? ''} '
-            '${_resolveCity(u)} ${_resolveCountryFromUser(u)} ${u['club'] ?? ''} ${_resolvePlayerLevel(u)}'
+                    '${_resolveCity(u)} ${_resolveCountryFromUser(u)} ${u['club'] ?? ''} ${_resolvePlayerLevel(u)}'
                 .toLowerCase();
         return text.contains(_searchQuery);
       });
@@ -785,8 +917,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     }
 
     if (_scoutPlayerCity != null) {
-      filtered = filtered
-          .where((u) => _resolveCity(u).toLowerCase() == _scoutPlayerCity!.toLowerCase());
+      filtered = filtered.where((u) =>
+          _resolveCity(u).toLowerCase() == _scoutPlayerCity!.toLowerCase());
     }
 
     if (_scoutCategory != null) {
@@ -797,7 +929,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     if (_scoutPlayerLevel != null) {
       filtered = filtered.where(
-        (u) => _resolvePlayerLevel(u).toLowerCase() ==
+        (u) =>
+            _resolvePlayerLevel(u).toLowerCase() ==
             _scoutPlayerLevel!.toLowerCase(),
       );
     }
@@ -810,10 +943,9 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((club) {
-        final text =
-            '${club['nombre'] ?? ''} ${club['nombre_corto'] ?? ''} '
-            '${_resolveCountryFromClub(club)} ${_resolveCity(club)} ${_resolveClubLeague(club)}'
-                .toLowerCase();
+        final text = '${club['nombre'] ?? ''} ${club['nombre_corto'] ?? ''} '
+                '${_resolveCountryFromClub(club)} ${_resolveCity(club)} ${_resolveClubLeague(club)}'
+            .toLowerCase();
         return text.contains(_searchQuery);
       });
     }
@@ -843,15 +975,14 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((conv) {
-        final text =
-            '${conv['titulo'] ?? ''} '
-            '${_resolveConvocatoriaPosition(conv)} '
-            '${_resolveConvocatoriaCategory(conv)} '
-            '${_resolveConvocatoriaCity(conv)} '
-            '${_resolveConvocatoriaCountry(conv)} '
-            '${conv['ubicacion'] ?? ''} '
-            '${_resolveConvocatoriaClubName(conv)}'
-                .toLowerCase();
+        final text = '${conv['titulo'] ?? ''} '
+                '${_resolveConvocatoriaPosition(conv)} '
+                '${_resolveConvocatoriaCategory(conv)} '
+                '${_resolveConvocatoriaCity(conv)} '
+                '${_resolveConvocatoriaCountry(conv)} '
+                '${conv['ubicacion'] ?? ''} '
+                '${_resolveConvocatoriaClubName(conv)}'
+            .toLowerCase();
         return text.contains(_searchQuery);
       });
     }
@@ -890,7 +1021,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       filtered = filtered.where((u) {
         final text =
             '${u['name'] ?? ''} ${u['lastname'] ?? ''} ${u['posicion'] ?? ''} '
-            '${_resolveCity(u)} ${_resolveCountryFromUser(u)} ${u['club'] ?? ''} ${_resolvePlayerLevel(u)}'
+                    '${_resolveCity(u)} ${_resolveCountryFromUser(u)} ${u['club'] ?? ''} ${_resolvePlayerLevel(u)}'
                 .toLowerCase();
         return text.contains(_searchQuery);
       });
@@ -921,7 +1052,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     if (_jugadorPlayerLevel != null) {
       filtered = filtered.where(
-        (u) => _resolvePlayerLevel(u).toLowerCase() ==
+        (u) =>
+            _resolvePlayerLevel(u).toLowerCase() ==
             _jugadorPlayerLevel!.toLowerCase(),
       );
     }
@@ -934,14 +1066,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((conv) {
-        final text =
-            '${conv['titulo'] ?? ''} '
-            '${_resolveConvocatoriaPosition(conv)} '
-            '${_resolveConvocatoriaCategory(conv)} '
-            '${_resolveConvocatoriaCountry(conv)} '
-            '${_resolveConvocatoriaCity(conv)} '
-            '${_resolveConvocatoriaClubName(conv)}'
-                .toLowerCase();
+        final text = '${conv['titulo'] ?? ''} '
+                '${_resolveConvocatoriaPosition(conv)} '
+                '${_resolveConvocatoriaCategory(conv)} '
+                '${_resolveConvocatoriaCountry(conv)} '
+                '${_resolveConvocatoriaCity(conv)} '
+                '${_resolveConvocatoriaClubName(conv)}'
+            .toLowerCase();
         return text.contains(_searchQuery);
       });
     }
@@ -987,8 +1118,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     if (_jugadorClubCity != null) {
       filtered = filtered.where((club) =>
-          _resolveCity(club).toLowerCase() ==
-          _jugadorClubCity!.toLowerCase());
+          _resolveCity(club).toLowerCase() == _jugadorClubCity!.toLowerCase());
     }
 
     if (_jugadorClubLeague != null) {
@@ -1057,13 +1187,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   IconData _jugadorTabIcon(_JugadorSearchTab tab) {
     switch (tab) {
       case _JugadorSearchTab.jugadores:
-        return Icons.people_outline;
+        return Icons.sports_soccer_rounded;
       case _JugadorSearchTab.convocatorias:
-        return Icons.campaign_outlined;
+        return Icons.campaign_rounded;
       case _JugadorSearchTab.clubes:
-        return Icons.shield_outlined;
+        return Icons.shield_rounded;
       case _JugadorSearchTab.scouts:
-        return Icons.verified_user_outlined;
+        return Icons.manage_search_rounded;
     }
   }
 
@@ -1224,7 +1354,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     );
     if (rawType.isNotEmpty && rawType != 'jugador') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Este resultado no corresponde a un jugador')),
+        const SnackBar(
+            content: Text('Este resultado no corresponde a un jugador')),
       );
       return;
     }
@@ -1438,19 +1569,28 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                 fontSize: 13,
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 18),
             _buildJugadorSearchEntry(),
-            const SizedBox(height: 14),
+            const SizedBox(height: 18),
             _buildQuickActionsJugador(),
-            const SizedBox(height: 14),
+            const SizedBox(height: 20),
             if (_nextChallenge != null) _buildNextChallengeCard(),
-            if (_nextChallenge != null) const SizedBox(height: 14),
-            _buildSectionTitle('Para vos hoy'),
+            if (_nextChallenge != null) const SizedBox(height: 20),
+            _buildSectionTitle(
+              'Tus próximos desafíos',
+              icon: Icons.local_fire_department_outlined,
+              subtitle:
+                  'Acciones rápidas para avanzar y llegar mejor preparado.',
+            ),
             _buildRecommendedChallengesRow(recommendedChallenges),
-            const SizedBox(height: 14),
-            _buildSectionTitle('Convocatorias recomendadas'),
+            const SizedBox(height: 20),
+            _buildSectionTitle(
+              'Convocatorias recomendadas',
+              icon: Icons.campaign_rounded,
+              subtitle: 'Oportunidades ativas para você decidir mais rápido.',
+            ),
             _buildPromotedConvocatorias(promoted),
-            const SizedBox(height: 16),
+            const SizedBox(height: 22),
           ],
         ),
       ),
@@ -1517,12 +1657,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                 TextButton.icon(
                   onPressed: () =>
                       context.pushNamed(ListaYNotasWidget.routeName),
-                  icon: const Icon(Icons.bookmarks_outlined),
+                  icon: const Icon(Icons.bookmarks_rounded),
                   label: const Text('Minhas listas'),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 14),
             Row(
               children: [
                 Expanded(
@@ -1550,14 +1690,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                     convocatoriaCategoryOptions: convocatoriaCategoryOptions,
                     convocatoriaPositionOptions: convocatoriaPositionOptions,
                   ),
-                  icon: const Icon(Icons.tune),
+                  style: _explorerSecondaryButtonStyle(),
+                  icon: const Icon(Icons.tune_rounded),
                   label: const Text('Filtros'),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             _buildScoutTabBar(),
-            const SizedBox(height: 14),
+            const SizedBox(height: 18),
             if (_scoutTab == _ScoutTab.jugadores)
               _buildScoutPlayersList()
             else if (_scoutTab == _ScoutTab.clubes)
@@ -1574,8 +1715,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFD6DEE8)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x120D3B66),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: TextField(
         controller: _searchController,
@@ -1584,23 +1732,75 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         decoration: InputDecoration(
           hintText: hint,
           border: InputBorder.none,
-          prefixIcon: const Icon(Icons.search, color: Color(0xFFA0AEC0)),
+          prefixIcon: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F0FE),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.travel_explore_rounded,
+                color: Color(0xFF0D3B66),
+                size: 18,
+              ),
+            ),
+          ),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
                   onPressed: () {
                     _searchController.clear();
                     _onSearchChanged('');
                   },
-                  icon: const Icon(Icons.clear, color: Color(0xFFA0AEC0)),
+                  icon:
+                      const Icon(Icons.close_rounded, color: Color(0xFFA0AEC0)),
                 )
               : null,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
-            vertical: 13,
+            vertical: 16,
           ),
         ),
         style: GoogleFonts.inter(fontSize: 14),
       ),
+    );
+  }
+
+  Widget _explorerIconBadge(
+    IconData icon, {
+    Color background = const Color(0xFFE8F0FE),
+    Color foreground = const Color(0xFF0D3B66),
+  }) {
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(icon, color: foreground, size: 18),
+    );
+  }
+
+  ButtonStyle _explorerPrimaryButtonStyle() {
+    return ElevatedButton.styleFrom(
+      backgroundColor: const Color(0xFF0D3B66),
+      foregroundColor: Colors.white,
+      elevation: 0,
+      minimumSize: const Size.fromHeight(42),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    );
+  }
+
+  ButtonStyle _explorerSecondaryButtonStyle() {
+    return OutlinedButton.styleFrom(
+      foregroundColor: const Color(0xFF0D3B66),
+      side: const BorderSide(color: Color(0xFFD6DEE8)),
+      minimumSize: const Size.fromHeight(42),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      backgroundColor: Colors.white,
     );
   }
 
@@ -1614,22 +1814,22 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       physics: const NeverScrollableScrollPhysics(),
       children: [
         _quickActionCard(
-          icon: Icons.emoji_events_outlined,
+          icon: Icons.local_fire_department_rounded,
           title: 'Desafíos',
           onTap: () => context.pushNamed(CursosEjerciciosWidget.routeName),
         ),
         _quickActionCard(
-          icon: Icons.campaign_outlined,
+          icon: Icons.campaign_rounded,
           title: 'Convocatorias',
           onTap: () => context.pushNamed(ConvocatoriaJugador1Widget.routeName),
         ),
         _quickActionCard(
-          icon: Icons.shield_outlined,
+          icon: Icons.shield_rounded,
           title: 'Clubes',
           onTap: _openClubShortcuts,
         ),
         _quickActionCard(
-          icon: Icons.verified_user_outlined,
+          icon: Icons.manage_search_rounded,
           title: 'Scouts verificados',
           onTap: _openVerifiedScoutsResults,
         ),
@@ -1648,22 +1848,38 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       child: Ink(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: const Color(0xFF0D3B66), size: 18),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: GoogleFonts.inter(
-                color: const Color(0xFF2D3748),
-                fontWeight: FontWeight.w600,
-              ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x120D3B66),
+              blurRadius: 16,
+              offset: Offset(0, 8),
             ),
           ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(
+            children: [
+              _explorerIconBadge(icon),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF2D3748),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                color: Color(0xFF94A3B8),
+                size: 18,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1683,7 +1899,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.flag_outlined, color: Color(0xFF0D3B66)),
+          _explorerIconBadge(Icons.flag_rounded),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1711,14 +1927,16 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             ),
           ),
           const SizedBox(width: 8),
-          ElevatedButton(
+          ElevatedButton.icon(
             onPressed: () =>
                 context.pushNamed(CursosEjerciciosWidget.routeName),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0D3B66),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            style: _explorerPrimaryButtonStyle(),
+            icon: const Icon(
+              Icons.arrow_forward_rounded,
+              size: 16,
+              color: Colors.white,
             ),
-            child: const Text(
+            label: const Text(
               'Continuar',
               style: TextStyle(color: Colors.white),
             ),
@@ -1787,13 +2005,41 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                               )
                             : null,
                       ),
-                      child: imageUrl.startsWith('http')
-                          ? null
-                          : const Icon(
-                              Icons.sports_score_outlined,
-                              color: Color(0xFF0D3B66),
-                              size: 36,
+                      child: Stack(
+                        children: [
+                          if (!imageUrl.startsWith('http'))
+                            const Center(
+                              child: Icon(
+                                Icons.sports_score_rounded,
+                                color: Color(0xFF0D3B66),
+                                size: 36,
+                              ),
                             ),
+                          Positioned(
+                            top: 10,
+                            left: 10,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D3B66)
+                                    .withValues(alpha: 0.88),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '🔥 +${xp.isNotEmpty ? xp : GamificationService.challengeCompletedPoints} XP',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   Padding(
@@ -1982,10 +2228,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           borderRadius: BorderRadius.circular(10),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             decoration: BoxDecoration(
               color: selected ? const Color(0xFF0D3B66) : Colors.white,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: selected
                     ? const Color(0xFF0D3B66)
@@ -1995,12 +2241,22 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  _jugadorTabIcon(tab),
-                  size: 16,
-                  color: selected ? Colors.white : const Color(0xFF4A5568),
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? Colors.white.withValues(alpha: 0.16)
+                        : const Color(0xFFE8F0FE),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(
+                    _jugadorTabIcon(tab),
+                    size: 15,
+                    color: selected ? Colors.white : const Color(0xFF0D3B66),
+                  ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 Text(
                   _jugadorTabLabel(tab),
                   style: GoogleFonts.inter(
@@ -2066,8 +2322,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             label: 'País',
             value: _jugadorPlayerCountry,
             options: playerCountryOptions,
-            onChanged: (value) =>
-                setState(() => _jugadorPlayerCountry = value),
+            onChanged: (value) => setState(() => _jugadorPlayerCountry = value),
           ),
           _ExplorerFilterDropdown(
             label: 'Ciudad',
@@ -2136,8 +2391,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             label: 'País',
             value: _jugadorScoutCountry,
             options: scoutCountryOptions,
-            onChanged: (value) =>
-                setState(() => _jugadorScoutCountry = value),
+            onChanged: (value) => setState(() => _jugadorScoutCountry = value),
           ),
         ]);
         break;
@@ -2318,7 +2572,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                     child: OutlinedButton.icon(
                       onPressed:
                           hasVideo ? () => _openPlayerVideos(player) : null,
-                      icon: const Icon(Icons.play_circle_outline, size: 16),
+                      style: _explorerSecondaryButtonStyle(),
+                      icon: const Icon(Icons.smart_display_rounded, size: 16),
                       label: const Text('Ver vídeo'),
                     ),
                   ),
@@ -2326,11 +2581,9 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () => _openPublicPlayerProfile(player),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0D3B66),
-                      ),
+                      style: _explorerPrimaryButtonStyle(),
                       icon: const Icon(
-                        Icons.person_outline,
+                        Icons.person_search_rounded,
                         size: 16,
                         color: Colors.white,
                       ),
@@ -2492,10 +2745,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   CircleAvatar(
                     radius: 22,
                     backgroundColor: const Color(0xFFE8F0FE),
-                    backgroundImage: scout['photo_url']?.toString().isNotEmpty ==
-                            true
-                        ? NetworkImage(scout['photo_url'].toString())
-                        : null,
+                    backgroundImage:
+                        scout['photo_url']?.toString().isNotEmpty == true
+                            ? NetworkImage(scout['photo_url'].toString())
+                            : null,
                     child: scout['photo_url']?.toString().isNotEmpty == true
                         ? null
                         : Text(
@@ -2598,17 +2851,93 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     );
   }
 
-  Widget _buildSectionTitle(String title) {
+  Widget _buildSectionTitle(
+    String title, {
+    required IconData icon,
+    String? subtitle,
+  }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        title,
-        style: GoogleFonts.inter(
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-          color: const Color(0xFF1A202C),
-        ),
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _explorerIconBadge(icon),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF1A202C),
+                  ),
+                ),
+                if ((subtitle ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: GoogleFonts.inter(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildInfoTag(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: const Color(0xFF0D3B66)),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF334155),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConvocatoriaInsightChips(Map<String, dynamic> convocatoria) {
+    final closingLabel = _convocatoriaClosingLabel(convocatoria);
+    final applicationsLabel = _convocatoriaApplicationsLabel(convocatoria);
+
+    if ((closingLabel == null || closingLabel.isEmpty) &&
+        (applicationsLabel == null || applicationsLabel.isEmpty)) {
+      return const SizedBox.shrink();
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (closingLabel != null && closingLabel.isNotEmpty)
+          _buildInfoTag(Icons.schedule_outlined, closingLabel),
+        if (applicationsLabel != null && applicationsLabel.isNotEmpty)
+          _buildInfoTag(Icons.people_outline, applicationsLabel),
+      ],
     );
   }
 
@@ -2622,84 +2951,85 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     }
 
     return Column(
-      children: convocatorias
-          .map(
-            (conv) {
-              final clubName = _resolveConvocatoriaClubName(conv);
-              final details = [
-                _resolveConvocatoriaPosition(conv),
-                _resolveConvocatoriaCategory(conv),
-                _resolveConvocatoriaCity(conv),
-              ].where((value) => value.trim().isNotEmpty).join(' • ');
+      children: convocatorias.map(
+        (conv) {
+          final clubName = _resolveConvocatoriaClubName(conv);
+          final details = [
+            _resolveConvocatoriaPosition(conv),
+            _resolveConvocatoriaCategory(conv),
+            _resolveConvocatoriaCity(conv),
+          ].where((value) => value.trim().isNotEmpty).join(' • ');
 
-              return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Color(0xFFE8F0FE),
+                child: Icon(Icons.campaign_outlined,
+                    color: Color(0xFF0D3B66), size: 18),
               ),
-              child: ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: Color(0xFFE8F0FE),
-                  child: Icon(Icons.campaign_outlined,
-                      color: Color(0xFF0D3B66), size: 18),
-                ),
-                title: Text(
-                  conv['titulo']?.toString() ?? 'Convocatoria',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (clubName.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      GestureDetector(
-                        onTap: () => _openPublicClubProfile(
-                          context,
-                          conv['club_data'] is Map<String, dynamic>
-                              ? Map<String, dynamic>.from(conv['club_data'] as Map)
-                              : {
-                                  'id': conv['club_id'],
-                                  'club_name': clubName,
-                                },
-                        ),
-                        child: Text(
-                          clubName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF0D3B66),
-                          ),
+              title: Text(
+                conv['titulo']?.toString() ?? 'Convocatoria',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (clubName.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    GestureDetector(
+                      onTap: () => _openPublicClubProfile(
+                        context,
+                        conv['club_data'] is Map<String, dynamic>
+                            ? Map<String, dynamic>.from(
+                                conv['club_data'] as Map)
+                            : {
+                                'id': conv['club_id'],
+                                'club_name': clubName,
+                              },
+                      ),
+                      child: Text(
+                        clubName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0D3B66),
                         ),
                       ),
-                    ],
-                    const SizedBox(height: 2),
-                    Text(
-                      details.isNotEmpty ? details : 'Sin detalles',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  final id = conv['id']?.toString() ?? '';
-                  if (id.isEmpty) return;
-                  context.pushNamed(
-                    DetallesDeLaConvocatoriaWidget.routeName,
-                    queryParameters: {'convocatoriaId': id},
-                  );
-                },
+                  const SizedBox(height: 2),
+                  Text(
+                    details.isNotEmpty ? details : 'Sin detalles',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  _buildConvocatoriaInsightChips(conv),
+                ],
               ),
-            );
-            },
-          )
-          .toList(),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                final id = conv['id']?.toString() ?? '';
+                if (id.isEmpty) return;
+                context.pushNamed(
+                  DetallesDeLaConvocatoriaWidget.routeName,
+                  queryParameters: {'convocatoriaId': id},
+                );
+              },
+            ),
+          );
+        },
+      ).toList(),
     );
   }
 
@@ -2716,10 +3046,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           borderRadius: BorderRadius.circular(10),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(vertical: 10),
+            padding: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
               color: selected ? const Color(0xFF0D3B66) : Colors.white,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: selected
                     ? const Color(0xFF0D3B66)
@@ -2729,10 +3059,22 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon,
-                    size: 16,
-                    color: selected ? Colors.white : const Color(0xFF4A5568)),
-                const SizedBox(width: 6),
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? Colors.white.withValues(alpha: 0.16)
+                        : const Color(0xFFE8F0FE),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 15,
+                    color: selected ? Colors.white : const Color(0xFF0D3B66),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Text(
                   label,
                   style: GoogleFonts.inter(
@@ -2753,19 +3095,19 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         tab(
           tab: _ScoutTab.jugadores,
           label: 'Jugadores',
-          icon: Icons.people_outline,
+          icon: Icons.sports_soccer_rounded,
         ),
         const SizedBox(width: 8),
         tab(
           tab: _ScoutTab.clubes,
           label: 'Clubes',
-          icon: Icons.shield_outlined,
+          icon: Icons.shield_rounded,
         ),
         const SizedBox(width: 8),
         tab(
           tab: _ScoutTab.convocatorias,
           label: 'Convocatorias',
-          icon: Icons.campaign_outlined,
+          icon: Icons.campaign_rounded,
         ),
       ],
     );
@@ -2796,8 +3138,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         final category = _categoryFromBirthday(player['birthday']);
         final year = _birthYear(player['birthday']);
         final totalXp = GamificationService.toInt(player['total_xp']);
-        final levelName =
-            player['level_name']?.toString() ?? GamificationService.levelNameFromPoints(totalXp);
+        final levelName = player['level_name']?.toString() ??
+            GamificationService.levelNameFromPoints(totalXp);
         final rankingPosition = player['category_ranking'];
 
         return Container(
@@ -2899,16 +3241,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed:
-                          isSaving ? null : () => _toggleSavePlayerForScout(player),
+                      onPressed: isSaving
+                          ? null
+                          : () => _toggleSavePlayerForScout(player),
                       style: ElevatedButton.styleFrom(
                         elevation: 0,
-                        backgroundColor: isSaved
-                            ? const Color(0xFF0F9D58)
-                            : Colors.white,
-                        foregroundColor: isSaved
-                            ? Colors.white
-                            : const Color(0xFF0D3B66),
+                        backgroundColor:
+                            isSaved ? const Color(0xFF0F9D58) : Colors.white,
+                        foregroundColor:
+                            isSaved ? Colors.white : const Color(0xFF0D3B66),
                         side: BorderSide(
                           color: isSaved
                               ? const Color(0xFF0F9D58)
@@ -2938,7 +3279,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                     child: OutlinedButton.icon(
                       onPressed:
                           hasVideo ? () => _openPlayerVideos(player) : null,
-                      icon: const Icon(Icons.play_circle_outline, size: 16),
+                      style: _explorerSecondaryButtonStyle(),
+                      icon: const Icon(Icons.smart_display_rounded, size: 16),
                       label: const Text('Ver vídeo'),
                     ),
                   ),
@@ -2948,10 +3290,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       onPressed: () {
                         _openPublicPlayerProfile(player);
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0D3B66),
-                      ),
-                      icon: const Icon(Icons.person_outline,
+                      style: _explorerPrimaryButtonStyle(),
+                      icon: const Icon(Icons.person_search_rounded,
                           size: 16, color: Colors.white),
                       label: const Text(
                         'Ver perfil',
@@ -3092,9 +3432,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 8),
+                _buildConvocatoriaInsightChips(conv),
               ],
             ),
-            trailing: ElevatedButton(
+            trailing: ElevatedButton.icon(
               onPressed: id.isEmpty
                   ? null
                   : () {
@@ -3103,10 +3445,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         queryParameters: {'convocatoriasID': id},
                       );
                     },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0D3B66),
+              style: _explorerPrimaryButtonStyle(),
+              icon: const Icon(
+                Icons.visibility_rounded,
+                size: 16,
+                color: Colors.white,
               ),
-              child: const Text('Ver', style: TextStyle(color: Colors.white)),
+              label: const Text('Ver', style: TextStyle(color: Colors.white)),
             ),
           ),
         );
@@ -3184,8 +3529,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       label: 'Ciudad',
                       value: tempConvCity,
                       options: convocatoriaCityOptions,
-                      onChanged: (v) =>
-                          setSheetState(() => tempConvCity = v),
+                      onChanged: (v) => setSheetState(() => tempConvCity = v),
                     ),
                     const SizedBox(height: 8),
                     _buildDropdownFilter(
@@ -3216,16 +3560,14 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       label: 'Ciudad',
                       value: tempClubCity,
                       options: clubCityOptions,
-                      onChanged: (v) =>
-                          setSheetState(() => tempClubCity = v),
+                      onChanged: (v) => setSheetState(() => tempClubCity = v),
                     ),
                     const SizedBox(height: 8),
                     _buildDropdownFilter(
                       label: 'Liga',
                       value: tempClubLeague,
                       options: clubLeagueOptions,
-                      onChanged: (v) =>
-                          setSheetState(() => tempClubLeague = v),
+                      onChanged: (v) => setSheetState(() => tempClubLeague = v),
                     ),
                   ] else ...[
                     _buildDropdownFilter(
@@ -3254,8 +3596,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       label: 'Ciudad',
                       value: tempPlayerCity,
                       options: playerCityOptions,
-                      onChanged: (v) =>
-                          setSheetState(() => tempPlayerCity = v),
+                      onChanged: (v) => setSheetState(() => tempPlayerCity = v),
                     ),
                     const SizedBox(height: 8),
                     _buildDropdownFilter(
@@ -3981,8 +4322,15 @@ class _ExplorerSearchField extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFD6DEE8)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x120D3B66),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: TextField(
         controller: controller,
@@ -3990,19 +4338,35 @@ class _ExplorerSearchField extends StatelessWidget {
         decoration: InputDecoration(
           hintText: hintText,
           border: InputBorder.none,
-          prefixIcon: const Icon(Icons.search, color: Color(0xFFA0AEC0)),
+          prefixIcon: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F0FE),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.travel_explore_rounded,
+                color: Color(0xFF0D3B66),
+                size: 18,
+              ),
+            ),
+          ),
           suffixIcon: controller.text.isNotEmpty
               ? IconButton(
                   onPressed: () {
                     controller.clear();
                     onClear();
                   },
-                  icon: const Icon(Icons.clear, color: Color(0xFFA0AEC0)),
+                  icon:
+                      const Icon(Icons.close_rounded, color: Color(0xFFA0AEC0)),
                 )
               : null,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
-            vertical: 13,
+            vertical: 16,
           ),
         ),
         style: GoogleFonts.inter(fontSize: 14),

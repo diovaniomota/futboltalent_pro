@@ -34,9 +34,11 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
   List<Map<String, dynamic>> _challenges = [];
   List<Map<String, dynamic>> _filteredChallenges = [];
   List<Map<String, dynamic>> _attempts = [];
+  List<Map<String, dynamic>> _categories = [];
 
   final Map<String, int> _attemptCountByChallengeKey = {};
   final Map<String, String> _userNameById = {};
+  final Map<String, String> _categoryNameById = {};
 
   @override
   void initState() {
@@ -90,13 +92,13 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
         SupaFlow.client
             .from('courses')
             .select(
-              'id, title, description, thumbnail_url, video_url, difficulty, duration_minutes, xp_reward, reward_type, reward_name, order_index, is_active, is_premium, created_at, updated_at',
+              'id, title, description, thumbnail_url, video_url, difficulty, duration_minutes, xp_reward, reward_type, reward_name, order_index, is_active, is_premium, created_at, updated_at, category_id, validity_days',
             )
             .order('order_index', ascending: true),
         SupaFlow.client
             .from('exercises')
             .select(
-              'id, title, description, thumbnail_url, video_url, difficulty, duration_minutes, xp_reward, repetitions, sets, instructions, order_index, is_active, is_premium, created_at, updated_at',
+              'id, title, description, thumbnail_url, video_url, difficulty, duration_minutes, xp_reward, repetitions, sets, instructions, order_index, is_active, is_premium, created_at, updated_at, category_id, validity_days',
             )
             .order('order_index', ascending: true),
         SupaFlow.client
@@ -108,6 +110,27 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       final courses = List<Map<String, dynamic>>.from(results[0] as List);
       final exercises = List<Map<String, dynamic>>.from(results[1] as List);
       final users = List<Map<String, dynamic>>.from(results[2] as List);
+
+      _categories = [];
+      _categoryNameById.clear();
+      try {
+        final categoriesResponse = await SupaFlow.client
+            .from('challenge_categories')
+            .select('id, name')
+            .order('name', ascending: true);
+        final categories =
+            List<Map<String, dynamic>>.from(categoriesResponse as List);
+        _categories = categories;
+        for (final row in categories) {
+          final id = row['id']?.toString() ?? '';
+          final name = row['name']?.toString() ?? '';
+          if (id.isNotEmpty) {
+            _categoryNameById[id] = name.isEmpty ? id : name;
+          }
+        }
+      } catch (_) {
+        _categories = [];
+      }
 
       for (final row in users) {
         final userId = (row['user_id'] ?? '').toString();
@@ -243,15 +266,16 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     final difficultyController = TextEditingController(text: 'beginner');
     final durationController = TextEditingController(text: '15');
     final xpController = TextEditingController(text: '120');
-    final categoryController = TextEditingController();
     final rewardTypeController = TextEditingController(text: 'xp');
     final rewardNameController = TextEditingController();
     final repetitionsController = TextEditingController(text: '10');
     final setsController = TextEditingController(text: '3');
     final instructionsController = TextEditingController();
+    final validityController = TextEditingController(text: '60');
 
     final formKey = GlobalKey<FormState>();
     String selectedType = 'exercise';
+    String? selectedCategoryId;
     bool isPremium = false;
     bool isActive = true;
     bool isSaving = false;
@@ -374,14 +398,13 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                     : descriptionController.text.trim(),
                 'video_url': finalVideoUrl,
                 'thumbnail_url': finalThumbnailUrl,
-                'category_id': categoryController.text.trim().isEmpty
-                    ? null
-                    : categoryController.text.trim(),
+                'category_id': selectedCategoryId,
                 'difficulty': difficultyController.text.trim().isEmpty
                     ? null
                     : difficultyController.text.trim(),
                 'duration_minutes': maybeInt(durationController.text),
                 'xp_reward': maybeInt(xpController.text) ?? 100,
+                'validity_days': maybeInt(validityController.text) ?? 60,
                 'order_index': nextOrder,
                 'is_active': isActive,
                 'is_premium': isPremium,
@@ -545,11 +568,38 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      TextFormField(
-                        controller: categoryController,
-                        enabled: !isSaving,
+                      DropdownButtonFormField<String?>(
+                        value: selectedCategoryId,
                         decoration: const InputDecoration(
-                          labelText: 'Category ID (UUID, opcional)',
+                          labelText: 'CategorÃ­a',
+                        ),
+                        items: [
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('Sin categorÃ­a'),
+                          ),
+                          ..._categories.map(
+                            (cat) => DropdownMenuItem<String?>(
+                              value: cat['id']?.toString(),
+                              child: Text(cat['name']?.toString() ?? ''),
+                            ),
+                          ),
+                        ],
+                        onChanged: isSaving
+                            ? null
+                            : (value) {
+                                setDialogState(() {
+                                  selectedCategoryId = value;
+                                });
+                              },
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: validityController,
+                        enabled: !isSaving,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Vigencia (dÃ­as)',
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -686,7 +736,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     difficultyController.dispose();
     durationController.dispose();
     xpController.dispose();
-    categoryController.dispose();
+    validityController.dispose();
     rewardTypeController.dispose();
     rewardNameController.dispose();
     repetitionsController.dispose();
@@ -697,6 +747,296 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       _showSnack('Desafío creado correctamente.',
           color: const Color(0xFF0D3B66));
       await _loadData();
+    }
+  }
+
+  Future<void> _openEditChallengeDialog(Map<String, dynamic> challenge) async {
+    final titleController =
+        TextEditingController(text: challenge['title'] ?? '');
+    final descriptionController =
+        TextEditingController(text: challenge['description'] ?? '');
+    final videoUrlController =
+        TextEditingController(text: challenge['video_url'] ?? '');
+    final thumbnailController =
+        TextEditingController(text: challenge['thumbnail_url'] ?? '');
+    final difficultyController =
+        TextEditingController(text: challenge['difficulty'] ?? '');
+    final durationController = TextEditingController(
+        text: challenge['duration_minutes']?.toString() ?? '');
+    final xpController =
+        TextEditingController(text: challenge['xp_reward']?.toString() ?? '');
+    final validityController = TextEditingController(
+        text: challenge['validity_days']?.toString() ?? '60');
+    final rewardTypeController =
+        TextEditingController(text: challenge['reward_type'] ?? '');
+    final rewardNameController =
+        TextEditingController(text: challenge['reward_name'] ?? '');
+    final repetitionsController =
+        TextEditingController(text: challenge['repetitions']?.toString() ?? '');
+    final setsController =
+        TextEditingController(text: challenge['sets']?.toString() ?? '');
+    final instructionsController =
+        TextEditingController(text: challenge['instructions'] ?? '');
+    String? selectedCategoryId = challenge['category_id']?.toString();
+    bool isActive = challenge['is_active'] == true;
+    bool isPremium = challenge['is_premium'] == true;
+    final type = challenge['type']?.toString() ?? 'exercise';
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Editar desafÃ­o'),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: titleController,
+                    decoration: const InputDecoration(labelText: 'TÃ­tulo'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: descriptionController,
+                    minLines: 2,
+                    maxLines: 3,
+                    decoration: const InputDecoration(labelText: 'DescripciÃ³n'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: videoUrlController,
+                    decoration: const InputDecoration(
+                      labelText: 'URL tutorial (video)',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: thumbnailController,
+                    decoration: const InputDecoration(
+                      labelText: 'URL capa del desafÃ­o',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String?>(
+                    value: selectedCategoryId,
+                    decoration: const InputDecoration(labelText: 'CategorÃ­a'),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('Sin categorÃ­a'),
+                      ),
+                      ..._categories.map(
+                        (cat) => DropdownMenuItem<String?>(
+                          value: cat['id']?.toString(),
+                          child: Text(cat['name']?.toString() ?? ''),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => selectedCategoryId = value),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: validityController,
+                    keyboardType: TextInputType.number,
+                    decoration:
+                        const InputDecoration(labelText: 'Vigencia (dÃ­as)'),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: difficultyController,
+                          decoration:
+                              const InputDecoration(labelText: 'Dificultad'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextFormField(
+                          controller: durationController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'DuraciÃ³n (min)',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: xpController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'XP reward'),
+                  ),
+                  const SizedBox(height: 10),
+                  if (type == 'course') ...[
+                    TextFormField(
+                      controller: rewardTypeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo recompensa',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: rewardNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre recompensa',
+                      ),
+                    ),
+                  ] else ...[
+                    TextFormField(
+                      controller: repetitionsController,
+                      keyboardType: TextInputType.number,
+                      decoration:
+                          const InputDecoration(labelText: 'Repeticiones'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: setsController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Sets'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: instructionsController,
+                      decoration:
+                          const InputDecoration(labelText: 'Instrucciones'),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    value: isActive,
+                    onChanged: (value) =>
+                        setDialogState(() => isActive = value),
+                    title: const Text('Activo'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  SwitchListTile(
+                    value: isPremium,
+                    onChanged: (value) =>
+                        setDialogState(() => isPremium = value),
+                    title: const Text('Premium'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Guardar')),
+          ],
+        ),
+      ),
+    );
+
+    if (result != true) return;
+
+    int? maybeInt(String raw) {
+      final text = raw.trim();
+      if (text.isEmpty) return null;
+      return int.tryParse(text);
+    }
+
+    final table = type == 'course' ? 'courses' : 'exercises';
+    final payload = <String, dynamic>{
+      'title': titleController.text.trim(),
+      'description': descriptionController.text.trim().isEmpty
+          ? null
+          : descriptionController.text.trim(),
+      'video_url': videoUrlController.text.trim().isEmpty
+          ? null
+          : videoUrlController.text.trim(),
+      'thumbnail_url': thumbnailController.text.trim().isEmpty
+          ? null
+          : thumbnailController.text.trim(),
+      'category_id': selectedCategoryId,
+      'validity_days': maybeInt(validityController.text) ?? 60,
+      'difficulty': difficultyController.text.trim().isEmpty
+          ? null
+          : difficultyController.text.trim(),
+      'duration_minutes': maybeInt(durationController.text),
+      'xp_reward': maybeInt(xpController.text) ?? 100,
+      'is_active': isActive,
+      'is_premium': isPremium,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    if (type == 'course') {
+      payload['reward_type'] =
+          rewardTypeController.text.trim().isEmpty
+              ? null
+              : rewardTypeController.text.trim();
+      payload['reward_name'] =
+          rewardNameController.text.trim().isEmpty
+              ? null
+              : rewardNameController.text.trim();
+    } else {
+      payload['repetitions'] = maybeInt(repetitionsController.text);
+      payload['sets'] = maybeInt(setsController.text);
+      payload['instructions'] = instructionsController.text.trim().isEmpty
+          ? null
+          : instructionsController.text.trim();
+    }
+
+    try {
+      await SupaFlow.client.from(table).update(payload).eq(
+            'id',
+            challenge['id'],
+          );
+      await _loadData();
+    } catch (e) {
+      debugPrint('Edit challenge failed: $e');
+    } finally {
+      titleController.dispose();
+      descriptionController.dispose();
+      videoUrlController.dispose();
+      thumbnailController.dispose();
+      difficultyController.dispose();
+      durationController.dispose();
+      xpController.dispose();
+      validityController.dispose();
+      rewardTypeController.dispose();
+      rewardNameController.dispose();
+      repetitionsController.dispose();
+      setsController.dispose();
+      instructionsController.dispose();
+    }
+  }
+
+  Future<void> _deleteChallenge(Map<String, dynamic> challenge) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar desafÃ­o'),
+        content: Text('Eliminar ${challenge['title'] ?? ''}?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Eliminar', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final type = challenge['type']?.toString() ?? 'exercise';
+    final table = type == 'course' ? 'courses' : 'exercises';
+    try {
+      await SupaFlow.client.from(table).delete().eq('id', challenge['id']);
+      await _loadData();
+    } catch (e) {
+      debugPrint('Delete challenge failed: $e');
     }
   }
 
@@ -1064,6 +1404,9 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     final attempts = _attemptCountByChallengeKey[key] ?? 0;
     final typeLabel = type == 'course' ? 'Curso' : 'Ejercicio';
     final typeIcon = type == 'course' ? Icons.school : Icons.fitness_center;
+    final categoryId = (challenge['category_id'] ?? '').toString();
+    final categoryLabel = _categoryNameById[categoryId] ?? '';
+    final validityDays = _toInt(challenge['validity_days']);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1144,7 +1487,9 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
               children: [
                 _infoTag('Orden $orderIndex'),
                 _infoTag('+$xpReward XP'),
+                if (categoryLabel.isNotEmpty) _infoTag(categoryLabel),
                 if (difficulty.isNotEmpty) _infoTag(difficulty),
+                if (validityDays > 0) _infoTag('$validityDays dÃ­as'),
                 _infoTag('$attempts envío(s)'),
               ],
             ),
@@ -1159,9 +1504,22 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                   label: const Text('Ver envíos'),
                 ),
                 OutlinedButton.icon(
+                  onPressed: () => _openEditChallengeDialog(challenge),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Editar'),
+                ),
+                OutlinedButton.icon(
                   onPressed: () => _toggleActive(challenge),
                   icon: Icon(isActive ? Icons.pause_circle : Icons.play_arrow),
                   label: Text(isActive ? 'Inactivar' : 'Activar'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _deleteChallenge(challenge),
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  label: const Text(
+                    'Eliminar',
+                    style: TextStyle(color: Colors.red),
+                  ),
                 ),
               ],
             ),

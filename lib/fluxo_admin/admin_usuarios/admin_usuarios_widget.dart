@@ -1,8 +1,10 @@
+import '/admin/admin_user_management_service.dart';
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import 'admin_usuarios_model.dart';
 export 'admin_usuarios_model.dart';
 
@@ -25,6 +27,16 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
   List<Map<String, dynamic>> _allUsers = [];
   List<Map<String, dynamic>> _filteredUsers = [];
   String _selectedFilter = 'todos';
+  AdminUserManagementCapabilities? _capabilities;
+
+  bool get _canCreateAuthUsers =>
+      _capabilities?.canCreateAuthUsers == true;
+
+  bool get _canDeleteAuthUsers =>
+      _capabilities?.canDeleteAuthUsers == true;
+
+  bool get _isAdminValidated =>
+      _capabilities?.isAdmin == true || FFAppState().isAdminSession;
 
   int _readPlanId(dynamic value, {int fallback = 1}) {
     if (value is int) return value;
@@ -41,6 +53,12 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
         status == 'ativo';
   }
 
+  bool _isVerifiedUser(Map<String, dynamic> user) {
+    final direct = user['is_verified'];
+    if (direct is bool) return direct;
+    return _isVerifiedStatus(user['verification_status']);
+  }
+
   bool _hasFullCapabilities(Map<String, dynamic> user) {
     final planId = _readPlanId(user['plan_id']);
     return planId >= 2 ||
@@ -53,6 +71,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
   void initState() {
     super.initState();
     _model = createModel(context, () => AdminUsuariosModel());
+    _loadCapabilities();
     _loadUsers();
   }
 
@@ -69,7 +88,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
       final response = await SupaFlow.client
           .from('users')
           .select(
-              'user_id, name, lastname, userType, plan_id, banned_until, photo_url, full_profile, is_test_account, verification_status')
+              'user_id, name, lastname, userType, plan_id, banned_until, photo_url, full_profile, is_test_account, verification_status, is_verified, city, country, pais, posicion, categoria, birthday, birth_date')
           .order('name', ascending: true);
 
       if (mounted) {
@@ -88,6 +107,17 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
     } catch (e) {
       debugPrint('Error loading users: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadCapabilities() async {
+    try {
+      final capabilities =
+          await AdminUserManagementService.loadCapabilities();
+      if (!mounted) return;
+      setState(() => _capabilities = capabilities);
+    } catch (e) {
+      debugPrint('Error loading admin capabilities: $e');
     }
   }
 
@@ -285,10 +315,33 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
     final planController = TextEditingController(
       text: _readPlanId(user['plan_id']).toString(),
     );
+    final cityController = TextEditingController(text: user['city'] ?? '');
+    final countryController =
+        TextEditingController(text: user['country'] ?? user['pais'] ?? '');
+    final positionController =
+        TextEditingController(text: user['posicion'] ?? user['position'] ?? '');
+    final categoryController =
+        TextEditingController(text: user['categoria'] ?? user['category'] ?? '');
+    final ageController = TextEditingController();
+    final currentBirthday = user['birthday'] ?? user['birth_date'];
+    if (currentBirthday != null) {
+      final parsed = DateTime.tryParse(currentBirthday.toString());
+      if (parsed != null) {
+        final now = DateTime.now();
+        int age = now.year - parsed.year;
+        if (now.month < parsed.month ||
+            (now.month == parsed.month && now.day < parsed.day)) {
+          age--;
+        }
+        ageController.text = age.toString();
+      }
+    }
+    bool isVerified = _isVerifiedUser(user);
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
         title: const Text('Editar Usuario'),
         content: SingleChildScrollView(
           child: Column(
@@ -318,6 +371,41 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
                   labelText: 'Plan ID (1=FREE, 2=PRO)',
                 ),
               ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: ageController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Edad'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: categoryController,
+                decoration: const InputDecoration(labelText: 'Categoría'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: positionController,
+                decoration: const InputDecoration(labelText: 'Posición'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: countryController,
+                decoration: const InputDecoration(labelText: 'País'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: cityController,
+                decoration: const InputDecoration(labelText: 'Ciudad'),
+              ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                value: isVerified,
+                onChanged: (value) =>
+                    setDialogState(() => isVerified = value ?? false),
+                title: const Text('Scout verificado'),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
             ],
           ),
         ),
@@ -330,6 +418,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
               child: const Text('Guardar')),
         ],
       ),
+      ),
     );
 
     if (result != true) {
@@ -337,6 +426,11 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
       lastnameController.dispose();
       userTypeController.dispose();
       planController.dispose();
+      cityController.dispose();
+      countryController.dispose();
+      positionController.dispose();
+      categoryController.dispose();
+      ageController.dispose();
       return;
     }
 
@@ -344,11 +438,36 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
       final sanitizedType =
           FFAppState.normalizeUserType(userTypeController.text.trim());
       final parsedPlanId = _readPlanId(planController.text.trim(), fallback: 1);
+      String? birthdayIso;
+      final ageValue = int.tryParse(ageController.text.trim());
+      if (ageValue != null && ageValue > 0 && ageValue < 120) {
+        final now = DateTime.now();
+        final birthday = DateTime(now.year - ageValue, now.month, now.day);
+        birthdayIso = birthday.toIso8601String();
+      }
       await SupaFlow.client.from('users').update({
         'name': nameController.text,
         'lastname': lastnameController.text,
         'userType': sanitizedType.isEmpty ? 'jugador' : sanitizedType,
         'plan_id': parsedPlanId,
+        'posicion': positionController.text.trim().isEmpty
+            ? null
+            : positionController.text.trim(),
+        'categoria': categoryController.text.trim().isEmpty
+            ? null
+            : categoryController.text.trim(),
+        'country': countryController.text.trim().isEmpty
+            ? null
+            : countryController.text.trim(),
+        'pais': countryController.text.trim().isEmpty
+            ? null
+            : countryController.text.trim(),
+        'city': cityController.text.trim().isEmpty
+            ? null
+            : cityController.text.trim(),
+        if (birthdayIso != null) 'birthday': birthdayIso,
+        'verification_status': isVerified ? 'verified' : 'pending',
+        'is_verified': isVerified,
       }).eq('user_id', user['user_id']);
 
       if (mounted) {
@@ -365,10 +484,470 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
     lastnameController.dispose();
     userTypeController.dispose();
     planController.dispose();
+    cityController.dispose();
+    countryController.dispose();
+    positionController.dispose();
+    categoryController.dispose();
+    ageController.dispose();
+  }
+
+  Future<void> _toggleScoutVerification(Map<String, dynamic> user) async {
+    final userId = user['user_id']?.toString() ?? '';
+    if (userId.isEmpty) return;
+    final nextVerified = !_isVerifiedUser(user);
+    try {
+      await SupaFlow.client.from('users').update({
+        'verification_status': nextVerified ? 'verified' : 'pending',
+        'is_verified': nextVerified,
+      }).eq('user_id', userId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              nextVerified ? 'Scout marcado como verificado' : 'Scout desverificado',
+            ),
+          ),
+        );
+        _loadUsers();
+      }
+    } catch (e) {
+      debugPrint('Error updating verification: $e');
+    }
+  }
+
+  Future<void> _deleteUser(Map<String, dynamic> user) async {
+    final userId = user['user_id']?.toString() ?? '';
+    if (userId.isEmpty) return;
+    bool deleteAuthAccount = _canDeleteAuthUsers;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Eliminar usuario'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Eliminar a ${user['name'] ?? 'este usuario'}?'),
+                const SizedBox(height: 12),
+                if (_canDeleteAuthUsers)
+                  SwitchListTile(
+                    value: deleteAuthAccount,
+                    onChanged: (value) =>
+                        setDialogState(() => deleteAuthAccount = value),
+                    title: const Text('Eliminar tambien el acceso/login'),
+                    subtitle: const Text(
+                      'Usa esta opcion para una baja completa sin depender del dev.',
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                  )
+                else
+                  const Text(
+                    'En este ambiente solo esta disponible la eliminacion del perfil publico.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text(
+                'Eliminar',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      final result = await AdminUserManagementService.deleteUser(
+        userId: userId,
+        deleteAuthAccount: deleteAuthAccount,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.message)),
+        );
+        _loadUsers();
+        _loadCapabilities();
+      }
+    } catch (e) {
+      debugPrint('Error deleting user: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    }
+  }
+
+  DateTime? _birthdayFromAge(String rawAge) {
+    final ageValue = int.tryParse(rawAge.trim());
+    if (ageValue == null || ageValue <= 0 || ageValue >= 120) {
+      return null;
+    }
+    final now = DateTime.now();
+    return DateTime(now.year - ageValue, now.month, now.day);
+  }
+
+  Future<void> _createUser() async {
+    final nameController = TextEditingController();
+    final lastnameController = TextEditingController();
+    final userTypeController = TextEditingController(text: 'jugador');
+    final planController = TextEditingController(text: '1');
+    final cityController = TextEditingController();
+    final countryController = TextEditingController();
+    final positionController = TextEditingController();
+    final categoryController = TextEditingController();
+    final ageController = TextEditingController();
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    bool isVerified = false;
+    bool createAuthAccount = _canCreateAuthUsers;
+
+    final created = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Crear usuario'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_canCreateAuthUsers)
+                  SwitchListTile(
+                    value: createAuthAccount,
+                    onChanged: (value) =>
+                        setDialogState(() => createAuthAccount = value),
+                    title: const Text('Crear cuenta con acceso al app'),
+                    subtitle: Text(
+                      createAuthAccount
+                          ? 'El usuario recibira login y password administrados.'
+                          : 'Solo se creara un perfil operativo.',
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                  )
+                else
+                  const Text(
+                    'Este ambiente solo permite alta de perfiles operativos, sin login.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                const SizedBox(height: 10),
+                if (createAuthAccount) ...[
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Contrasena'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: confirmPasswordController,
+                    obscureText: true,
+                    decoration:
+                        const InputDecoration(labelText: 'Confirmar contrasena'),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Nombre'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: lastnameController,
+                  decoration: const InputDecoration(labelText: 'Apellido'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: userTypeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo (jugador, profesional, club)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: planController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Plan ID (1=FREE, 2=PRO)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: ageController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Edad'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: categoryController,
+                  decoration: const InputDecoration(labelText: 'Categoría'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: positionController,
+                  decoration: const InputDecoration(labelText: 'Posición'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: countryController,
+                  decoration: const InputDecoration(labelText: 'País'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: cityController,
+                  decoration: const InputDecoration(labelText: 'Ciudad'),
+                ),
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  value: isVerified,
+                  onChanged: (value) =>
+                      setDialogState(() => isVerified = value ?? false),
+                  title: const Text('Scout verificado'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Crear'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (created != true) {
+      nameController.dispose();
+      lastnameController.dispose();
+      userTypeController.dispose();
+      planController.dispose();
+      cityController.dispose();
+      countryController.dispose();
+      positionController.dispose();
+      categoryController.dispose();
+      ageController.dispose();
+      emailController.dispose();
+      passwordController.dispose();
+      confirmPasswordController.dispose();
+      return;
+    }
+
+    if (createAuthAccount &&
+        passwordController.text.trim() !=
+            confirmPasswordController.text.trim()) {
+      nameController.dispose();
+      lastnameController.dispose();
+      userTypeController.dispose();
+      planController.dispose();
+      cityController.dispose();
+      countryController.dispose();
+      positionController.dispose();
+      categoryController.dispose();
+      ageController.dispose();
+      emailController.dispose();
+      passwordController.dispose();
+      confirmPasswordController.dispose();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Las contrasenas no coinciden')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final result = await AdminUserManagementService.createUser(
+        AdminCreateManagedUserInput(
+          name: nameController.text,
+          lastname: lastnameController.text,
+          userType: userTypeController.text,
+          planId: _readPlanId(planController.text.trim(), fallback: 1),
+          city: cityController.text,
+          country: countryController.text,
+          position: positionController.text,
+          category: categoryController.text,
+          isVerified: isVerified,
+          createAuthAccount: createAuthAccount,
+          email: emailController.text,
+          password: passwordController.text,
+          birthday: _birthdayFromAge(ageController.text),
+        ),
+      );
+
+      nameController.dispose();
+      lastnameController.dispose();
+      userTypeController.dispose();
+      planController.dispose();
+      cityController.dispose();
+      countryController.dispose();
+      positionController.dispose();
+      categoryController.dispose();
+      ageController.dispose();
+      emailController.dispose();
+      passwordController.dispose();
+      confirmPasswordController.dispose();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.message)),
+        );
+        _loadUsers();
+        _loadCapabilities();
+      }
+      return;
+    } catch (e) {
+      nameController.dispose();
+      lastnameController.dispose();
+      userTypeController.dispose();
+      planController.dispose();
+      cityController.dispose();
+      countryController.dispose();
+      positionController.dispose();
+      categoryController.dispose();
+      ageController.dispose();
+      emailController.dispose();
+      passwordController.dispose();
+      confirmPasswordController.dispose();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+      return;
+    }
+
+    final userId = const Uuid().v4();
+    final sanitizedType =
+        FFAppState.normalizeUserType(userTypeController.text.trim());
+    final parsedPlanId = _readPlanId(planController.text.trim(), fallback: 1);
+    String? birthdayIso;
+    final ageValue = int.tryParse(ageController.text.trim());
+    if (ageValue != null && ageValue > 0 && ageValue < 120) {
+      final now = DateTime.now();
+      final birthday = DateTime(now.year - ageValue, now.month, now.day);
+      birthdayIso = birthday.toIso8601String();
+    }
+
+    final payload = <String, dynamic>{
+      'user_id': userId,
+      'name': nameController.text.trim().isEmpty
+          ? 'Usuario'
+          : nameController.text.trim(),
+      'lastname': lastnameController.text.trim(),
+      'username': nameController.text.trim(),
+      'userType': sanitizedType.isEmpty ? 'jugador' : sanitizedType,
+      'plan_id': parsedPlanId,
+      'role_id': 1,
+      'country_id': 1,
+      'created_at': DateTime.now().toIso8601String(),
+      'posicion': positionController.text.trim().isEmpty
+          ? null
+          : positionController.text.trim(),
+      'categoria': categoryController.text.trim().isEmpty
+          ? null
+          : categoryController.text.trim(),
+      'country': countryController.text.trim().isEmpty
+          ? null
+          : countryController.text.trim(),
+      'pais': countryController.text.trim().isEmpty
+          ? null
+          : countryController.text.trim(),
+      'city': cityController.text.trim().isEmpty
+          ? null
+          : cityController.text.trim(),
+      'verification_status': isVerified ? 'verified' : 'pending',
+      'is_verified': isVerified,
+      'is_test_account': true,
+    };
+    if (birthdayIso != null) {
+      payload['birthday'] = birthdayIso;
+    }
+
+    final fallbackPayload = Map<String, dynamic>.from(payload)
+      ..remove('posicion')
+      ..remove('categoria')
+      ..remove('country')
+      ..remove('pais')
+      ..remove('city');
+
+    try {
+      await SupaFlow.client.from('users').insert(payload);
+    } catch (_) {
+      await SupaFlow.client.from('users').insert(fallbackPayload);
+    }
+
+    try {
+      if (payload['userType'] == 'jugador') {
+        await SupaFlow.client.from('players').insert({
+          'id': userId,
+          'created_at': DateTime.now().toIso8601String(),
+          'position_id': null,
+        });
+      } else if (payload['userType'] == 'profesional') {
+        await SupaFlow.client.from('scouts').insert({
+          'id': userId,
+          'created_at': DateTime.now().toIso8601String(),
+          'telephone': '',
+          'club': '',
+        });
+      } else if (payload['userType'] == 'club') {
+        await SupaFlow.client.from('clubs').insert({
+          'owner_id': userId,
+          'nombre': payload['name'] ?? 'Club',
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Usuario creado')),
+      );
+      _loadUsers();
+    }
+
+    nameController.dispose();
+    lastnameController.dispose();
+    userTypeController.dispose();
+    planController.dispose();
+    cityController.dispose();
+    countryController.dispose();
+    positionController.dispose();
+    categoryController.dispose();
+    ageController.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_isAdminValidated) {
+      return _buildAdminAccessDenied();
+    }
+
     return Scaffold(
       key: scaffoldKey,
       backgroundColor: FlutterFlowTheme.of(context).primaryBackground,
@@ -385,6 +964,13 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
         centerTitle: true,
         elevation: 2.0,
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            tooltip: 'Crear usuario',
+            onPressed: _createUser,
+            icon: const Icon(Icons.person_add, color: Colors.white),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -421,6 +1007,11 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
             ),
           ),
           const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _buildCapabilitiesCard(),
+          ),
+          const SizedBox(height: 8),
           // User list
           Expanded(
             child: _isLoading
@@ -438,6 +1029,155 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
                       ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAdminAccessDenied() {
+    return Scaffold(
+      key: scaffoldKey,
+      backgroundColor: FlutterFlowTheme.of(context).primaryBackground,
+      appBar: AppBar(
+        backgroundColor: FlutterFlowTheme.of(context).primary,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(
+          'Usuarios',
+          style: FlutterFlowTheme.of(context).headlineMedium.override(
+                fontFamily: 'Poppins',
+                color: Colors.white,
+                letterSpacing: 0.0,
+              ),
+        ),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.admin_panel_settings_outlined, size: 48),
+              const SizedBox(height: 12),
+              Text(
+                'Acesso restrito ao perfil admin.',
+                style: FlutterFlowTheme.of(context).headlineSmall,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Validamos a sessao antes de liberar criacao, edicao ou exclusao de usuarios.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCapabilitiesCard() {
+    final capabilities = _capabilities;
+    if (capabilities == null) {
+      return Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text('Validando capacidades del admin...'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.verified_user_outlined),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Capacidades del admin',
+                    style: FlutterFlowTheme.of(context).titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildCapabilityChip(
+                  label: 'Alta',
+                  enabled: capabilities.canCreateUsers,
+                ),
+                _buildCapabilityChip(
+                  label: 'Edicion',
+                  enabled: capabilities.canEditUsers,
+                ),
+                _buildCapabilityChip(
+                  label: 'Exclusion',
+                  enabled: capabilities.canDeleteUsers,
+                ),
+                _buildCapabilityChip(
+                  label: 'Alta con login',
+                  enabled: capabilities.canCreateAuthUsers,
+                ),
+                _buildCapabilityChip(
+                  label: 'Baja completa',
+                  enabled: capabilities.canDeleteAuthUsers,
+                ),
+                _buildCapabilityChip(
+                  label: 'Settings',
+                  enabled: capabilities.canManageAdminSettings,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              capabilities.hasFullLifecycle
+                  ? 'El admin ya puede gestionar usuarios de punta a punta sin depender del desarrollador.'
+                  : 'El admin puede editar perfiles y operar el catalogo, pero la capa de login aun depende de la migracion de ciclo de vida admin.',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCapabilityChip({
+    required String label,
+    required bool enabled,
+  }) {
+    final color = enabled ? Colors.green : Colors.orange;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '$label ${enabled ? "OK" : "PEND"}',
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
       ),
     );
   }
@@ -468,6 +1208,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
     final planLabel = planId == 2 ? 'PRO' : 'FREE';
     final hasFullCapabilities = _hasFullCapabilities(user);
     final userType = FFAppState.normalizeUserType(user['userType']);
+    final isVerified = _isVerifiedUser(user);
 
     String typeLabel;
     Color typeColor;
@@ -570,6 +1311,26 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
                 ),
               ),
             ),
+            if (userType == 'profesional') ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isVerified
+                      ? Colors.green.withValues(alpha: 0.1)
+                      : Colors.grey.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  isVerified ? 'VERIFICADO' : 'NO VERIFICADO',
+                  style: TextStyle(
+                    color: isVerified ? Colors.green : Colors.grey,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
         trailing: PopupMenuButton<String>(
@@ -586,6 +1347,12 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
                 break;
               case 'full':
                 _toggleFullCapabilities(user);
+                break;
+              case 'verify':
+                _toggleScoutVerification(user);
+                break;
+              case 'delete':
+                _deleteUser(user);
                 break;
             }
           },
@@ -609,6 +1376,18 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
                 hasFullCapabilities
                     ? 'Remover perfil FULL'
                     : 'Activar perfil FULL',
+              ),
+            ),
+            if (userType == 'profesional')
+              PopupMenuItem(
+                value: 'verify',
+                child: Text(isVerified ? 'Desverificar scout' : 'Verificar scout'),
+              ),
+            const PopupMenuItem(
+              value: 'delete',
+              child: Text(
+                'Eliminar usuario',
+                style: TextStyle(color: Colors.red),
               ),
             ),
           ],
