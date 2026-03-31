@@ -397,7 +397,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                                 child: const Icon(Icons.settings,
                                     color: Colors.white, size: 24)),
                             const SizedBox(width: 12),
-                            Text('Menu do Club',
+                            Text('Menú del club',
                                 style: GoogleFonts.inter(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -416,7 +416,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                             _buildDrawerItem(
                                 context,
                                 Icons.dashboard_outlined,
-                                'Início',
+                                'Dashboard',
                                 false,
                                 () => context
                                     .pushNamed(DashboardClubWidget.routeName)),
@@ -430,14 +430,14 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                             _buildDrawerItem(
                                 context,
                                 Icons.people_outline,
-                                'Postulaciones',
+                                'Jugadores',
                                 false,
                                 () => context
                                     .pushNamed(PostulacionesWidget.routeName)),
                             _buildDrawerItem(
                                 context,
                                 Icons.list_alt_outlined,
-                                'Listas',
+                                'Scouting',
                                 true,
                                 () => context
                                     .pushNamed(ListaYNotaWidget.routeName)),
@@ -445,7 +445,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                             _buildDrawerItem(
                                 context,
                                 Icons.settings_outlined,
-                                'Configuração',
+                                'Club',
                                 false,
                                 () => context
                                     .pushNamed(ConfiguracinWidget.routeName)),

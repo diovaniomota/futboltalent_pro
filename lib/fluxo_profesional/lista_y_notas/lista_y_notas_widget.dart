@@ -252,8 +252,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                 'user_id, name, lastname, username, posicion, photo_url, city')
             .inFilter('userType',
                 ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
-            .or(
-                'name.ilike.%$query%,lastname.ilike.%$query%,username.ilike.%$query%,posicion.ilike.%$query%,city.ilike.%$query%')
+            .or('name.ilike.%$query%,lastname.ilike.%$query%,username.ilike.%$query%,posicion.ilike.%$query%,city.ilike.%$query%')
             .limit(12);
       } catch (_) {
         res = await SupaFlow.client
@@ -262,8 +261,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                 'user_id, name, lastname, username, posicion, photo_url, city')
             .inFilter('usertype',
                 ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
-            .or(
-                'name.ilike.%$query%,lastname.ilike.%$query%,username.ilike.%$query%,posicion.ilike.%$query%,city.ilike.%$query%')
+            .or('name.ilike.%$query%,lastname.ilike.%$query%,username.ilike.%$query%,posicion.ilike.%$query%,city.ilike.%$query%')
             .limit(12);
       }
 
@@ -486,7 +484,8 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
         setState(() {
           _jugadoresGuardados = guardados;
           _isLoadingGuardados = false;
-          if (_selectedLista != null && _searchController.text.trim().length < 2) {
+          if (_selectedLista != null &&
+              _searchController.text.trim().length < 2) {
             final suggestions = _suggestedPlayersFromGuardados();
             _globalSearchResults = suggestions;
             _globalSearchError = suggestions.isEmpty
@@ -854,7 +853,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                     : SingleChildScrollView(
                         padding: EdgeInsets.all(padding),
                         child: Column(children: [
-                          Text('Pipeline Scout',
+                          Text('Cuaderno de Campo',
                               style: GoogleFonts.inter(
                                   fontSize: 24 * scale,
                                   fontWeight: FontWeight.bold)),
@@ -890,7 +889,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Center(
-                                      child: Text('Pipeline',
+                                      child: Text('Listas',
                                           style: TextStyle(
                                             color: !_showGuardados
                                                 ? Colors.white
@@ -1163,7 +1162,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.grey[300]!)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Pipeline', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text('Listas', style: TextStyle(fontWeight: FontWeight.bold)),
         if (_listas.isEmpty)
           const Padding(
               padding: EdgeInsets.all(20), child: Text('No hay listas'))
@@ -1443,7 +1442,7 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
     if (raw.contains('listas_jugadores_lista_id_fkey') ||
         raw.contains('foreign key constraint') ||
         raw.contains('23503')) {
-      return 'No se pudo vincular esta lista. Reabrí Pipeline o creá una lista nueva e intentá otra vez.';
+      return 'No se pudo vincular esta lista. Reabrí Cuaderno de Campo o creá una lista nueva e intentá otra vez.';
     }
     if (raw.contains('duplicate key') ||
         raw.contains('already') ||

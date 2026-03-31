@@ -81,6 +81,15 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           .eq('user_id', uid)
           .maybeSingle();
 
+      Map<String, dynamic>? playerResponse;
+      try {
+        playerResponse = await SupaFlow.client
+            .from('players')
+            .select()
+            .eq('id', uid)
+            .maybeSingle();
+      } catch (_) {}
+
       await GamificationService.recalculateUserProgress(userId: uid);
 
       Map<String, dynamic>? progressResponse;
@@ -94,6 +103,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
 
       final mergedUserData = <String, dynamic>{
         ...(userResponse ?? <String, dynamic>{}),
+        ...(playerResponse ?? <String, dynamic>{}),
         ...(progressResponse ?? <String, dynamic>{}),
       };
 

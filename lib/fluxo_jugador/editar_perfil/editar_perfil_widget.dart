@@ -25,9 +25,22 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   // Controllers para os campos de texto
   TextEditingController? _nomeController;
   TextEditingController? _usernameController;
+  TextEditingController? _birthdayController;
+  TextEditingController? _countryController;
+  TextEditingController? _cityController;
   TextEditingController? _posicaoController;
+  TextEditingController? _categoryController;
   TextEditingController? _pieDominanteController;
+  TextEditingController? _clubController;
+  TextEditingController? _experienceController;
+  TextEditingController? _heightController;
+  TextEditingController? _weightController;
   TextEditingController? _lugarController;
+  TextEditingController? _bioController;
+  TextEditingController? _phoneController;
+  TextEditingController? _professionalUrlController;
+  TextEditingController? _dniController;
+  TextEditingController? _collaborationsController;
 
   // Focus nodes
   FocusNode? _nomeFocusNode;
@@ -43,10 +56,16 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   bool _isUploadingCover = false;
   Map<String, dynamic>? _userData;
   String? _errorMessage;
+  String _currentUserType = 'jugador';
+  bool _hasPlayerRecord = false;
+  bool _hasScoutRecord = false;
 
   // Opção selecionada (club ou sin club)
   bool _juegaEnClub = false;
   String? _selectedPlayerStatus;
+  DateTime? _selectedBirthday;
+  final List<TextEditingController> _historyClubControllers = [];
+  final List<TextEditingController> _historyPeriodControllers = [];
 
   static const List<String> _playerStatusOptions = [
     'Buscando club',
@@ -82,9 +101,28 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     _model.dispose();
     _nomeController?.dispose();
     _usernameController?.dispose();
+    _birthdayController?.dispose();
+    _countryController?.dispose();
+    _cityController?.dispose();
     _posicaoController?.dispose();
+    _categoryController?.dispose();
     _pieDominanteController?.dispose();
+    _clubController?.dispose();
+    _experienceController?.dispose();
+    _heightController?.dispose();
+    _weightController?.dispose();
     _lugarController?.dispose();
+    _bioController?.dispose();
+    _phoneController?.dispose();
+    _professionalUrlController?.dispose();
+    _dniController?.dispose();
+    _collaborationsController?.dispose();
+    for (final controller in _historyClubControllers) {
+      controller.dispose();
+    }
+    for (final controller in _historyPeriodControllers) {
+      controller.dispose();
+    }
     _nomeFocusNode?.dispose();
     _usernameFocusNode?.dispose();
     _posicaoFocusNode?.dispose();
@@ -115,24 +153,101 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           .eq('user_id', uid)
           .maybeSingle();
 
-      if (response != null) {
-        _userData = response;
-        _nomeController = TextEditingController(text: response['name'] ?? '');
-        _usernameController =
-            TextEditingController(text: response['username'] ?? '');
-        _posicaoController =
-            TextEditingController(text: response['posicion'] ?? '');
-        _pieDominanteController =
-            TextEditingController(text: response['pie_dominante'] ?? '');
-        _lugarController = TextEditingController(text: response['lugar'] ?? '');
-        _juegaEnClub = response['juega_en_club'] ?? false;
-        _selectedPlayerStatus =
-            _normalizePlayerStatus(response['player_status']);
-        _photoUrl = response['photo_url'];
-        _coverUrl = response['cover_url'];
-      } else {
+      if (response == null) {
         _errorMessage = 'Usuario no encontrado';
+        return;
       }
+
+      final merged = <String, dynamic>{...response};
+      final userType =
+          (response['userType']?.toString().trim().toLowerCase() ?? 'jugador')
+              .replaceAll('jogador', 'jugador');
+      _currentUserType = userType;
+      _hasPlayerRecord = false;
+      _hasScoutRecord = false;
+
+      if (userType == 'jugador') {
+        try {
+          final playerResponse = await SupaFlow.client
+              .from('players')
+              .select()
+              .eq('id', uid)
+              .maybeSingle();
+          if (playerResponse != null) {
+            merged.addAll(Map<String, dynamic>.from(playerResponse));
+            _hasPlayerRecord = true;
+          }
+        } catch (_) {}
+      } else if (userType == 'profesional') {
+        try {
+          final scoutResponse = await SupaFlow.client
+              .from('scouts')
+              .select()
+              .eq('id', uid)
+              .maybeSingle();
+          if (scoutResponse != null) {
+            merged.addAll(Map<String, dynamic>.from(scoutResponse));
+            if ((merged['bio']?.toString().trim().isEmpty ?? true) &&
+                (scoutResponse['biography']?.toString().trim().isNotEmpty ??
+                    false)) {
+              merged['bio'] = scoutResponse['biography'];
+            }
+            _hasScoutRecord = true;
+          }
+        } catch (_) {}
+      }
+
+      _userData = merged;
+      _nomeController =
+          TextEditingController(text: merged['name']?.toString() ?? '');
+      _usernameController =
+          TextEditingController(text: merged['username']?.toString() ?? '');
+      _birthdayController =
+          TextEditingController(text: _formatDateForInput(merged['birthday']));
+      _countryController = TextEditingController(
+          text: _firstNonEmptyValue([merged['country'], merged['pais']]) ?? '');
+      _cityController =
+          TextEditingController(text: merged['city']?.toString() ?? '');
+      _posicaoController =
+          TextEditingController(text: merged['posicion']?.toString() ?? '');
+      _categoryController =
+          TextEditingController(text: merged['categoria']?.toString() ?? '');
+      _pieDominanteController = TextEditingController(
+        text: _firstNonEmptyValue(
+                [merged['dominant_foot'], merged['pie_dominante']]) ??
+            '',
+      );
+      _clubController =
+          TextEditingController(text: merged['club']?.toString() ?? '');
+      _experienceController =
+          TextEditingController(text: _stringValue(merged['experience']));
+      _heightController =
+          TextEditingController(text: _stringValue(merged['altura']));
+      _weightController =
+          TextEditingController(text: _stringValue(merged['peso']));
+      _lugarController =
+          TextEditingController(text: merged['lugar']?.toString() ?? '');
+      _bioController = TextEditingController(
+        text: _firstNonEmptyValue(
+                [merged['bio'], merged['descripcion'], merged['biography']]) ??
+            '',
+      );
+      _phoneController =
+          TextEditingController(text: merged['telephone']?.toString() ?? '');
+      _professionalUrlController = TextEditingController(
+          text: merged['url_profesional']?.toString() ?? '');
+      _dniController = TextEditingController(text: _stringValue(merged['dni']));
+      _collaborationsController = TextEditingController(
+        text: _parseCollaborations(merged['colaboraciones']).join(', '),
+      );
+      _juegaEnClub = merged['juega_en_club'] == true ||
+          (merged['club']?.toString().trim().isNotEmpty ?? false);
+      _selectedPlayerStatus = _normalizePlayerStatus(merged['player_status']);
+      _selectedBirthday = _parseDate(merged['birthday']);
+      _photoUrl = merged['photo_url']?.toString();
+      _coverUrl = merged['cover_url']?.toString();
+      _setHistoryControllers(
+          _parseHistoryItems(merged['historial_clubes'] ?? merged['clubs']));
     } catch (e) {
       debugPrint('Error al cargar usuario: $e');
       _errorMessage = 'Error al cargar datos';
@@ -497,22 +612,97 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     try {
       setState(() => _isSaving = true);
       final uid = currentUserUid;
+      final country = _countryController?.text.trim() ?? '';
+      final city = _cityController?.text.trim() ?? '';
 
-      await SupaFlow.client.from('users').update({
-        'name': _nomeController?.text ?? '',
-        'username': _usernameController?.text ?? '',
-        'posicion': _posicaoController?.text ?? '',
-        'pie_dominante': _pieDominanteController?.text ?? '',
-        'lugar': _lugarController?.text ?? '',
-        'juega_en_club': _juegaEnClub,
-        'player_status': _selectedPlayerStatus,
-      }).eq('user_id', uid);
+      final userPayload = <String, dynamic>{
+        'name': _nomeController?.text.trim() ?? '',
+        'username': _usernameController?.text.trim() ?? '',
+        'city': city,
+        'country': country,
+        'pais': country,
+        'birthday': _selectedBirthday?.toIso8601String(),
+      };
+
+      if (_currentUserType == 'profesional') {
+        userPayload.addAll({
+          'bio': _bioController?.text.trim() ?? '',
+          'descripcion': _bioController?.text.trim() ?? '',
+          'colaboraciones':
+              _parseCollaborations(_collaborationsController?.text ?? ''),
+        });
+      } else {
+        userPayload.addAll({
+          'posicion': _posicaoController?.text.trim() ?? '',
+          'categoria': _categoryController?.text.trim() ?? '',
+          'pie_dominante': _pieDominanteController?.text.trim() ?? '',
+          'lugar': _lugarController?.text.trim() ?? '',
+          'juega_en_club': _juegaEnClub,
+          'player_status': _selectedPlayerStatus,
+          'historial_clubes': _collectHistoryItems(),
+        });
+      }
+
+      await SupaFlow.client
+          .from('users')
+          .update(userPayload)
+          .eq('user_id', uid);
+
+      if (_currentUserType == 'profesional') {
+        final scoutPayload = <String, dynamic>{
+          'biography': _bioController?.text.trim() ?? '',
+          'telephone': _phoneController?.text.trim() ?? '',
+          'club': _clubController?.text.trim() ?? '',
+          'url_profesional': _professionalUrlController?.text.trim() ?? '',
+          'dni': _tryParseInt(_dniController?.text),
+        };
+
+        if (_hasScoutRecord) {
+          await SupaFlow.client
+              .from('scouts')
+              .update(scoutPayload)
+              .eq('id', uid);
+        } else {
+          await SupaFlow.client.from('scouts').insert({
+            'id': uid,
+            'created_at': DateTime.now().toIso8601String(),
+            ...scoutPayload,
+          });
+          _hasScoutRecord = true;
+        }
+      } else {
+        final playerPayload = <String, dynamic>{
+          'dominant_foot': _pieDominanteController?.text.trim() ?? '',
+          'club': _clubController?.text.trim() ?? '',
+          'experience': _tryParseInt(_experienceController?.text),
+          'altura': _tryParseDouble(_heightController?.text),
+          'peso': _tryParseDouble(_weightController?.text),
+        };
+
+        if (_hasPlayerRecord) {
+          await SupaFlow.client
+              .from('players')
+              .update(playerPayload)
+              .eq('id', uid);
+        } else {
+          await SupaFlow.client.from('players').insert({
+            'id': uid,
+            'created_at': DateTime.now().toIso8601String(),
+            ...playerPayload,
+          });
+          _hasPlayerRecord = true;
+        }
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cambios guardados correctamente'),
-            backgroundColor: Color(0xFF0D3B66),
+          SnackBar(
+            content: Text(
+              _currentUserType == 'profesional'
+                  ? 'Perfil profesional actualizado correctamente'
+                  : 'Cambios guardados correctamente',
+            ),
+            backgroundColor: const Color(0xFF0D3B66),
           ),
         );
       }
@@ -594,6 +784,150 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     }
   }
 
+  String _stringValue(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    if (text.toLowerCase() == 'null') return '';
+    return text;
+  }
+
+  String? _firstNonEmptyValue(List<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        return text;
+      }
+    }
+    return null;
+  }
+
+  DateTime? _parseDate(dynamic rawValue) {
+    final raw = rawValue?.toString().trim() ?? '';
+    if (raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  String _formatDateForInput(dynamic rawValue) {
+    final parsed = _parseDate(rawValue);
+    if (parsed == null) return '';
+    final month = parsed.month.toString().padLeft(2, '0');
+    final day = parsed.day.toString().padLeft(2, '0');
+    return '${parsed.year}-$month-$day';
+  }
+
+  int? _tryParseInt(String? rawValue) {
+    final cleaned = rawValue?.trim() ?? '';
+    if (cleaned.isEmpty) return null;
+    return int.tryParse(cleaned);
+  }
+
+  double? _tryParseDouble(String? rawValue) {
+    final cleaned = (rawValue ?? '').trim().replaceAll(',', '.');
+    if (cleaned.isEmpty) return null;
+    return double.tryParse(cleaned);
+  }
+
+  List<String> _parseCollaborations(dynamic rawValue) {
+    if (rawValue is List) {
+      return rawValue
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+
+    final text = rawValue?.toString().trim() ?? '';
+    if (text.isEmpty) return [];
+
+    return text
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  List<Map<String, String>> _parseHistoryItems(dynamic rawValue) {
+    if (rawValue is! List) return [];
+
+    return rawValue
+        .whereType<Map>()
+        .map((item) => {
+              'name': _firstNonEmptyValue([item['name'], item['nombre']]) ?? '',
+              'period':
+                  _firstNonEmptyValue([item['period'], item['periodo']]) ?? '',
+            })
+        .where((item) => item['name']!.isNotEmpty || item['period']!.isNotEmpty)
+        .toList();
+  }
+
+  void _disposeHistoryControllers() {
+    for (final controller in _historyClubControllers) {
+      controller.dispose();
+    }
+    for (final controller in _historyPeriodControllers) {
+      controller.dispose();
+    }
+    _historyClubControllers.clear();
+    _historyPeriodControllers.clear();
+  }
+
+  void _setHistoryControllers(List<Map<String, String>> items) {
+    _disposeHistoryControllers();
+    for (final item in items) {
+      _historyClubControllers.add(
+        TextEditingController(text: item['name'] ?? ''),
+      );
+      _historyPeriodControllers.add(
+        TextEditingController(text: item['period'] ?? ''),
+      );
+    }
+  }
+
+  List<Map<String, String>> _collectHistoryItems() {
+    final items = <Map<String, String>>[];
+    for (var i = 0; i < _historyClubControllers.length; i++) {
+      final name = _historyClubControllers[i].text.trim();
+      final period = _historyPeriodControllers[i].text.trim();
+      if (name.isEmpty && period.isEmpty) continue;
+      items.add({
+        'name': name,
+        'period': period,
+      });
+    }
+    return items;
+  }
+
+  Future<void> _pickBirthday() async {
+    final initialDate = _selectedBirthday ?? DateTime(2008, 1, 1);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(1970),
+      lastDate: DateTime.now(),
+      helpText: 'Selecciona tu fecha de nacimiento',
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      _selectedBirthday = picked;
+      _birthdayController?.text = _formatDateForInput(picked.toIso8601String());
+    });
+  }
+
+  void _addHistoryItem() {
+    setState(() {
+      _historyClubControllers.add(TextEditingController());
+      _historyPeriodControllers.add(TextEditingController());
+    });
+  }
+
+  void _removeHistoryItem(int index) {
+    if (index < 0 || index >= _historyClubControllers.length) return;
+    setState(() {
+      _historyClubControllers.removeAt(index).dispose();
+      _historyPeriodControllers.removeAt(index).dispose();
+    });
+  }
+
   Widget _buildTextField({
     required String label,
     required TextEditingController? controller,
@@ -602,6 +936,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     Widget? suffixIcon,
     bool readOnly = false,
     VoidCallback? onTap,
+    TextInputType? keyboardType,
+    int maxLines = 1,
+    TextCapitalization textCapitalization = TextCapitalization.sentences,
   }) {
     return Padding(
       padding: const EdgeInsets.only(top: 16.0),
@@ -626,6 +963,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             readOnly: readOnly,
             onTap: onTap,
             obscureText: false,
+            keyboardType: keyboardType,
+            maxLines: maxLines,
+            textCapitalization: textCapitalization,
             decoration: _buildInputDecoration(hintText, suffixIcon: suffixIcon),
             style: GoogleFonts.inter(
               fontSize: 16,
@@ -762,6 +1102,339 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title, {String? subtitle}) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 28.0, bottom: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1A202C),
+              fontSize: 17,
+            ),
+          ),
+          if (subtitle != null && subtitle.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              style: GoogleFonts.inter(
+                color: const Color(0xFF64748B),
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryEditor() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_historyClubControllers.isEmpty)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Text(
+              'Todavía no agregaste clubes o etapas de formación. Sumá tu recorrido para reforzar tu perfil.',
+              style: GoogleFonts.inter(
+                color: const Color(0xFF64748B),
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ...List.generate(_historyClubControllers.length, (index) {
+          return Container(
+            margin: const EdgeInsets.only(top: 14),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Etapa ${index + 1}',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1A202C),
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => _removeHistoryItem(index),
+                      splashRadius: 20,
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: Color(0xFFDC2626),
+                      ),
+                    ),
+                  ],
+                ),
+                _buildTextField(
+                  label: 'Club / academia',
+                  controller: _historyClubControllers[index],
+                  focusNode: null,
+                  hintText: 'Academia Norte FC',
+                ),
+                _buildTextField(
+                  label: 'Período',
+                  controller: _historyPeriodControllers[index],
+                  focusNode: null,
+                  hintText: '2022 - actualidad',
+                ),
+              ],
+            ),
+          );
+        }),
+        Padding(
+          padding: const EdgeInsets.only(top: 14.0),
+          child: OutlinedButton.icon(
+            onPressed: _addHistoryItem,
+            icon: const Icon(Icons.add_circle_outline_rounded),
+            label: const Text('Agregar etapa'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF0D3B66),
+              side: const BorderSide(color: Color(0xFF0D3B66)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlayerForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle(
+          'Identidad del jugador',
+          subtitle:
+              'Completá tu ficha con datos reales para que scouts y clubes entiendan rápido tu perfil.',
+        ),
+        _buildTextField(
+            label: 'Nombre',
+            controller: _nomeController,
+            focusNode: _nomeFocusNode,
+            hintText: 'Nombre'),
+        _buildTextField(
+            label: 'Nombre de usuario',
+            controller: _usernameController,
+            focusNode: _usernameFocusNode,
+            hintText: 'usuario',
+            textCapitalization: TextCapitalization.none),
+        _buildTextField(
+            label: 'Fecha de nacimiento',
+            controller: _birthdayController,
+            focusNode: null,
+            hintText: 'YYYY-MM-DD',
+            readOnly: true,
+            onTap: _pickBirthday,
+            suffixIcon: const Icon(Icons.calendar_today_outlined,
+                size: 18, color: Color(0xFF718096))),
+        _buildTextField(
+            label: 'País / nacionalidad',
+            controller: _countryController,
+            focusNode: null,
+            hintText: 'Argentina'),
+        _buildTextField(
+            label: 'Ciudad',
+            controller: _cityController,
+            focusNode: null,
+            hintText: 'Rosario'),
+        _buildTextField(
+            label: 'Posición principal',
+            controller: _posicaoController,
+            focusNode: _posicaoFocusNode,
+            hintText: 'Extremo derecho'),
+        _buildTextField(
+            label: 'Categoría',
+            controller: _categoryController,
+            focusNode: null,
+            hintText: 'Sub-20'),
+        _buildDropdownField(
+            label: 'Status del jugador',
+            hintText: 'Selecciona tu momento actual',
+            value: _selectedPlayerStatus,
+            onChanged: (value) {
+              setState(() => _selectedPlayerStatus = value);
+            },
+            options: _playerStatusOptions),
+        _buildSectionTitle(
+          'Ficha deportiva',
+          subtitle:
+              'Mostrá tu contexto actual, tu físico y la experiencia que ya acumulaste.',
+        ),
+        _buildTextField(
+            label: 'Pie dominante',
+            controller: _pieDominanteController,
+            focusNode: _pieDominanteFocusNode,
+            hintText: 'Derecho'),
+        _buildTextField(
+            label: 'Altura (cm)',
+            controller: _heightController,
+            focusNode: null,
+            hintText: '181',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+        _buildTextField(
+            label: 'Peso (kg)',
+            controller: _weightController,
+            focusNode: null,
+            hintText: '75',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+        _buildTextField(
+            label: 'Años de experiencia',
+            controller: _experienceController,
+            focusNode: null,
+            hintText: '6',
+            keyboardType: TextInputType.number),
+        Padding(
+          padding: const EdgeInsets.only(top: 12.0),
+          child: Text(
+            'Situación deportiva actual',
+            style: GoogleFonts.inter(
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF1A202C),
+                fontSize: 15),
+          ),
+        ),
+        _buildRadioOption(
+            text: 'Juego en un club',
+            isSelected: _juegaEnClub,
+            onPressed: () {
+              setState(() => _juegaEnClub = true);
+            }),
+        _buildRadioOption(
+            text: 'Sin club',
+            isSelected: !_juegaEnClub,
+            onPressed: () {
+              setState(() => _juegaEnClub = false);
+            }),
+        _buildTextField(
+            label: 'Club actual',
+            controller: _clubController,
+            focusNode: null,
+            hintText: 'Puerto Sur Club'),
+        _buildTextField(
+            label: 'Lugar donde jugás',
+            controller: _lugarController,
+            focusNode: _lugarFocusNode,
+            hintText: 'Cancha del barrio, torneo local o academia'),
+        _buildSectionTitle(
+          'Historial deportivo',
+          subtitle:
+              'Agregá tus clubes, academias o etapas formativas para reforzar tu recorrido.',
+        ),
+        _buildHistoryEditor(),
+      ],
+    );
+  }
+
+  Widget _buildProfessionalForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle(
+          'Identidad profesional',
+          subtitle:
+              'Ordená tu perfil para que clubes y jugadores entiendan tu rol dentro del scouting.',
+        ),
+        _buildTextField(
+            label: 'Nombre',
+            controller: _nomeController,
+            focusNode: _nomeFocusNode,
+            hintText: 'Nombre'),
+        _buildTextField(
+            label: 'Nombre de usuario',
+            controller: _usernameController,
+            focusNode: _usernameFocusNode,
+            hintText: 'usuario',
+            textCapitalization: TextCapitalization.none),
+        _buildTextField(
+            label: 'País',
+            controller: _countryController,
+            focusNode: null,
+            hintText: 'Portugal'),
+        _buildTextField(
+            label: 'Ciudad',
+            controller: _cityController,
+            focusNode: null,
+            hintText: 'Lisboa'),
+        _buildTextField(
+            label: 'Fecha de nacimiento',
+            controller: _birthdayController,
+            focusNode: null,
+            hintText: 'YYYY-MM-DD',
+            readOnly: true,
+            onTap: _pickBirthday,
+            suffixIcon: const Icon(Icons.calendar_today_outlined,
+                size: 18, color: Color(0xFF718096))),
+        _buildSectionTitle(
+          'Perfil profesional',
+          subtitle: 'Completá tus datos de contacto y tu enfoque de scouting.',
+        ),
+        _buildTextField(
+            label: 'Club / organización',
+            controller: _clubController,
+            focusNode: null,
+            hintText: 'Rede Iberica de Scouts'),
+        _buildTextField(
+            label: 'Teléfono',
+            controller: _phoneController,
+            focusNode: null,
+            hintText: '+351910000201',
+            keyboardType: TextInputType.phone),
+        _buildTextField(
+            label: 'Link profesional',
+            controller: _professionalUrlController,
+            focusNode: null,
+            hintText: 'https://...',
+            keyboardType: TextInputType.url,
+            textCapitalization: TextCapitalization.none),
+        _buildTextField(
+            label: 'DNI / documento',
+            controller: _dniController,
+            focusNode: null,
+            hintText: '2201201',
+            keyboardType: TextInputType.number),
+        _buildTextField(
+            label: 'Biografía profesional',
+            controller: _bioController,
+            focusNode: null,
+            hintText:
+                'Contá tu experiencia, foco de scouting y tipo de talento que seguís.',
+            maxLines: 4),
+        _buildTextField(
+            label: 'Colaboraciones destacadas',
+            controller: _collaborationsController,
+            focusNode: null,
+            hintText: 'Separá por coma: Club A, Torneo B, Red Scout C',
+            maxLines: 2),
+      ],
     );
   }
 
@@ -1049,70 +1722,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildTextField(
-                  label: 'Nombre',
-                  controller: _nomeController,
-                  focusNode: _nomeFocusNode,
-                  hintText: 'Nombre',
-                ),
-                _buildTextField(
-                  label: 'Nombre de Usuario',
-                  controller: _usernameController,
-                  focusNode: _usernameFocusNode,
-                  hintText: 'Usuario',
-                ),
-                _buildTextField(
-                  label: 'Posición Principal',
-                  controller: _posicaoController,
-                  focusNode: _posicaoFocusNode,
-                  hintText: 'Defensor Central',
-                ),
-                _buildDropdownField(
-                  label: 'Status del jugador',
-                  hintText: 'Selecciona tu momento actual',
-                  value: _selectedPlayerStatus,
-                  onChanged: (value) {
-                    setState(() => _selectedPlayerStatus = value);
-                  },
-                  options: _playerStatusOptions,
-                ),
-                _buildTextField(
-                  label: 'Pie Dominante',
-                  controller: _pieDominanteController,
-                  focusNode: _pieDominanteFocusNode,
-                  hintText: 'Derecho',
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 28.0),
-                  child: Text(
-                    'Trayectoria Deportiva',
-                    style: GoogleFonts.inter(
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF1A202C),
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                _buildRadioOption(
-                  text: 'Juego en un Club',
-                  isSelected: _juegaEnClub,
-                  onPressed: () {
-                    setState(() => _juegaEnClub = true);
-                  },
-                ),
-                _buildRadioOption(
-                  text: 'Sin club',
-                  isSelected: !_juegaEnClub,
-                  onPressed: () {
-                    setState(() => _juegaEnClub = false);
-                  },
-                ),
-                _buildTextField(
-                  label: 'Lugar donde jugas',
-                  controller: _lugarController,
-                  focusNode: _lugarFocusNode,
-                  hintText: 'Potrero "El Barrio"',
-                ),
+                _currentUserType == 'profesional'
+                    ? _buildProfessionalForm()
+                    : _buildPlayerForm(),
                 Padding(
                   padding: const EdgeInsets.only(top: 32.0, bottom: 40.0),
                   child: GestureDetector(
@@ -1135,7 +1747,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                                 ),
                               )
                             : Text(
-                                'Guardar Cambios',
+                                _currentUserType == 'profesional'
+                                    ? 'Guardar perfil profesional'
+                                    : 'Guardar cambios',
                                 style: GoogleFonts.inter(
                                   color: Colors.white,
                                   fontSize: 16,

@@ -484,7 +484,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                               child: const Icon(Icons.settings,
                                   color: Colors.white)),
                           const SizedBox(width: 12),
-                          const Text('Menu do Club',
+                          const Text('Menú del club',
                               style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -501,7 +501,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                           _buildDrawerItem(
                               context,
                               Icons.dashboard_outlined,
-                              'Início',
+                              'Dashboard',
                               false,
                               () => context
                                   .pushNamed(DashboardClubWidget.routeName)),
@@ -515,14 +515,14 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                           _buildDrawerItem(
                               context,
                               Icons.people_outline,
-                              'Postulaciones',
+                              'Jugadores',
                               false,
                               () => context
                                   .pushNamed(PostulacionesWidget.routeName)),
                           _buildDrawerItem(
                               context,
                               Icons.list_alt_outlined,
-                              'Listas',
+                              'Scouting',
                               false,
                               () => context
                                   .pushNamed(ListaYNotaWidget.routeName)),
@@ -530,7 +530,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                           _buildDrawerItem(
                               context,
                               Icons.settings_outlined,
-                              'Configuração',
+                              'Club',
                               true,
                               () => context
                                   .pushNamed(ConfiguracinWidget.routeName)),
@@ -687,7 +687,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
           onTap: () => _showClubMenu(context),
           child: Icon(Icons.menu, color: Colors.black, size: 24 * scale)),
       SizedBox(height: 16 * scale),
-      Text('Configuração',
+      Text('Club',
           style: GoogleFonts.inter(
               fontSize: 24 * scale,
               fontWeight: FontWeight.bold,

@@ -76,13 +76,44 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           .eq('user_id', widget.userId!)
           .maybeSingle();
       if (u != null) {
-        _userData = u;
-        _guardianStatus = GuardianMvpService.normalizedGuardianStatus(u);
-        if (u['colaboraciones'] != null) {
-          if (u['colaboraciones'] is List)
-            _colabs = List<String>.from(u['colaboraciones']);
-          else if (u['colaboraciones'] is String)
-            _colabs = (u['colaboraciones'] as String)
+        final merged = <String, dynamic>{...u};
+        final targetType =
+            (u['userType']?.toString().trim().toLowerCase() ?? '')
+                .replaceAll('jogador', 'jugador');
+        if (targetType == 'jugador') {
+          try {
+            final player = await SupaFlow.client
+                .from('players')
+                .select()
+                .eq('id', widget.userId!)
+                .maybeSingle();
+            if (player != null) {
+              merged.addAll(Map<String, dynamic>.from(player));
+            }
+          } catch (_) {}
+        } else if (targetType == 'profesional') {
+          try {
+            final scout = await SupaFlow.client
+                .from('scouts')
+                .select()
+                .eq('id', widget.userId!)
+                .maybeSingle();
+            if (scout != null) {
+              merged.addAll(Map<String, dynamic>.from(scout));
+              if ((merged['bio']?.toString().trim().isEmpty ?? true) &&
+                  (scout['biography']?.toString().trim().isNotEmpty ?? false)) {
+                merged['bio'] = scout['biography'];
+              }
+            }
+          } catch (_) {}
+        }
+        _userData = merged;
+        _guardianStatus = GuardianMvpService.normalizedGuardianStatus(merged);
+        if (merged['colaboraciones'] != null) {
+          if (merged['colaboraciones'] is List)
+            _colabs = List<String>.from(merged['colaboraciones']);
+          else if (merged['colaboraciones'] is String)
+            _colabs = (merged['colaboraciones'] as String)
                 .split(',')
                 .map((e) => e.trim())
                 .where((e) => e.isNotEmpty)
@@ -836,9 +867,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                               : Icons.bookmark_border,
                                           color: Colors.white),
                                       label: Text(
-                                          _isGuardado
-                                              ? 'Guardado'
-                                              : 'Guardar Jugador',
+                                          _isGuardado ? 'Guardado' : 'Guardar',
                                           style: GoogleFonts.inter(
                                               fontSize: 14,
                                               fontWeight: FontWeight.bold,
@@ -848,7 +877,8 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                               ? const Color(0xFF38A169)
                                               : const Color(0xFF0D3B66),
                                           shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(8)))),
+                                              borderRadius:
+                                                  BorderRadius.circular(8)))),
                                 ),
                                 SizedBox(
                                   width: actionButtonWidth,
@@ -980,6 +1010,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                       .toList()))
                         ],
                         _buildFichaDeportivaSection(),
+                        _buildTrayectoriaSection(),
                         _buildVideosSection(),
                         if (_scoutHistory.isNotEmpty) ...[
                           Padding(
@@ -1177,6 +1208,80 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrayectoriaSection() {
+    if (!_isTargetPlayer) return const SizedBox.shrink();
+
+    final rawHistory = _userData?['historial_clubes'] ?? _userData?['clubs'];
+    if (rawHistory is! List || rawHistory.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final items = rawHistory
+        .whereType<Map>()
+        .map((item) => {
+              'name': _firstNonEmptyValue([item['name'], item['nombre']]),
+              'period': _firstNonEmptyValue([item['period'], item['periodo']]),
+            })
+        .where((item) =>
+            (item['name']?.isNotEmpty ?? false) ||
+            (item['period']?.isNotEmpty ?? false))
+        .toList();
+
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Trayectoria deportiva',
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF0D3B66),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...items.map((item) {
+            final name = item['name'] ?? 'Club';
+            final period = item['period'] ?? '';
+            return Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.history_edu_outlined,
+                      size: 18, color: Color(0xFF0D3B66)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      period.isNotEmpty ? '$name · $period' : name,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: const Color(0xFF334155),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
         ],
       ),
     );

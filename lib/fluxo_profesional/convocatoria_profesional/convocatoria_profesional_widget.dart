@@ -215,7 +215,7 @@ class _ConvocatoriaProfesionalWidgetState
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: PlanPaywallCard(
-              title: 'Convocatórias no Plano Pro',
+              title: 'Convocatorias en el Plan Pro',
               message:
                   'Esse acesso fica disponível apenas no Plano Pro. Com o modo piloto ligado, o bloqueio deixa de valer.',
             ),

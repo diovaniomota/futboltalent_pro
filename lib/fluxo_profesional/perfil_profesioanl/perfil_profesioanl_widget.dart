@@ -80,13 +80,28 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
           .eq('user_id', uid)
           .maybeSingle();
       if (u != null) {
-        _userData = u;
-        _followers = u['followers_count'] ?? 0;
-        if (u['colaboraciones'] != null) {
-          if (u['colaboraciones'] is List) {
-            _colabs = List<String>.from(u['colaboraciones']);
-          } else if (u['colaboraciones'] is String)
-            _colabs = (u['colaboraciones'] as String)
+        final merged = <String, dynamic>{...u};
+        try {
+          final scout = await SupaFlow.client
+              .from('scouts')
+              .select()
+              .eq('id', uid)
+              .maybeSingle();
+          if (scout != null) {
+            merged.addAll(Map<String, dynamic>.from(scout));
+            if ((merged['bio']?.toString().trim().isEmpty ?? true) &&
+                (scout['biography']?.toString().trim().isNotEmpty ?? false)) {
+              merged['bio'] = scout['biography'];
+            }
+          }
+        } catch (_) {}
+        _userData = merged;
+        _followers = merged['followers_count'] ?? 0;
+        if (merged['colaboraciones'] != null) {
+          if (merged['colaboraciones'] is List) {
+            _colabs = List<String>.from(merged['colaboraciones']);
+          } else if (merged['colaboraciones'] is String)
+            _colabs = (merged['colaboraciones'] as String)
                 .split(',')
                 .map((e) => e.trim())
                 .where((e) => e.isNotEmpty)
@@ -318,6 +333,10 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
     final photo = _userData?['photo_url'] ?? '';
     final cover = _userData?['cover_url'] ?? _userData?['banner_url'] ?? '';
     final ver = _userData?['is_verified'] ?? false;
+    final scoutClub = _userData?['club']?.toString().trim() ?? '';
+    final scoutPhone = _userData?['telephone']?.toString().trim() ?? '';
+    final scoutUrl = _userData?['url_profesional']?.toString().trim() ?? '';
+    final scoutDni = _userData?['dni']?.toString().trim() ?? '';
 
     return GestureDetector(
       onTap: () {
@@ -357,7 +376,8 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                                           MainAxisAlignment.spaceBetween,
                                       children: [
                                         _iconBtn(Icons.settings, () {
-                                          context.pushNamed(EditarPerfilWidget.routeName);
+                                          context.pushNamed(
+                                              EditarPerfilWidget.routeName);
                                         }),
                                         Row(children: [
                                           _iconBtn(Icons.notifications, () {
@@ -492,6 +512,31 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                                               color: const Color(0xFF444444)))))
                                   .toList()))
                     ],
+                    if (scoutClub.isNotEmpty ||
+                        scoutPhone.isNotEmpty ||
+                        scoutUrl.isNotEmpty ||
+                        scoutDni.isNotEmpty) ...[
+                      Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                          child: Text('Perfil profesional',
+                              style: GoogleFonts.inter(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF1A1A1A)))),
+                      Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                          child: Wrap(spacing: 8, runSpacing: 8, children: [
+                            if (scoutClub.isNotEmpty)
+                              _profileChip(Icons.apartment_rounded, scoutClub),
+                            if (scoutPhone.isNotEmpty)
+                              _profileChip(Icons.call_outlined, scoutPhone),
+                            if (scoutUrl.isNotEmpty)
+                              _profileChip(Icons.language_rounded, scoutUrl),
+                            if (scoutDni.isNotEmpty)
+                              _profileChip(
+                                  Icons.badge_outlined, 'ID $scoutDni'),
+                          ])),
+                    ],
                     const SizedBox(height: 24),
                     Container(
                         decoration: const BoxDecoration(
@@ -543,6 +588,25 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
           decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.9), shape: BoxShape.circle),
           child: Icon(i, color: Colors.black87, size: 22)));
+
+  Widget _profileChip(IconData icon, String text) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE2E8F0))),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 16, color: const Color(0xFF0D3B66)),
+        const SizedBox(width: 6),
+        ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: Text(text,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: const Color(0xFF334155),
+                    fontWeight: FontWeight.w600)))
+      ]));
 
   Widget _buildScoutingHistoryTab() {
     if (_scoutHistory.isEmpty) {
@@ -669,176 +733,176 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
     }
 
     return Column(
-        key: const ValueKey('saved_videos_content'),
-        children: [
-          Container(
-            margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.lock_outline,
-                    color: Color(0xFF0D3B66), size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Guardados es privado. Solo vos podés ver estos videos.',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF334155),
-                    ),
+      key: const ValueKey('saved_videos_content'),
+      children: [
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.lock_outline,
+                  color: Color(0xFF0D3B66), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Guardados es privado. Solo vos podés ver estos videos.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF334155),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 0.76,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12),
-              itemCount: _savedVideos.length,
-              itemBuilder: (ctx, i) {
-          final v = _savedVideos[i];
-          final thumb =
-              v['thumbnail_url'] ?? v['thumbnail'] ?? v['cover_url'] ?? '';
-          final owner = v['owner_data'] is Map<String, dynamic>
-              ? Map<String, dynamic>.from(v['owner_data'] as Map)
-              : <String, dynamic>{};
-          final ownerName =
-              owner['name']?.toString().trim().isNotEmpty == true
-                  ? owner['name'].toString().trim()
-                  : owner['username']?.toString().trim() ?? 'Jugador';
-          final title =
-              v['title']?.toString().trim().isNotEmpty == true
+        ),
+        GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.76,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12),
+            itemCount: _savedVideos.length,
+            itemBuilder: (ctx, i) {
+              final v = _savedVideos[i];
+              final thumb =
+                  v['thumbnail_url'] ?? v['thumbnail'] ?? v['cover_url'] ?? '';
+              final owner = v['owner_data'] is Map<String, dynamic>
+                  ? Map<String, dynamic>.from(v['owner_data'] as Map)
+                  : <String, dynamic>{};
+              final ownerName =
+                  owner['name']?.toString().trim().isNotEmpty == true
+                      ? owner['name'].toString().trim()
+                      : owner['username']?.toString().trim() ?? 'Jugador';
+              final title = v['title']?.toString().trim().isNotEmpty == true
                   ? v['title'].toString().trim()
                   : 'Video guardado';
-          final videoId = v['id']?.toString() ?? '';
-          final isRemoving = _removingSavedVideoId == videoId;
+              final videoId = v['id']?.toString() ?? '';
+              final isRemoving = _removingSavedVideoId == videoId;
 
-          return GestureDetector(
-              onTap: () => _openVideo(v),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey[900],
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 12,
-                      offset: const Offset(0, 6),
+              return GestureDetector(
+                  onTap: () => _openVideo(v),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey[900],
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: thumb.isNotEmpty
-                            ? Image.network(thumb, fit: BoxFit.cover)
-                            : Container(
-                                color: Colors.grey[850],
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.play_circle_outline,
-                                    color: Colors.white,
-                                    size: 38,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: thumb.isNotEmpty
+                                ? Image.network(thumb, fit: BoxFit.cover)
+                                : Container(
+                                    color: Colors.grey[850],
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.play_circle_outline,
+                                        color: Colors.white,
+                                        size: 38,
+                                      ),
+                                    ),
                                   ),
-                                ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: GestureDetector(
+                            onTap:
+                                isRemoving ? null : () => _removeSavedVideo(v),
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.55),
+                                shape: BoxShape.circle,
                               ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 10,
-                      right: 10,
-                      child: GestureDetector(
-                        onTap: isRemoving ? null : () => _removeSavedVideo(v),
-                        child: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.55),
-                            shape: BoxShape.circle,
-                          ),
-                          child: isRemoving
-                              ? const Padding(
-                                  padding: EdgeInsets.all(9),
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.close,
-                                  size: 18,
-                                  color: Colors.white,
-                                ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        padding: const EdgeInsets.fromLTRB(12, 26, 12, 12),
-                        decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.vertical(
-                            bottom: Radius.circular(12),
-                          ),
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withOpacity(0.86),
-                            ],
+                              child: isRemoving
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(9),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.close,
+                                      size: 18,
+                                      color: Colors.white,
+                                    ),
+                            ),
                           ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(12, 26, 12, 12),
+                            decoration: BoxDecoration(
+                              borderRadius: const BorderRadius.vertical(
+                                bottom: Radius.circular(12),
+                              ),
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withOpacity(0.86),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              ownerName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: Colors.white.withOpacity(0.8),
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  ownerName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: Colors.white.withOpacity(0.8),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ));
-        }),
-        ],
-      );
+                  ));
+            }),
+      ],
+    );
   }
 }
 

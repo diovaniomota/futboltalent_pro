@@ -110,9 +110,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   String? _jugadorConvocatoriaPosition;
   String? _jugadorConvocatoriaCountry;
   String? _jugadorClubCountry;
+  String? _jugadorClubState;
   String? _jugadorClubCity;
   String? _jugadorClubLeague;
   String? _jugadorScoutCountry;
+  String? _jugadorScoutState;
 
   int? _currentPlanId;
   bool _currentUserVerified = true;
@@ -1116,6 +1118,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           _jugadorClubCountry!.toLowerCase());
     }
 
+    if (_jugadorClubState != null) {
+      filtered = filtered.where((club) =>
+          _resolveState(club).toLowerCase() ==
+          _jugadorClubState!.toLowerCase());
+    }
+
     if (_jugadorClubCity != null) {
       filtered = filtered.where((club) =>
           _resolveCity(club).toLowerCase() == _jugadorClubCity!.toLowerCase());
@@ -1153,6 +1161,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           _jugadorScoutCountry!.toLowerCase());
     }
 
+    if (_jugadorScoutState != null) {
+      filtered = filtered.where((user) =>
+          _resolveState(user).toLowerCase() ==
+          _jugadorScoutState!.toLowerCase());
+    }
+
     return filtered.toList();
   }
 
@@ -1166,9 +1180,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     _jugadorConvocatoriaPosition = null;
     _jugadorConvocatoriaCountry = null;
     _jugadorClubCountry = null;
+    _jugadorClubState = null;
     _jugadorClubCity = null;
     _jugadorClubLeague = null;
     _jugadorScoutCountry = null;
+    _jugadorScoutState = null;
   }
 
   String _jugadorTabLabel(_JugadorSearchTab tab) {
@@ -1211,10 +1227,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             _jugadorConvocatoriaCountry != null;
       case _JugadorSearchTab.clubes:
         return _jugadorClubCountry != null ||
+            _jugadorClubState != null ||
             _jugadorClubCity != null ||
             _jugadorClubLeague != null;
       case _JugadorSearchTab.scouts:
-        return _jugadorScoutCountry != null;
+        return _jugadorScoutCountry != null || _jugadorScoutState != null;
     }
   }
 
@@ -1658,7 +1675,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   onPressed: () =>
                       context.pushNamed(ListaYNotasWidget.routeName),
                   icon: const Icon(Icons.bookmarks_rounded),
-                  label: const Text('Minhas listas'),
+                  label: const Text('Mis listas'),
                 ),
               ],
             ),
@@ -2109,6 +2126,9 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     final clubCountryOptions = _extractUniqueStrings(
       _clubs.map(_resolveCountryFromClub),
     );
+    final clubStateOptions = _extractUniqueStrings(
+      _clubs.map(_resolveState),
+    );
     final clubCityOptions = _extractUniqueStrings(
       _clubs.map(_resolveCity),
     );
@@ -2123,6 +2143,9 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     }).toList();
     final scoutCountryOptions = _extractUniqueStrings(
       verifiedScouts.map(_resolveCountryFromUser),
+    );
+    final scoutStateOptions = _extractUniqueStrings(
+      verifiedScouts.map(_resolveState),
     );
     final currentResults = _jugadorCurrentResults;
     final hasActiveCriteria =
@@ -2166,7 +2189,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             ),
             const SizedBox(height: 14),
             _buildSearchBar(
-              hint: 'Buscar jugadores, convocatorias, clubes o scouts...',
+              hint: 'Buscar oportunidades',
             ),
             const SizedBox(height: 14),
             _buildJugadorSearchTabBar(),
@@ -2181,9 +2204,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               convocatoriaPositionOptions: convocatoriaPositionOptions,
               convocatoriaCountryOptions: convocatoriaCountryOptions,
               clubCountryOptions: clubCountryOptions,
+              clubStateOptions: clubStateOptions,
               clubCityOptions: clubCityOptions,
               clubLeagueOptions: clubLeagueOptions,
               scoutCountryOptions: scoutCountryOptions,
+              scoutStateOptions: scoutStateOptions,
             ),
             const SizedBox(height: 12),
             if (!hasActiveCriteria)
@@ -2295,9 +2320,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     required List<String> convocatoriaPositionOptions,
     required List<String> convocatoriaCountryOptions,
     required List<String> clubCountryOptions,
+    required List<String> clubStateOptions,
     required List<String> clubCityOptions,
     required List<String> clubLeagueOptions,
     required List<String> scoutCountryOptions,
+    required List<String> scoutStateOptions,
   }) {
     final filters = <Widget>[];
 
@@ -2372,6 +2399,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             onChanged: (value) => setState(() => _jugadorClubCountry = value),
           ),
           _ExplorerFilterDropdown(
+            label: 'Provincia/Estado',
+            value: _jugadorClubState,
+            options: clubStateOptions,
+            onChanged: (value) => setState(() => _jugadorClubState = value),
+          ),
+          _ExplorerFilterDropdown(
             label: 'Ciudad',
             value: _jugadorClubCity,
             options: clubCityOptions,
@@ -2392,6 +2425,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             value: _jugadorScoutCountry,
             options: scoutCountryOptions,
             onChanged: (value) => setState(() => _jugadorScoutCountry = value),
+          ),
+          _ExplorerFilterDropdown(
+            label: 'Provincia/Estado',
+            value: _jugadorScoutState,
+            options: scoutStateOptions,
+            onChanged: (value) => setState(() => _jugadorScoutState = value),
           ),
         ]);
         break;
@@ -2421,11 +2460,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                     break;
                   case _JugadorSearchTab.clubes:
                     _jugadorClubCountry = null;
+                    _jugadorClubState = null;
                     _jugadorClubCity = null;
                     _jugadorClubLeague = null;
                     break;
                   case _JugadorSearchTab.scouts:
                     _jugadorScoutCountry = null;
+                    _jugadorScoutState = null;
                     break;
                 }
               }),
@@ -2619,7 +2660,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Buscar jugadores, convocatorias, clubes o scouts...',
+                'Buscar oportunidades',
                 style: GoogleFonts.inter(
                   color: const Color(0xFFA0AEC0),
                   fontSize: 14,

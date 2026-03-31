@@ -507,7 +507,7 @@ class _DetallesDeLaConvocatoriaWidgetState
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: PlanPaywallCard(
-              title: 'Convocatórias no Plano Pro',
+              title: 'Convocatorias en el Plan Pro',
               message:
                   'Esse detalhe pertence ao módulo Pro. Se o modo piloto estiver ON, ele fica aberto sem restrições.',
             ),
@@ -759,7 +759,7 @@ class _DetallesDeLaConvocatoriaWidgetState
                                 Text(
                                     _hasApplied
                                         ? 'Solicitud Enviada'
-                                        : 'Solicitar Acceso',
+                                        : 'Quiero participar',
                                     style: GoogleFonts.inter(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w600,

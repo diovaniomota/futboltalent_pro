@@ -181,7 +181,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       _buildRecentPostulaciones(postulaciones, usersMap);
       await _buildSuggestedPlayers(usersMap, postulaciones);
     } catch (e) {
-      _errorMessage = 'Error al cargar Inicio del Club';
+      _errorMessage = 'Error al cargar Dashboard del club';
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -2167,7 +2167,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Menu do Club',
+                                  'Menú del club',
                                   style: GoogleFonts.inter(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -2188,7 +2188,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                             children: [
                               _drawerItem(
                                 context,
-                                label: 'Início',
+                                label: 'Dashboard',
                                 icon: Icons.home_outlined,
                                 selected: true,
                                 onTap: () => context
@@ -2196,7 +2196,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               ),
                               _drawerItem(
                                 context,
-                                label: 'Convocatórias',
+                                label: 'Convocatorias',
                                 icon: Icons.campaign_outlined,
                                 selected: false,
                                 onTap: () => context.pushNamed(
@@ -2204,7 +2204,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               ),
                               _drawerItem(
                                 context,
-                                label: 'Postulações',
+                                label: 'Jugadores',
                                 icon: Icons.people_outline,
                                 selected: false,
                                 onTap: () => context
@@ -2212,7 +2212,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               ),
                               _drawerItem(
                                 context,
-                                label: 'Listas',
+                                label: 'Scouting',
                                 icon: Icons.list_alt_outlined,
                                 selected: false,
                                 onTap: () => context
@@ -2220,7 +2220,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               ),
                               _drawerItem(
                                 context,
-                                label: 'Configuração',
+                                label: 'Club',
                                 icon: Icons.settings_outlined,
                                 selected: false,
                                 onTap: () => context
@@ -2327,7 +2327,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                'Início',
+                'Dashboard',
                 style: GoogleFonts.inter(
                   fontSize: 30,
                   fontWeight: FontWeight.bold,
@@ -2349,7 +2349,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         _buildSearchBar(),
         const SizedBox(height: 16),
         _buildSectionHeader(
-          title: 'Convocatórias ativas',
+          title: 'Convocatorias activas',
           trailing: OutlinedButton.icon(
             onPressed: () => context.pushNamed(
               ConvocatoriasClubWidget.routeName,
@@ -2360,7 +2360,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         ),
         _buildActiveConvocatoriasSection(),
         const SizedBox(height: 18),
-        _buildSectionHeader(title: 'Postulações recentes'),
+        _buildSectionHeader(title: 'Postulaciones recientes'),
         _buildRecentPostulacionesSection(),
         const SizedBox(height: 18),
         _buildSectionHeader(title: 'Jogadores novos verificados'),
@@ -3347,7 +3347,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       return _buildInlineStatus(
         icon: Icons.campaign_outlined,
         title: 'Sem resultados',
-        subtitle: 'Crie sua primeira convocatória no módulo Convocatórias.',
+        subtitle: 'Crea tu primera convocatoria en el módulo Convocatorias.',
       );
     }
 
@@ -3459,7 +3459,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 11),
                         ),
-                        child: const Text('Postulações'),
+                        child: const Text('Postulaciones'),
                       ),
                     ),
                   ],

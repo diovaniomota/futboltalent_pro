@@ -873,8 +873,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     _ChallengeAttempt? modalAttempt = _attemptByItemKey[itemKey];
     bool isSendingAttempt = false;
     String uploadStateMessage = modalAttempt != null
-        ? 'Seu vídeo já foi enviado. Agora finalize para somar todo o XP.'
-        : 'Passo 1 de 2: suba um vídeo para validar este desafio.';
+        ? 'Tu video ya fue enviado. Ahora completá el desafío para sumar todo el XP.'
+        : 'Paso 1 de 2: subí un video para validar este desafío.';
 
     showModalBottomSheet(
       context: context,
@@ -1599,7 +1599,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
 
     String statusText = isCompleted
         ? '✓ Completado'
-        : (status == 'in_progress' ? 'Continuar' : 'Empezar ahora');
+        : (status == 'in_progress' ? 'Continuar' : 'Comenzar desafío');
 
     return GestureDetector(
       onTap: () => _onItemTap(item),

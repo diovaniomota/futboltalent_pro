@@ -1240,6 +1240,9 @@ class _FeedWidgetState extends State<FeedWidget>
           final itemData = payload is Map
               ? Map<String, dynamic>.from(payload)
               : <String, dynamic>{};
+          final currentUserType = FFAppState().userType;
+          final hasBottomNav =
+              currentUserType == 'jugador' || currentUserType == 'profesional';
           if (feedItem['feed_item_type'] == 'challenge') {
             return _ChallengeFeedItem(
               key: ValueKey(
@@ -1256,6 +1259,8 @@ class _FeedWidgetState extends State<FeedWidget>
                 message:
                     'Os desafios do feed fazem parte do Plano Pro. Com modo piloto ON, o bloqueio desaparece.',
               ),
+              topOverlayOffset: 58,
+              bottomOverlayOffset: hasBottomNav ? 108 : 24,
             );
           }
 
@@ -1377,6 +1382,8 @@ class _ChallengeFeedItem extends StatelessWidget {
     required this.onRequireLogin,
     required this.onOpenChallenge,
     required this.onLockedTap,
+    required this.topOverlayOffset,
+    required this.bottomOverlayOffset,
   });
 
   final Map<String, dynamic> challengeData;
@@ -1385,6 +1392,8 @@ class _ChallengeFeedItem extends StatelessWidget {
   final VoidCallback onRequireLogin;
   final VoidCallback onOpenChallenge;
   final VoidCallback onLockedTap;
+  final double topOverlayOffset;
+  final double bottomOverlayOffset;
 
   String get _status {
     return (challengeData['feed_status'] ?? 'available')
@@ -1574,7 +1583,12 @@ class _ChallengeFeedItem extends StatelessWidget {
             ),
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+                padding: EdgeInsets.fromLTRB(
+                  18,
+                  18 + topOverlayOffset,
+                  18,
+                  28 + bottomOverlayOffset,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

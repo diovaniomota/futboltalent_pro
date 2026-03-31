@@ -148,7 +148,7 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
       case 'desafios':
         return 'Desafios';
       case 'convocatorias':
-        return 'Convocatórias';
+        return 'Convocatorias';
       case 'convocatoria_send':
         return 'Envio de convocatórias';
       case 'cursos':

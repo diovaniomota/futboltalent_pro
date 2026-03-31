@@ -423,7 +423,7 @@ class _ConvocatoriaJugador1WidgetState
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: PlanPaywallCard(
-              title: 'Convocatórias no Plano Pro',
+              title: 'Convocatorias en el Plan Pro',
               message:
                   'A navegação de convocatórias fica liberada no Pro. Se o modo piloto estiver ON, o bloqueio some automaticamente.',
             ),

@@ -284,7 +284,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               ),
                               const SizedBox(width: 12),
                               Text(
-                                'Menu do Club',
+                                'Menú del club',
                                 style: GoogleFonts.inter(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -308,7 +308,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.dashboard_outlined,
-                                  'Início',
+                                  'Dashboard',
                                   false,
                                   () async => context.pushNamed(
                                       DashboardClubWidget.routeName)),
@@ -322,7 +322,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.people_outline,
-                                  'Postulaciones',
+                                  'Jugadores',
                                   false,
                                   () async => context.pushNamed(
                                       PostulacionesWidget.routeName)),
@@ -337,7 +337,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.settings_outlined,
-                                  'Configuração',
+                                  'Club',
                                   false,
                                   () async => context
                                       .pushNamed(ConfiguracinWidget.routeName)),

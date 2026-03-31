@@ -489,7 +489,7 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: PlanPaywallCard(
-              title: 'Convocatórias no Plano Pro',
+              title: 'Convocatorias en el Plan Pro',
               message:
                   'Esse fluxo faz parte do Plano Pro. Se o modo piloto estiver ON, ele é liberado automaticamente.',
             ),

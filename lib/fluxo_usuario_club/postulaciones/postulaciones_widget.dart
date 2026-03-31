@@ -310,7 +310,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                                       mobile: 10, tablet: 12, desktop: 14)),
                               Expanded(
                                 child: Text(
-                                  'Menu do Club',
+                                  'Menú del club',
                                   style: GoogleFonts.inter(
                                     fontSize: _responsive(ctx,
                                         mobile: 16, tablet: 18, desktop: 20),
@@ -335,7 +335,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                               _buildDrawerItemCallback(
                                   context, // Use parent context for navigation
                                   Icons.dashboard_outlined,
-                                  'Início',
+                                  'Dashboard',
                                   false,
                                   () async => context.pushNamed(
                                       DashboardClubWidget.routeName)),
@@ -349,14 +349,14 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.people_outline,
-                                  'Postulaciones',
+                                  'Jugadores',
                                   true,
                                   () async => context.pushNamed(
                                       PostulacionesWidget.routeName)),
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.list_alt_outlined,
-                                  'Listas',
+                                  'Scouting',
                                   false,
                                   () async => context
                                       .pushNamed(ListaYNotaWidget.routeName)),
@@ -364,7 +364,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.settings_outlined,
-                                  'Configuração',
+                                  'Club',
                                   false,
                                   () async => context
                                       .pushNamed(ConfiguracinWidget.routeName)),
@@ -487,7 +487,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
 
                                   // Título
                                   Text(
-                                    'Postulaciones',
+                                    'Jugadores',
                                     style: GoogleFonts.inter(
                                       fontSize: _responsive(context,
                                               mobile: 24,
