@@ -1544,7 +1544,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                 backgroundColor: const Color(0xFF0D3B66),
               ),
               child: const Text(
-                'Tentar novamente',
+                'Intentar de nuevo',
                 style: TextStyle(color: Colors.white),
               ),
             ),
@@ -1604,7 +1604,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             _buildSectionTitle(
               'Convocatorias recomendadas',
               icon: Icons.campaign_rounded,
-              subtitle: 'Oportunidades ativas para você decidir mais rápido.',
+              subtitle: 'Oportunidades activas para decidir más rápido.',
             ),
             _buildPromotedConvocatorias(promoted),
             const SizedBox(height: 22),
@@ -1967,7 +1967,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     if (challenges.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.sports_score_outlined,
-        title: 'Sem resultados',
+        title: 'Sin resultados',
         subtitle: 'No hay desafíos recomendados en este momento.',
       );
     }
@@ -3116,12 +3116,16 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    color: selected ? Colors.white : const Color(0xFF4A5568),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: selected ? Colors.white : const Color(0xFF4A5568),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],
@@ -3287,6 +3291,9 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                           : () => _toggleSavePlayerForScout(player),
                       style: ElevatedButton.styleFrom(
                         elevation: 0,
+                        minimumSize: const Size.fromHeight(42),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
                         backgroundColor:
                             isSaved ? const Color(0xFF0F9D58) : Colors.white,
                         foregroundColor:
@@ -3294,7 +3301,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         side: BorderSide(
                           color: isSaved
                               ? const Color(0xFF0F9D58)
-                              : const Color(0xFF0D3B66),
+                              : const Color(0xFFD6DEE8),
                         ),
                       ),
                       icon: isSaving
@@ -3312,7 +3319,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                               isSaved ? Icons.bookmark : Icons.bookmark_border,
                               size: 16,
                             ),
-                      label: Text(isSaved ? 'Guardado' : 'Salvar jugador'),
+                      label: Text(isSaved ? 'Guardado' : 'Guardar'),
                     ),
                   ),
                   const SizedBox(width: 8),

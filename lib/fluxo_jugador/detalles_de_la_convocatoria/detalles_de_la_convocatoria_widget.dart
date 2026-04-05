@@ -88,14 +88,14 @@ class _DetallesDeLaConvocatoriaWidgetState
             }
             _clubData = clubResponse;
           } catch (e) {
-            debugPrint('Erro buscar clube: $e');
+            debugPrint('Error al buscar club: $e');
           }
         }
         await _loadRequiredChallengesProgress();
         await _checkIfApplied();
       }
     } catch (e) {
-      debugPrint('❌ Erro carregar convocatoria: $e');
+      debugPrint('❌ Error al cargar convocatoria: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -115,7 +115,7 @@ class _DetallesDeLaConvocatoriaWidgetState
           .maybeSingle();
       if (mounted) setState(() => _hasApplied = response != null);
     } catch (e) {
-      debugPrint('Erro verificar aplicación: $e');
+      debugPrint('Error al verificar aplicación: $e');
     }
   }
 
@@ -214,7 +214,7 @@ class _DetallesDeLaConvocatoriaWidgetState
           }
         }
       } catch (e) {
-        debugPrint('Erro ao carregar progresso de cursos: $e');
+        debugPrint('Error al cargar progreso de cursos: $e');
       }
 
       try {
@@ -233,7 +233,7 @@ class _DetallesDeLaConvocatoriaWidgetState
           }
         }
       } catch (e) {
-        debugPrint('Erro ao carregar progresso de exercícios: $e');
+        debugPrint('Error al cargar progreso de ejercicios: $e');
       }
     }
 
@@ -424,7 +424,7 @@ class _DetallesDeLaConvocatoriaWidgetState
             backgroundColor: Colors.green));
       }
     } catch (e) {
-      debugPrint('Erro aplicar: $e');
+      debugPrint('Error al aplicar: $e');
       if (mounted) {
         setState(() => _isApplying = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -509,7 +509,7 @@ class _DetallesDeLaConvocatoriaWidgetState
             child: PlanPaywallCard(
               title: 'Convocatorias en el Plan Pro',
               message:
-                  'Esse detalhe pertence ao módulo Pro. Se o modo piloto estiver ON, ele fica aberto sem restrições.',
+                  'Este detalle pertenece al módulo Pro. Si el modo piloto está activo, se libera sin restricciones.',
             ),
           ),
         ),

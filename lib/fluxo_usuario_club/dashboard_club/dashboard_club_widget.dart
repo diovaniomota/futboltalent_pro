@@ -868,19 +868,19 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       case 'guardado':
         return 'Guardado';
       case 'preseleccionado':
-        return 'Pré-selecionado';
+        return 'Preseleccionado';
       case 'invitar_prueba':
       case 'convidar_teste':
-        return 'Convidar para teste';
+        return 'Invitar a prueba';
       case 'en_prueba':
       case 'em_teste':
-        return 'Em teste';
+        return 'En prueba';
       case 'descartado':
         return 'Descartado';
       case 'contratado':
       case 'acompanhamento':
       case 'acompanamiento':
-        return 'Contratado/Acompanhamento';
+        return 'Contratado/Seguimiento';
       default:
         return 'Guardado';
     }
@@ -1625,9 +1625,9 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   void _showPlanRequiredForConvocatoriaSend() {
     showPlanRequiredDialog(
       context,
-      featureName: 'Envio de convocatórias',
+      featureName: 'Envío de convocatorias',
       message:
-          'Enviar convites para uma convocatória é um benefício do Plano Pro. Com modo piloto ON, esse bloqueio some.',
+          'Enviar invitaciones para una convocatoria es un beneficio del Plan Pro. Con modo piloto activo, este bloqueo desaparece.',
     );
   }
 
@@ -1662,7 +1662,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Pipeline atualizado: ${_pipelineLabel(status)}'),
+          content: Text('Pipeline actualizado: ${_pipelineLabel(status)}'),
           backgroundColor: Colors.green,
         ),
       );
@@ -3010,7 +3010,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                                 color: Colors.white,
                               ),
                         label: Text(
-                          isSaved ? 'Guardado' : 'Salvar jugador',
+                          isSaved ? 'Guardado' : 'Guardar',
                           style: const TextStyle(color: Colors.white),
                         ),
                         style: ElevatedButton.styleFrom(
@@ -3752,7 +3752,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             runSpacing: 4,
             children: [
               if (hasVerificationInfo && isVerified) _metaChip('Verificado'),
-              if (hasVideo) _metaChip('Tem vídeo'),
+              if (hasVideo) _metaChip('Tiene vídeo'),
               _metaChip('Pipeline: ${_pipelineLabel(stage)}'),
             ],
           ),
@@ -3795,7 +3795,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                     backgroundColor: const Color(0xFF0D3B66),
                   ),
                   child: const Text(
-                    'Adicionar ao pipeline',
+                    'Agregar al pipeline',
                     style: TextStyle(color: Colors.white),
                   ),
                 ),

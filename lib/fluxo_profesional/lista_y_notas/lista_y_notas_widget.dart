@@ -1146,10 +1146,10 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     return ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF818181),
+          backgroundColor: const Color(0xFF0D3B66),
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
-      child: Text(text, style: const TextStyle(color: Colors.white)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+      child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
     );
   }
 

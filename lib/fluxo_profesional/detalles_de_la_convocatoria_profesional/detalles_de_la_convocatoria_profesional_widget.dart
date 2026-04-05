@@ -491,7 +491,7 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
             child: PlanPaywallCard(
               title: 'Convocatorias en el Plan Pro',
               message:
-                  'Esse fluxo faz parte do Plano Pro. Se o modo piloto estiver ON, ele é liberado automaticamente.',
+                  'Esta función es parte del Plan Pro. Si el modo piloto está activo, se libera automáticamente.',
             ),
           ),
         ),
@@ -718,7 +718,7 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
                                 Text(
                                     _hasApplied
                                         ? 'Solicitud Enviada'
-                                        : 'Solicitar Acceso',
+                                        : 'Quiero participar',
                                     style: GoogleFonts.inter(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w600,
