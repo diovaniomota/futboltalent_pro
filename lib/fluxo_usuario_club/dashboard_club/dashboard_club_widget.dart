@@ -3368,6 +3368,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           final category = (minAge != null || maxAge != null)
               ? '${minAge ?? '-'}-${maxAge ?? '-'}'
               : 'N/A';
+          final position = _resolveTryoutPosition(conv);
           final postulaciones = conv['postulaciones_count'] ?? 0;
           final saved = conv['saved_count'] ?? 0;
 
@@ -3431,7 +3432,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                   children: [
                     _metaChip('Zona: $zone'),
                     _metaChip('Categoria: $category'),
-                    _metaChip('Nº postulações: $postulaciones'),
+                    if (position.isNotEmpty) _metaChip('Posición: $position'),
+                    _metaChip('Postulaciones: $postulaciones'),
                     _metaChip('En seguimiento: $saved'),
                   ],
                 ),

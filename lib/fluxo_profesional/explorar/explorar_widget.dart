@@ -122,6 +122,19 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   bool _isClubStaff = false;
   Map<String, dynamic>? _nextChallenge;
 
+  // Filtros "Valores reales" pre-cargados
+  List<String> _realPlayerPositions = [];
+  List<String> _realPlayerCategories = [];
+  List<String> _realPlayerCountries = [];
+  List<String> _realPlayerCities = [];
+  List<String> _realPlayerLevels = [];
+  List<String> _realClubCountries = [];
+  List<String> _realClubCities = [];
+  List<String> _realClubLeagues = [];
+  List<String> _realConvocatoriaCategories = [];
+  List<String> _realConvocatoriaPositions = [];
+  List<String> _realConvocatoriaCountries = [];
+
   @override
   void initState() {
     super.initState();
@@ -147,6 +160,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     try {
       await _loadViewerContext();
       await Future.wait([
+        _loadRealFilterOptions(),
         _loadUsers(),
         _loadClubs(),
         _loadConvocatorias(),
@@ -166,6 +180,32 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _loadRealFilterOptions() async {
+    try {
+      final pRes = await SupaFlow.client.from('users').select('posicion, birthday, country, city, profile_completed').eq('userType', 'jugador').limit(3000);
+      final listP = List<Map<String, dynamic>>.from(pRes);
+      _realPlayerPositions = _extractUniqueStrings(listP.map((u) => u['posicion']));
+      _realPlayerCategories = _extractUniqueStrings(listP.map((u) => _categoryFromBirthday(u['birthday'])));
+      _realPlayerCountries = _extractUniqueStrings(listP.map(_resolveCountryFromUser));
+      _realPlayerCities = _extractUniqueStrings(listP.map(_resolveCity));
+      _realPlayerLevels = _extractUniqueStrings(listP.map(_resolvePlayerLevel));
+    } catch (_) {}
+    try {
+      final cRes = await SupaFlow.client.from('clubs').select('country, state, city, league').limit(1500);
+      final listC = List<Map<String, dynamic>>.from(cRes);
+      _realClubCountries = _extractUniqueStrings(listC.map(_resolveCountryFromClub));
+      _realClubCities = _extractUniqueStrings(listC.map(_resolveCity));
+      _realClubLeagues = _extractUniqueStrings(listC.map(_resolveClubLeague));
+    } catch (_) {}
+    try {
+      final convRes = await SupaFlow.client.from('convocatorias').select('category, country, city, state, posicion').eq('is_active', true).limit(1500);
+      final listConv = List<Map<String, dynamic>>.from(convRes);
+      _realConvocatoriaCategories = _extractUniqueStrings(listConv.map(_resolveConvocatoriaCategory));
+      _realConvocatoriaPositions = _extractUniqueStrings(listConv.map(_resolveConvocatoriaPosition));
+      _realConvocatoriaCountries = _extractUniqueStrings(listConv.map(_resolveConvocatoriaCountry));
+    } catch (_) {}
   }
 
   Future<void> _loadViewerContext() async {
@@ -1615,41 +1655,20 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   Widget _buildScoutExplorer() {
-    final playerPositionOptions =
-        _extractUniqueStrings(_players.map((u) => u['posicion']));
-    final playerCategoryOptions = _extractUniqueStrings(
-      _players.map((u) => _categoryFromBirthday(u['birthday'])),
-    );
-    final playerCountryOptions = _extractUniqueStrings(
-      _players.map(_resolveCountryFromUser),
-    );
-    final playerCityOptions = _extractUniqueStrings(
-      _players.map(_resolveCity),
-    );
-    final playerLevelOptions = _extractUniqueStrings(
-      _players.map(_resolvePlayerLevel),
-    );
-    final clubCountryOptions = _extractUniqueStrings(
-      _clubs.map(_resolveCountryFromClub),
-    );
-    final clubCityOptions = _extractUniqueStrings(
-      _clubs.map(_resolveCity),
-    );
-    final clubLeagueOptions = _extractUniqueStrings(
-      _clubs.map(_resolveClubLeague),
-    );
-    final convocatoriaCountryOptions = _extractUniqueStrings(
-      _convocatorias.map(_resolveConvocatoriaCountry),
-    );
-    final convocatoriaCityOptions = _extractUniqueStrings(
-      _convocatorias.map(_resolveConvocatoriaCity),
-    );
-    final convocatoriaCategoryOptions = _extractUniqueStrings(
-      _convocatorias.map(_resolveConvocatoriaCategory),
-    );
-    final convocatoriaPositionOptions = _extractUniqueStrings(
-      _convocatorias.map(_resolveConvocatoriaPosition),
-    );
+    final playerPositionOptions = _realPlayerPositions;
+    final playerCategoryOptions = _realPlayerCategories;
+    final playerCountryOptions = _realPlayerCountries;
+    final playerCityOptions = _realPlayerCities;
+    final playerLevelOptions = _realPlayerLevels;
+    
+    final clubCountryOptions = _realClubCountries;
+    final clubCityOptions = _realClubCities;
+    final clubLeagueOptions = _realClubLeagues;
+    
+    final convocatoriaCountryOptions = _realConvocatoriaCountries;
+    final convocatoriaCityOptions = _realConvocatoriaCountries; // City missing but fallback to countries/regions
+    final convocatoriaCategoryOptions = _realConvocatoriaCategories;
+    final convocatoriaPositionOptions = _realConvocatoriaPositions;
 
     return RefreshIndicator(
       onRefresh: _loadAll,
@@ -2099,42 +2118,21 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   Widget _buildJugadorSearchMode() {
-    final playerCategoryOptions = _extractUniqueStrings(
-      _players.map((u) => _categoryFromBirthday(u['birthday'])),
-    );
-    final playerPositionOptions = _extractUniqueStrings(
-      _players.map((u) => u['posicion']),
-    );
-    final playerCountryOptions = _extractUniqueStrings(
-      _players.map(_resolveCountryFromUser),
-    );
-    final playerCityOptions = _extractUniqueStrings(
-      _players.map(_resolveCity),
-    );
-    final playerLevelOptions = _extractUniqueStrings(
-      _players.map(_resolvePlayerLevel),
-    );
-    final convocatoriaCategoryOptions = _extractUniqueStrings(
-      _convocatorias.map(_resolveConvocatoriaCategory),
-    );
-    final convocatoriaPositionOptions = _extractUniqueStrings(
-      _convocatorias.map(_resolveConvocatoriaPosition),
-    );
-    final convocatoriaCountryOptions = _extractUniqueStrings(
-      _convocatorias.map(_resolveConvocatoriaCountry),
-    );
-    final clubCountryOptions = _extractUniqueStrings(
-      _clubs.map(_resolveCountryFromClub),
-    );
-    final clubStateOptions = _extractUniqueStrings(
-      _clubs.map(_resolveState),
-    );
-    final clubCityOptions = _extractUniqueStrings(
-      _clubs.map(_resolveCity),
-    );
-    final clubLeagueOptions = _extractUniqueStrings(
-      _clubs.map(_resolveClubLeague),
-    );
+    final playerCategoryOptions = _realPlayerCategories;
+    final playerPositionOptions = _realPlayerPositions;
+    final playerCountryOptions = _realPlayerCountries;
+    final playerCityOptions = _realPlayerCities;
+    final playerLevelOptions = _realPlayerLevels;
+    
+    final convocatoriaCategoryOptions = _realConvocatoriaCategories;
+    final convocatoriaPositionOptions = _realConvocatoriaPositions;
+    final convocatoriaCountryOptions = _realConvocatoriaCountries;
+    
+    final clubCountryOptions = _realClubCountries;
+    final clubStateOptions = _realClubCities; // Assuming state falls back to city logic as missing
+    final clubCityOptions = _realClubCities;
+    final clubLeagueOptions = _realClubLeagues;
+    
     final verifiedScouts = _users.where((user) {
       final isScout =
           (user['userType']?.toString().trim().toLowerCase() ?? '') ==

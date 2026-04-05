@@ -1871,13 +1871,18 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   // ===== TAB FICHA COMPLETA =====
   Widget _buildFichaTab() {
     final birthDate =
-        _userData?['birth_date'] ?? _userData?['fecha_nacimiento'] ?? '';
+        _userData?['birth_date'] ?? _userData?['fecha_nacimiento'] ?? _userData?['birthday'] ?? '';
     final nationality = _userData?['nationality'] ??
         _userData?['nacionalidad'] ??
+        _userData?['country'] ??
+        _userData?['pais'] ??
         'No definido';
     final height = _userData?['height'] ?? _userData?['altura'] ?? '';
     final weight = _userData?['weight'] ?? _userData?['peso'] ?? '';
     final playerStatus = _userData?['player_status']?.toString().trim() ?? '';
+    final category = _userData?['categoria']?.toString().trim() ?? '';
+    final position = _userData?['position'] ?? _userData?['posicion']?.toString().trim() ?? '';
+    final dominantFoot = _userData?['dominant_foot'] ?? _userData?['pie_dominante']?.toString().trim() ?? '';
     final age = _calculateAge(birthDate.toString());
 
     return SingleChildScrollView(
@@ -1908,6 +1913,12 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
             Icons.fitness_center,
             weight.toString().isNotEmpty ? '$weight kg' : 'No definido',
           ),
+          if (position.toString().isNotEmpty)
+            _buildInfoRow(Icons.sports_soccer, position.toString()),
+          if (category.toString().isNotEmpty)
+            _buildInfoRow(Icons.group, category.toString()),
+          if (dominantFoot.toString().isNotEmpty)
+            _buildInfoRow(Icons.directions_walk, dominantFoot.toString()),
           _buildInfoRow(
             Icons.track_changes_rounded,
             playerStatus.isNotEmpty
@@ -1986,25 +1997,55 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
 
     if (clubs != null && clubs is List && clubs.isNotEmpty) {
       return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: clubs.map<Widget>((club) {
+          final position = club['position'] ?? club['posicion'] ?? '';
+          final note = club['note'] ?? club['nota'] ?? '';
+          
           return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    club['name'] ?? club['nombre'] ?? 'Club',
-                    style: GoogleFonts.inter(
-                      color: Colors.black,
-                      fontWeight: FontWeight.w600,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        club['name'] ?? club['nombre'] ?? 'Club',
+                        style: GoogleFonts.inter(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      club['period'] ?? club['periodo'] ?? '',
+                      style: GoogleFonts.inter(color: Colors.black, fontSize: 13, fontWeight: FontWeight.normal),
+                    ),
+                  ],
+                ),
+                if (position.toString().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      position.toString(),
+                      style: GoogleFonts.inter(color: const Color(0xFF444444), fontSize: 13),
                     ),
                   ),
-                ),
-                Text(
-                  club['period'] ?? club['periodo'] ?? '',
-                  style: GoogleFonts.inter(color: Colors.black, fontSize: 12),
-                ),
+                if (note.toString().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      note.toString(),
+                      style: GoogleFonts.inter(
+                        color: const Color(0xFF666666),
+                        fontSize: 13,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
               ],
             ),
           );

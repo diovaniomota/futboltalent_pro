@@ -66,6 +66,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   DateTime? _selectedBirthday;
   final List<TextEditingController> _historyClubControllers = [];
   final List<TextEditingController> _historyPeriodControllers = [];
+  final List<TextEditingController> _historyPositionControllers = [];
+  final List<TextEditingController> _historyNoteControllers = [];
 
   static const List<String> _playerStatusOptions = [
     'Buscando club',
@@ -121,6 +123,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       controller.dispose();
     }
     for (final controller in _historyPeriodControllers) {
+      controller.dispose();
+    }
+    for (final controller in _historyPositionControllers) {
+      controller.dispose();
+    }
+    for (final controller in _historyNoteControllers) {
       controller.dispose();
     }
     _nomeFocusNode?.dispose();
@@ -853,6 +861,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               'name': _firstNonEmptyValue([item['name'], item['nombre']]) ?? '',
               'period':
                   _firstNonEmptyValue([item['period'], item['periodo']]) ?? '',
+              'position': _firstNonEmptyValue([item['position'], item['posicion']]) ?? '',
+              'note': _firstNonEmptyValue([item['note'], item['nota']]) ?? '',
             })
         .where((item) => item['name']!.isNotEmpty || item['period']!.isNotEmpty)
         .toList();
@@ -865,8 +875,16 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     for (final controller in _historyPeriodControllers) {
       controller.dispose();
     }
+    for (final controller in _historyPositionControllers) {
+      controller.dispose();
+    }
+    for (final controller in _historyNoteControllers) {
+      controller.dispose();
+    }
     _historyClubControllers.clear();
     _historyPeriodControllers.clear();
+    _historyPositionControllers.clear();
+    _historyNoteControllers.clear();
   }
 
   void _setHistoryControllers(List<Map<String, String>> items) {
@@ -878,6 +896,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       _historyPeriodControllers.add(
         TextEditingController(text: item['period'] ?? ''),
       );
+      _historyPositionControllers.add(
+        TextEditingController(text: item['position'] ?? ''),
+      );
+      _historyNoteControllers.add(
+        TextEditingController(text: item['note'] ?? ''),
+      );
     }
   }
 
@@ -886,10 +910,14 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     for (var i = 0; i < _historyClubControllers.length; i++) {
       final name = _historyClubControllers[i].text.trim();
       final period = _historyPeriodControllers[i].text.trim();
+      final position = _historyPositionControllers[i].text.trim();
+      final note = _historyNoteControllers[i].text.trim();
       if (name.isEmpty && period.isEmpty) continue;
       items.add({
         'name': name,
         'period': period,
+        'position': position,
+        'note': note,
       });
     }
     return items;
@@ -917,6 +945,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     setState(() {
       _historyClubControllers.add(TextEditingController());
       _historyPeriodControllers.add(TextEditingController());
+      _historyPositionControllers.add(TextEditingController());
+      _historyNoteControllers.add(TextEditingController());
     });
   }
 
@@ -925,6 +955,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     setState(() {
       _historyClubControllers.removeAt(index).dispose();
       _historyPeriodControllers.removeAt(index).dispose();
+      _historyPositionControllers.removeAt(index).dispose();
+      _historyNoteControllers.removeAt(index).dispose();
     });
   }
 
@@ -1202,6 +1234,19 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                   controller: _historyPeriodControllers[index],
                   focusNode: null,
                   hintText: '2022 - actualidad',
+                ),
+                _buildTextField(
+                  label: 'Posición',
+                  controller: _historyPositionControllers[index],
+                  focusNode: null,
+                  hintText: 'Mediocampista',
+                ),
+                _buildTextField(
+                  label: 'Nota opcional',
+                  controller: _historyNoteControllers[index],
+                  focusNode: null,
+                  hintText: 'Fui capitán, ganamos el torneo...',
+                  maxLines: 2,
                 ),
               ],
             ),
