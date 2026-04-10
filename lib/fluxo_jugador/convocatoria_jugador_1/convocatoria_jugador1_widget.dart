@@ -123,32 +123,17 @@ class _ConvocatoriaJugador1WidgetState
         conv['active_convocatorias_count'] = activeCountByClub[clubId] ?? 0;
       }
 
-      final categoriasSet = <String>{};
-      final ubicacionesSet = <String>{};
-      final posicionesSet = <String>{};
-
-      for (var conv in convocatorias) {
-        if (conv['categoria'] != null &&
-            conv['categoria'].toString().isNotEmpty) {
-          categoriasSet.add(conv['categoria'].toString());
-        }
-        if (conv['ubicacion'] != null &&
-            conv['ubicacion'].toString().isNotEmpty) {
-          ubicacionesSet.add(conv['ubicacion'].toString());
-        }
-        if (conv['posicion'] != null &&
-            conv['posicion'].toString().isNotEmpty) {
-          posicionesSet.add(conv['posicion'].toString());
-        }
-      }
-
       if (mounted) {
         setState(() {
           _convocatorias = convocatorias;
           _filteredConvocatorias = convocatorias;
-          _categorias = categoriasSet.toList()..sort();
-          _ubicaciones = ubicacionesSet.toList()..sort();
-          _posiciones = posicionesSet.toList()..sort();
+          _categorias =
+              _buildNormalizedOptions(convocatorias.map((conv) => conv['categoria']));
+          _ubicaciones = _buildNormalizedOptions(
+            convocatorias.map(_resolveConvocatoriaLocation),
+          );
+          _posiciones =
+              _buildNormalizedOptions(convocatorias.map((conv) => conv['posicion']));
           _isLoading = false;
         });
       }
@@ -187,15 +172,20 @@ class _ConvocatoriaJugador1WidgetState
         }
 
         if (_selectedCategoria != null && _selectedCategoria!.isNotEmpty) {
-          if (conv['categoria'] != _selectedCategoria) return false;
+          final categoria = conv['categoria']?.toString().trim().toLowerCase() ?? '';
+          if (categoria != _selectedCategoria!.toLowerCase()) return false;
         }
 
         if (_selectedUbicacion != null && _selectedUbicacion!.isNotEmpty) {
-          if (conv['ubicacion'] != _selectedUbicacion) return false;
+          if (_resolveConvocatoriaLocation(conv).toLowerCase() !=
+              _selectedUbicacion!.toLowerCase()) {
+            return false;
+          }
         }
 
         if (_selectedPosicion != null && _selectedPosicion!.isNotEmpty) {
-          if (conv['posicion'] != _selectedPosicion) return false;
+          final posicion = conv['posicion']?.toString().trim().toLowerCase() ?? '';
+          if (posicion != _selectedPosicion!.toLowerCase()) return false;
         }
 
         return true;
@@ -305,6 +295,19 @@ class _ConvocatoriaJugador1WidgetState
         '';
   }
 
+  List<String> _buildNormalizedOptions(Iterable<dynamic> values) {
+    final uniqueByKey = <String, String>{};
+    for (final raw in values) {
+      final value =
+          raw?.toString().trim().replaceAll(RegExp(r'\s+'), ' ') ?? '';
+      if (value.isEmpty || value.toLowerCase() == 'null') continue;
+      uniqueByKey.putIfAbsent(value.toLowerCase(), () => value);
+    }
+    final list = uniqueByKey.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return list;
+  }
+
   String _resolveConvocatoriaLocation(Map<String, dynamic> convocatoria) {
     return _firstNonEmpty([
           convocatoria['ubicacion'],
@@ -314,6 +317,8 @@ class _ConvocatoriaJugador1WidgetState
           convocatoria['localidad'],
           (convocatoria['club_data'] as Map?)?['city'],
           (convocatoria['club_data'] as Map?)?['ciudad'],
+          (convocatoria['club_data'] as Map?)?['pais'],
+          (convocatoria['club_data'] as Map?)?['country'],
         ]) ??
         'Sin ubicación';
   }
@@ -425,7 +430,7 @@ class _ConvocatoriaJugador1WidgetState
             child: PlanPaywallCard(
               title: 'Convocatorias en el Plan Pro',
               message:
-                  'A navegação de convocatórias fica liberada no Pro. Se o modo piloto estiver ON, o bloqueio some automaticamente.',
+                  'El acceso a convocatorias está disponible en el Plan Pro. Si el modo piloto está activo, este bloqueo se desactiva automáticamente.',
             ),
           ),
         ),

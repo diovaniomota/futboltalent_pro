@@ -1,7 +1,8 @@
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
+import '/fluxo_compartilhado/club_application_utils.dart';
+import '/fluxo_compartilhado/club_identity_utils.dart';
 import 'package:flutter/material.dart';
-import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -24,6 +25,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
 
   bool _isLoading = true;
   String? _clubId;
+  Set<String> _clubRefs = <String>{};
 
   // Stats
   int _convocatoriasActivas = 0;
@@ -78,21 +80,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
-    _clubId = currentUserUid;
-
-    // Carregar nome do club (não bloqueia o resto se falhar)
-    try {
-      final clubResponse = await SupaFlow.client
-          .from('clubs')
-          .select('nombre')
-          .eq('owner_id', _clubId!)
-          .maybeSingle();
-      if (clubResponse != null && clubResponse['nombre'] != null) {
-        _clubName = clubResponse['nombre'];
-      }
-    } catch (e) {
-      debugPrint('Club name not found: $e');
-    }
+    await _resolveClubContext();
 
     // Carregar stats e postulaciones
     if (_clubId != null && _clubId!.isNotEmpty) {
@@ -105,38 +93,75 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     }
   }
 
+  Future<void> _resolveClubContext() async {
+    final authUid = currentUserUid;
+    _clubRefs = await resolveClubRefsForUser(authUid);
+    if (_clubRefs.isEmpty && authUid.isNotEmpty) {
+      _clubRefs = {authUid};
+    }
+    final club = await resolveCurrentClubForUser(authUid);
+    _clubId = club?['id']?.toString().trim().isNotEmpty == true
+        ? club!['id'].toString().trim()
+        : (authUid.isNotEmpty ? authUid : null);
+    _clubName = club?['nombre']?.toString();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadConvocatoriasRows() async {
+    if (_clubRefs.isEmpty) return [];
+
+    final response = _clubRefs.length == 1
+        ? await SupaFlow.client
+            .from('convocatorias')
+            .select('id, estado, titulo, categoria, posicion, pais, ubicacion')
+            .eq('club_id', _clubRefs.first)
+        : await SupaFlow.client
+            .from('convocatorias')
+            .select('id, estado, titulo, categoria, posicion, pais, ubicacion')
+            .inFilter('club_id', _clubRefs.toList());
+
+    return List<Map<String, dynamic>>.from(response as List);
+  }
+
   Future<void> _loadStats() async {
     try {
-      final convocatoriasResponse = await SupaFlow.client
-          .from('convocatorias')
-          .select('id, estado')
-          .eq('club_id', _clubId!);
-
-      final convocatorias =
-          List<Map<String, dynamic>>.from(convocatoriasResponse);
+      final convocatorias = await _loadConvocatoriasRows();
+      final convocatoriaIds = convocatorias
+          .map((item) => item['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
 
       _convocatoriasActivas = convocatorias
           .where((c) => c['estado']?.toString().toLowerCase() == 'activa')
           .length;
-
-      int totalPostulaciones = 0;
-      for (var conv in convocatorias) {
-        try {
-          final postResponse = await SupaFlow.client
-              .from('postulaciones')
-              .select('id')
-              .eq('convocatoria_id', conv['id']);
-
-          totalPostulaciones += (postResponse as List).length;
-        } catch (e) {}
-      }
-      _totalPostulaciones = totalPostulaciones;
+      final postulaciones = await fetchClubApplicationsForConvocatorias(
+        convocatoriaIds: convocatoriaIds,
+        limitPerTable: 800,
+      );
+      _totalPostulaciones = postulaciones.length;
 
       if (_convocatoriasActivas > 0) {
         _promedioPostulaciones = _totalPostulaciones / _convocatoriasActivas;
       }
 
-      _totalVideos = 0;
+      final playerIds = postulaciones
+          .map(clubApplicationPlayerId)
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      if (playerIds.isEmpty) {
+        _totalVideos = 0;
+      } else {
+        try {
+          final videosResponse = await SupaFlow.client
+              .from('videos')
+              .select('id')
+              .eq('is_public', true)
+              .inFilter('user_id', playerIds);
+          _totalVideos = (videosResponse as List).length;
+        } catch (_) {
+          _totalVideos = 0;
+        }
+      }
     } catch (e) {
       debugPrint('❌ Error cargando stats: $e');
     }
@@ -144,45 +169,86 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
 
   Future<void> _loadPostulacionesRecientes() async {
     try {
-      final convocatoriasResponse = await SupaFlow.client
-          .from('convocatorias')
-          .select('id')
-          .eq('club_id', _clubId!);
-
-      final convocatoriaIds = (convocatoriasResponse as List)
+      final convocatorias = await _loadConvocatoriasRows();
+      final convocatoriaIds = convocatorias
           .map((c) => c['id'].toString())
           .toList();
+      final convocatoriasById = <String, Map<String, dynamic>>{};
+      for (final row in convocatorias) {
+        final id = row['id']?.toString().trim() ?? '';
+        if (id.isNotEmpty) {
+          convocatoriasById[id] = row;
+        }
+      }
 
       if (convocatoriaIds.isEmpty) {
         _postulacionesRecientes = [];
         return;
       }
 
-      final postulacionesResponse = await SupaFlow.client
-          .from('postulaciones')
+      final postulaciones = await fetchClubApplicationsForConvocatorias(
+        convocatoriaIds: convocatoriaIds,
+        limitPerTable: 40,
+      );
+      _postulacionesRecientes = postulaciones.take(10).toList();
+
+      final playerIds = _postulacionesRecientes
+          .map(clubApplicationPlayerId)
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      if (playerIds.isEmpty) return;
+
+      final jugadoresResponse = await SupaFlow.client
+          .from('users')
           .select()
-          .inFilter('convocatoria_id', convocatoriaIds)
-          .order('created_at', ascending: false)
-          .limit(10);
+          .inFilter('user_id', playerIds);
 
-      _postulacionesRecientes =
-          List<Map<String, dynamic>>.from(postulacionesResponse);
-
-      for (var post in _postulacionesRecientes) {
-        try {
-          final jugadorResponse = await SupaFlow.client
-              .from('users')
-              .select(
-                  'user_id, name, lastname, posicion, birthday, city, photo_url')
-              .eq('user_id', post['jugador_id'])
-              .maybeSingle();
-
-          if (jugadorResponse != null) {
-            post['jugador'] = jugadorResponse;
-          }
-        } catch (e) {
-          debugPrint('Error cargando jugador: $e');
+      final jugadoresById = <String, Map<String, dynamic>>{};
+      for (final row in List<Map<String, dynamic>>.from(jugadoresResponse as List)) {
+        final id = row['user_id']?.toString() ?? '';
+        if (id.isNotEmpty) {
+          jugadoresById[id] = row;
         }
+      }
+
+      for (final post in _postulacionesRecientes) {
+        final playerId = clubApplicationPlayerId(post);
+        if (playerId.isNotEmpty && jugadoresById.containsKey(playerId)) {
+          post['jugador'] = jugadoresById[playerId];
+        }
+        final convocatoriaId = post['convocatoria_id']?.toString().trim() ?? '';
+        if (convocatoriaId.isNotEmpty && convocatoriasById.containsKey(convocatoriaId)) {
+          post['convocatoria'] = convocatoriasById[convocatoriaId];
+          post['convocatoria_titulo'] =
+              convocatoriasById[convocatoriaId]?['titulo'];
+        }
+      }
+
+      final latestVideoByPlayer = <String, Map<String, dynamic>>{};
+      if (playerIds.isNotEmpty) {
+        try {
+          final videosResponse = await SupaFlow.client
+              .from('videos')
+              .select('id, user_id, title, thumbnail_url, video_url, created_at')
+              .eq('is_public', true)
+              .inFilter('user_id', playerIds)
+              .order('created_at', ascending: false)
+              .limit(200);
+
+          for (final row in List<Map<String, dynamic>>.from(videosResponse as List)) {
+            final playerId = row['user_id']?.toString().trim() ?? '';
+            if (playerId.isEmpty) continue;
+            latestVideoByPlayer.putIfAbsent(playerId, () => row);
+          }
+        } catch (_) {}
+      }
+
+      for (final post in _postulacionesRecientes) {
+        final playerId = clubApplicationPlayerId(post);
+        post['latest_video'] = latestVideoByPlayer[playerId];
+        post['has_video'] = latestVideoByPlayer[playerId] != null;
       }
     } catch (e) {
       debugPrint('❌ Error cargando postulaciones: $e');
@@ -205,10 +271,25 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     }
   }
 
+  String _playerInitials(Map<String, dynamic>? jugador) {
+    final name = jugador?['name']?.toString().trim() ?? '';
+    final lastname = jugador?['lastname']?.toString().trim() ?? '';
+    String initials = '';
+    if (name.isNotEmpty) initials += name[0].toUpperCase();
+    if (lastname.isNotEmpty) initials += lastname[0].toUpperCase();
+    return initials.isEmpty ? '?' : initials;
+  }
+
   Future<void> _updatePostulacionStatus(
-      String postulacionId, String newStatus) async {
+      Map<String, dynamic> postulacion, String newStatus) async {
+    final postulacionId = postulacion['id']?.toString() ?? '';
+    if (postulacionId.isEmpty) return;
+    final sourceTable =
+        postulacion['_source_table']?.toString() == 'aplicaciones_convocatoria'
+            ? 'aplicaciones_convocatoria'
+            : 'postulaciones';
     try {
-      await SupaFlow.client.from('postulaciones').update({
+      await SupaFlow.client.from(sourceTable).update({
         'estado': newStatus,
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', postulacionId);
@@ -250,6 +331,148 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
         return 'Rechazado';
       default:
         return 'Nuevo';
+    }
+  }
+
+  ({Color background, Color foreground, IconData icon}) _statusVisuals(
+      String estado) {
+    switch (estado.toLowerCase()) {
+      case 'revisado':
+      case 'revisada':
+        return (
+          background: const Color(0xFFEFF6FF),
+          foreground: const Color(0xFF1D4ED8),
+          icon: Icons.visibility_rounded,
+        );
+      case 'aceptado':
+      case 'aceitada':
+        return (
+          background: const Color(0xFFDCFCE7),
+          foreground: const Color(0xFF166534),
+          icon: Icons.check_circle_rounded,
+        );
+      case 'rechazado':
+      case 'rechazada':
+        return (
+          background: const Color(0xFFFEE2E2),
+          foreground: const Color(0xFFB91C1C),
+          icon: Icons.close_rounded,
+        );
+      case 'pendiente':
+      case 'nuevo':
+      default:
+        return (
+          background: const Color(0xFF111827),
+          foreground: Colors.white,
+          icon: Icons.fiber_new_rounded,
+        );
+    }
+  }
+
+  Widget _buildStatusBadge(String estado, {double scale = 1}) {
+    final palette = _statusVisuals(estado);
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: 10 * scale,
+        vertical: 6 * scale,
+      ),
+      decoration: BoxDecoration(
+        color: palette.background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(palette.icon, size: 14 * scale, color: palette.foreground),
+          SizedBox(width: 6 * scale),
+          Text(
+            _getStatusLabel(estado),
+            style: GoogleFonts.inter(
+              fontSize: 11.5 * scale,
+              fontWeight: FontWeight.w700,
+              color: palette.foreground,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPostulacionActionButton({
+    required BuildContext context,
+    required String label,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    bool primary = false,
+  }) {
+    final labelWidget = Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: GoogleFonts.inter(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        color: primary ? Colors.white : const Color(0xFF0D3B66),
+      ),
+    );
+
+    if (primary) {
+      return SizedBox(
+        height: 42,
+        child: ElevatedButton.icon(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            backgroundColor: const Color(0xFF0D3B66),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          icon: Icon(icon, size: 16),
+          label: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: labelWidget,
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 42,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF0D3B66),
+          side: const BorderSide(color: Color(0xFFDCE3EC)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        icon: Icon(icon, size: 16),
+        label: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: labelWidget,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openVideo(String rawUrl) async {
+    final url = rawUrl.trim();
+    if (url.isEmpty) return;
+    try {
+      await launchURL(url);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo abrir el video.'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -464,60 +687,64 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                   color: Colors.white,
                   child: LayoutBuilder(
                     builder: (context, constraints) {
-                      return SingleChildScrollView(
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: maxContentWidth == double.infinity
-                                  ? constraints.maxWidth
-                                  : maxContentWidth,
-                            ),
-                            child: Padding(
-                              padding: EdgeInsets.all(padding),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // Menu icon
-                                  GestureDetector(
-                                    onTap: () => _showClubMenu(context),
-                                    child: Icon(Icons.menu,
-                                        color: Colors.black, size: 24 * scale),
-                                  ),
-                                  SizedBox(height: 20 * scale),
-
-                                  // Título
-                                  Text(
-                                    'Jugadores',
-                                    style: GoogleFonts.inter(
-                                      fontSize: _responsive(context,
-                                              mobile: 24,
-                                              tablet: 28,
-                                              desktop: 32) *
-                                          scale,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.black,
+                      return RefreshIndicator(
+                        onRefresh: _loadData,
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: maxContentWidth == double.infinity
+                                    ? constraints.maxWidth
+                                    : maxContentWidth,
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.all(padding),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Menu icon
+                                    GestureDetector(
+                                      onTap: () => _showClubMenu(context),
+                                      child: Icon(Icons.menu,
+                                          color: Colors.black, size: 24 * scale),
                                     ),
-                                  ),
-                                  if (_clubName != null) ...[
-                                    const SizedBox(height: 8),
+                                    SizedBox(height: 20 * scale),
+
+                                    // Título
                                     Text(
-                                      'Club: $_clubName',
+                                      'Jugadores',
                                       style: GoogleFonts.inter(
-                                        fontSize: 14,
-                                        color: Colors.grey[600],
+                                        fontSize: _responsive(context,
+                                                mobile: 24,
+                                                tablet: 28,
+                                                desktop: 32) *
+                                            scale,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black,
                                       ),
                                     ),
+                                    if (_clubName != null) ...[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Club: $_clubName',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                    SizedBox(height: 20 * scale),
+
+                                    // Stats - Layout responsivo
+                                    _buildResponsiveStats(context),
+                                    SizedBox(height: 24 * scale),
+
+                                    // Postulaciones Recientes
+                                    _buildPostulacionesRecientes(context),
+                                    SizedBox(height: 32 * scale),
                                   ],
-                                  SizedBox(height: 20 * scale),
-
-                                  // Stats - Layout responsivo
-                                  _buildResponsiveStats(context),
-                                  SizedBox(height: 24 * scale),
-
-                                  // Postulaciones Recientes
-                                  _buildPostulacionesRecientes(context),
-                                  SizedBox(height: 32 * scale),
-                                ],
+                                ),
                               ),
                             ),
                           ),
@@ -762,13 +989,13 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
 
   Widget _buildPostulacionesRecientes(BuildContext context) {
     final scale = _scaleFactor(context);
-    final padding = _responsive(context, mobile: 14, tablet: 18, desktop: 22);
+    final padding = _responsive(context, mobile: 16, tablet: 20, desktop: 24);
     final titleSize =
-        _responsive(context, mobile: 14, tablet: 16, desktop: 18) * scale;
+        _responsive(context, mobile: 18, tablet: 20, desktop: 22) * scale;
     final subtitleSize =
         _responsive(context, mobile: 12, tablet: 13, desktop: 14) * scale;
     final borderRadius =
-        _responsive(context, mobile: 14, tablet: 16, desktop: 18);
+        _responsive(context, mobile: 18, tablet: 20, desktop: 22);
 
     return Container(
       width: double.infinity,
@@ -776,37 +1003,62 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(borderRadius),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+            color: const Color(0x120D3B66),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Text(
-            'Postulaciones Recientes',
-            style: GoogleFonts.inter(
-              fontSize: titleSize,
-              fontWeight: FontWeight.w600,
-              color: Colors.black,
-            ),
-          ),
-          SizedBox(height: 4 * scale),
-          Text(
-            'Últimos jugadores que se han postulado',
-            style: GoogleFonts.inter(
-              fontSize: subtitleSize,
-              color: Colors.orange[400],
-            ),
+          Row(
+            children: [
+              Container(
+                width: 38 * scale,
+                height: 38 * scale,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F0FE),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.groups_rounded,
+                  color: const Color(0xFF0D3B66),
+                  size: 20 * scale,
+                ),
+              ),
+              SizedBox(width: 12 * scale),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Postulaciones recientes',
+                      style: GoogleFonts.inter(
+                        fontSize: titleSize,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                    SizedBox(height: 3 * scale),
+                    Text(
+                      'Últimos jugadores que se han postulado',
+                      style: GoogleFonts.inter(
+                        fontSize: subtitleSize,
+                        color: const Color(0xFF64748B),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           SizedBox(height: 16 * scale),
 
-          // Lista de postulaciones
           if (_postulacionesRecientes.isEmpty)
             Center(
               child: Padding(
@@ -842,70 +1094,227 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final jugador = postulacion['jugador'] as Map<String, dynamic>?;
     final name = jugador?['name'] ?? '';
     final lastname = jugador?['lastname'] ?? '';
-    final fullName =
-        '$name ${lastname.isNotEmpty ? lastname[0] + '.' : ''}'.trim();
-    final position = jugador?['posicion'] ?? '';
-    final country = jugador?['city'] ?? '';
+    final fullName = '$name ${lastname.isNotEmpty ? lastname[0] + '.' : ''}'.trim();
+    final position = (jugador?['posicion'] ?? '').toString().trim();
+    final country = (jugador?['city'] ?? '').toString().trim();
     final age = _calculateAge(jugador?['birthday']);
     final estado = postulacion['estado']?.toString() ?? 'pendiente';
     final jugadorId = jugador?['user_id']?.toString() ?? '';
-    final postulacionId = postulacion['id'].toString();
-
-    final isRevisado = estado.toLowerCase() == 'revisado' ||
-        estado.toLowerCase() == 'revisada';
-
-    final padding = _responsive(context, mobile: 12, tablet: 16, desktop: 18);
-    final nameFontSize =
-        _responsive(context, mobile: 13, tablet: 14, desktop: 15) * scale;
-    final detailFontSize =
-        _responsive(context, mobile: 11, tablet: 12, desktop: 13) * scale;
-    final buttonFontSize =
-        _responsive(context, mobile: 11, tablet: 12, desktop: 13) * scale;
+    final latestVideo = postulacion['latest_video'] as Map<String, dynamic>?;
+    final latestVideoUrl = latestVideo?['video_url']?.toString().trim() ?? '';
+    final latestVideoThumb =
+        latestVideo?['thumbnail_url']?.toString().trim() ?? '';
+    final hasVideo = latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
+    final convocatoria = postulacion['convocatoria'] as Map<String, dynamic>?;
+    final convocatoriaTitle = (postulacion['convocatoria_titulo'] ??
+            convocatoria?['titulo'] ??
+            'Convocatoria')
+        .toString()
+        .trim();
+    final metaParts = <String>[
+      if (age > 0) '$age años',
+      if (position.isNotEmpty) position,
+      if (country.isNotEmpty) country,
+    ];
+    final photoUrl = jugador?['photo_url']?.toString().trim() ?? '';
     final borderRadius =
-        _responsive(context, mobile: 10, tablet: 12, desktop: 14);
-
-    // Layout responsivo para item
-    final isWideScreen = _isMediumScreen(context);
+        _responsive(context, mobile: 16, tablet: 18, desktop: 20);
 
     return Container(
-      margin: EdgeInsets.only(bottom: 10 * scale),
-      padding: EdgeInsets.all(padding),
+      margin: EdgeInsets.only(bottom: 12 * scale),
+      padding: EdgeInsets.all(14 * scale),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(color: const Color(0xFFE8E8E8)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x120D3B66),
+            blurRadius: 14,
+            offset: Offset(0, 6),
+          ),
+        ],
       ),
-      child: isWideScreen
-          ? _buildWidePostulacionLayout(
-              context,
-              fullName,
-              position,
-              age,
-              country,
-              estado,
-              isRevisado,
-              jugadorId,
-              postulacionId,
-              postulacion,
-              nameFontSize,
-              detailFontSize,
-              buttonFontSize,
-              scale)
-          : _buildCompactPostulacionLayout(
-              context,
-              fullName,
-              position,
-              age,
-              country,
-              estado,
-              isRevisado,
-              jugadorId,
-              postulacionId,
-              postulacion,
-              nameFontSize,
-              detailFontSize,
-              buttonFontSize,
-              scale),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 26 * scale,
+                    backgroundColor: const Color(0xFFE8F0FE),
+                    backgroundImage: latestVideoThumb.isNotEmpty
+                        ? NetworkImage(latestVideoThumb)
+                        : (photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null),
+                    child: latestVideoThumb.isEmpty && photoUrl.isEmpty
+                        ? Text(
+                            _playerInitials(jugador),
+                            style: GoogleFonts.inter(
+                              fontSize: 16 * scale,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0D3B66),
+                            ),
+                          )
+                        : null,
+                  ),
+                  if (hasVideo)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 20 * scale,
+                        height: 20 * scale,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.78),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.play_arrow_rounded,
+                          size: 14 * scale,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              SizedBox(width: 12 * scale),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fullName.isNotEmpty ? fullName : 'Jugador',
+                      style: GoogleFonts.inter(
+                        fontSize: 15 * scale,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (metaParts.isNotEmpty) ...[
+                      SizedBox(height: 4 * scale),
+                      Text(
+                        metaParts.join(' • '),
+                        style: GoogleFonts.inter(
+                          fontSize: 12 * scale,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF64748B),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    SizedBox(height: 8 * scale),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: _buildStatusBadge(estado, scale: scale),
+                        ),
+                        SizedBox(width: 8 * scale),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: PopupMenuButton<String>(
+                            splashRadius: 18,
+                            icon: Icon(
+                              Icons.more_horiz_rounded,
+                              size: 20 * scale,
+                              color: const Color(0xFF475569),
+                            ),
+                            onSelected: (value) =>
+                                _updatePostulacionStatus(postulacion, value),
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(value: 'pendiente', child: Text('Nuevo')),
+                              PopupMenuItem(value: 'revisado', child: Text('Revisado')),
+                              PopupMenuItem(value: 'aceptado', child: Text('Aceptado')),
+                              PopupMenuItem(value: 'rechazado', child: Text('Rechazado')),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 12 * scale),
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(
+              horizontal: 10 * scale,
+              vertical: 9 * scale,
+            ),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.campaign_outlined,
+                  size: 16 * scale,
+                  color: const Color(0xFF0D3B66),
+                ),
+                SizedBox(width: 8 * scale),
+                Expanded(
+                  child: Text(
+                    convocatoriaTitle,
+                    style: GoogleFonts.inter(
+                      fontSize: 12.5 * scale,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF334155),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 10 * scale),
+          Row(
+            children: [
+              Expanded(
+                child: _buildPostulacionActionButton(
+                  context: context,
+                  label: 'Ver perfil',
+                  icon: Icons.person_outline_rounded,
+                  onPressed: () {
+                    if (jugadorId.isNotEmpty) {
+                      context.pushNamed(
+                        'perfil_profesional_solicitar_Contato',
+                        queryParameters: {'userId': jugadorId},
+                      );
+                    } else {
+                      _showPlayerDetail(postulacion);
+                    }
+                  },
+                ),
+              ),
+              SizedBox(width: 8 * scale),
+              Expanded(
+                child: _buildPostulacionActionButton(
+                  context: context,
+                  label: 'Ver video',
+                  icon: Icons.play_circle_outline_rounded,
+                  onPressed:
+                      hasVideo ? () => _openVideo(latestVideoUrl) : null,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -925,6 +1334,10 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     double buttonFontSize,
     double scale,
   ) {
+    final latestVideoUrl =
+        postulacion['latest_video']?['video_url']?.toString().trim() ?? '';
+    final hasVideo = latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
+
     return Row(
       children: [
         // Info del jugador
@@ -954,7 +1367,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
 
         // Status badge
         GestureDetector(
-          onTap: () => _showStatusMenu(postulacionId, estado),
+          onTap: () => _showStatusMenu(postulacion, estado),
           child: Container(
             padding: EdgeInsets.symmetric(
               horizontal: 14 * scale,
@@ -975,6 +1388,31 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
           ),
         ),
         SizedBox(width: 8 * scale),
+
+        if (hasVideo) ...[
+          GestureDetector(
+            onTap: latestVideoUrl.isEmpty ? null : () => _openVideo(latestVideoUrl),
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: 12 * scale,
+                vertical: 8 * scale,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F0FE),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Ver video',
+                style: GoogleFonts.inter(
+                  fontSize: buttonFontSize,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF0D3B66),
+                ),
+              ),
+            ),
+          ),
+          SizedBox(width: 8 * scale),
+        ],
 
         // Ver Perfil button
         GestureDetector(
@@ -1026,6 +1464,10 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     double buttonFontSize,
     double scale,
   ) {
+    final latestVideoUrl =
+        postulacion['latest_video']?['video_url']?.toString().trim() ?? '';
+    final hasVideo = latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1049,11 +1491,13 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
         SizedBox(height: 12 * scale),
 
         // Botões
-        Row(
+        Wrap(
+          spacing: 8 * scale,
+          runSpacing: 8 * scale,
           children: [
             // Status badge
             GestureDetector(
-              onTap: () => _showStatusMenu(postulacionId, estado),
+              onTap: () => _showStatusMenu(postulacion, estado),
               child: Container(
                 padding: EdgeInsets.symmetric(
                   horizontal: 14 * scale,
@@ -1073,8 +1517,6 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                 ),
               ),
             ),
-            SizedBox(width: 8 * scale),
-
             // Ver Perfil button
             GestureDetector(
               onTap: () {
@@ -1105,13 +1547,37 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                 ),
               ),
             ),
+            if (hasVideo)
+              GestureDetector(
+                onTap:
+                    latestVideoUrl.isEmpty ? null : () => _openVideo(latestVideoUrl),
+                child: Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 12 * scale,
+                    vertical: 8 * scale,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F0FE),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Ver video',
+                    style: GoogleFonts.inter(
+                      fontSize: buttonFontSize,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF0D3B66),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ],
     );
   }
 
-  void _showStatusMenu(String postulacionId, String currentStatus) {
+  void _showStatusMenu(
+      Map<String, dynamic> postulacion, String currentStatus) {
     final scale = _scaleFactor(context);
 
     showModalBottomSheet(
@@ -1144,13 +1610,13 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
             ),
             SizedBox(height: 20 * scale),
             _buildStatusOption(
-                'pendiente', 'Nuevo', Colors.black, postulacionId),
+                'pendiente', 'Nuevo', Colors.black, postulacion),
             _buildStatusOption(
-                'revisado', 'Revisado', const Color(0xFF6B7280), postulacionId),
+                'revisado', 'Revisado', const Color(0xFF6B7280), postulacion),
             _buildStatusOption(
-                'aceptado', 'Aceptado', const Color(0xFF22C55E), postulacionId),
+                'aceptado', 'Aceptado', const Color(0xFF22C55E), postulacion),
             _buildStatusOption('rechazado', 'Rechazado',
-                const Color(0xFFEF4444), postulacionId),
+                const Color(0xFFEF4444), postulacion),
             SizedBox(height: MediaQuery.of(context).padding.bottom + 10),
           ],
         ),
@@ -1159,7 +1625,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
   }
 
   Widget _buildStatusOption(
-      String status, String label, Color color, String postulacionId) {
+      String status, String label, Color color, Map<String, dynamic> postulacion) {
     final scale = _scaleFactor(context);
 
     return ListTile(
@@ -1178,7 +1644,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
           )),
       onTap: () {
         Navigator.pop(context);
-        _updatePostulacionStatus(postulacionId, status);
+        _updatePostulacionStatus(postulacion, status);
       },
     );
   }
@@ -1194,6 +1660,8 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final age = _calculateAge(jugador?['birthday']);
     final photoUrl = jugador?['photo_url'];
     final mensaje = postulacion['mensaje'] ?? '';
+    final latestVideoUrl =
+        postulacion['latest_video']?['video_url']?.toString().trim() ?? '';
 
     String initials = '';
     if (name.isNotEmpty) initials += name[0].toUpperCase();
@@ -1342,6 +1810,31 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                         ),
                       ),
                     ],
+                    if (latestVideoUrl.isNotEmpty) ...[
+                      SizedBox(height: 24 * scale),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _openVideo(latestVideoUrl),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0D3B66),
+                            padding: EdgeInsets.symmetric(vertical: 14 * scale),
+                          ),
+                          icon: const Icon(
+                            Icons.play_circle_outline,
+                            color: Colors.white,
+                          ),
+                          label: Text(
+                            'Ver video enviado',
+                            style: GoogleFonts.inter(
+                              fontSize: 14 * scale,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1360,8 +1853,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                     child: OutlinedButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        _updatePostulacionStatus(
-                            postulacion['id'].toString(), 'rechazado');
+                        _updatePostulacionStatus(postulacion, 'rechazado');
                       },
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Colors.red),
@@ -1381,8 +1873,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                     child: ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        _updatePostulacionStatus(
-                            postulacion['id'].toString(), 'aceptado');
+                        _updatePostulacionStatus(postulacion, 'aceptado');
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF22C55E),

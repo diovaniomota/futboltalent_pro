@@ -2,6 +2,7 @@ import '/backend/supabase/supabase.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/fluxo_profesional/explorar/explorar_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import 'package:flutter/material.dart';
@@ -183,6 +184,8 @@ class _ConvocatoriaProfesionalWidgetState
 
   @override
   Widget build(BuildContext context) {
+    return const ExplorarWidget(initialScoutTab: 'convocatorias');
+
     final userType = context.watch<FFAppState>().userType;
     final convocatoriasEnabled = FFAppState().isFeatureEnabled('convocatorias');
     final hasConvocatoriasAccess =
@@ -217,7 +220,7 @@ class _ConvocatoriaProfesionalWidgetState
             child: PlanPaywallCard(
               title: 'Convocatorias en el Plan Pro',
               message:
-                  'Esse acesso fica disponível apenas no Plano Pro. Com o modo piloto ligado, o bloqueio deixa de valer.',
+                  'Este acceso está disponible solo en el Plan Pro. Si el modo piloto está activo, el bloqueo se desactiva automáticamente.',
             ),
           ),
         ),

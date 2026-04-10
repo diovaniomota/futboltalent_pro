@@ -605,31 +605,188 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                 style: GoogleFonts.inter(
                     fontSize: 12,
                     color: const Color(0xFF334155),
-                    fontWeight: FontWeight.w600)))
+                fontWeight: FontWeight.w600)))
       ]));
 
+  Widget _buildProfessionalSummaryCard() {
+    final club = _userData?['club']?.toString().trim() ?? '';
+    final phone = _userData?['telephone']?.toString().trim() ?? '';
+    final url = _userData?['url_profesional']?.toString().trim() ?? '';
+    final dni = _userData?['dni']?.toString().trim() ?? '';
+    final city = _userData?['city']?.toString().trim() ?? '';
+    final country =
+        (_userData?['country'] ?? _userData?['pais'])?.toString().trim() ?? '';
+    final bio =
+        (_userData?['bio'] ?? _userData?['descripcion'])?.toString().trim() ?? '';
+
+    final entries = <Map<String, dynamic>>[
+      if (club.isNotEmpty)
+        {
+          'icon': Icons.apartment_rounded,
+          'label': 'Organización',
+          'value': club,
+        },
+      if (phone.isNotEmpty)
+        {
+          'icon': Icons.call_outlined,
+          'label': 'Teléfono',
+          'value': phone,
+        },
+      if (url.isNotEmpty)
+        {
+          'icon': Icons.language_rounded,
+          'label': 'Link profesional',
+          'value': url,
+        },
+      if (dni.isNotEmpty)
+        {
+          'icon': Icons.badge_outlined,
+          'label': 'Documento',
+          'value': dni,
+        },
+      if (city.isNotEmpty || country.isNotEmpty)
+        {
+          'icon': Icons.location_on_outlined,
+          'label': 'Ubicación',
+          'value': [if (city.isNotEmpty) city, if (country.isNotEmpty) country]
+              .join(' · '),
+        },
+    ];
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Ficha profesional',
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF0D3B66),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (bio.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                bio,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  height: 1.4,
+                  color: const Color(0xFF334155),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          if (entries.isEmpty)
+            Text(
+              'Completá tu perfil para mostrar tu experiencia de scouting acá.',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: const Color(0xFF64748B),
+                fontWeight: FontWeight.w600,
+              ),
+            )
+          else
+            ...entries.map((entry) => _buildProfessionalSummaryTile(
+                  entry['icon'] as IconData,
+                  entry['label'] as String,
+                  entry['value'] as String,
+                )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfessionalSummaryTile(
+    IconData icon,
+    String label,
+    String value,
+  ) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF0D3B66)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$label: $value',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: const Color(0xFF334155),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildScoutingHistoryTab() {
-    if (_scoutHistory.isEmpty) {
-      return Padding(
-        key: const ValueKey('scouting_history_empty'),
-        padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
-        child: Center(
-            child:
-                Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.people_outline, size: 64, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          const Text('No hay historial de scouting',
-              style: TextStyle(color: Colors.grey))
-        ])),
-      );
-    }
-    return ListView.builder(
-        key: const ValueKey('scouting_history_list'),
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        itemCount: _scoutHistory.length,
-        itemBuilder: (ctx, i) => _card(_scoutHistory[i]));
+    final historyList = _scoutHistory.isEmpty
+        ? Padding(
+            key: const ValueKey('scouting_history_empty'),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.people_outline, size: 64, color: Colors.grey[300]),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Todavía no agregaste jugadores a tu historial.',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          )
+        : ListView.builder(
+            key: const ValueKey('scouting_history_list'),
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            itemCount: _scoutHistory.length,
+            itemBuilder: (ctx, i) => _card(_scoutHistory[i]),
+          );
+
+    return Column(
+      key: const ValueKey('scouting_history_content'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildProfessionalSummaryCard(),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          child: Text(
+            'Jugadores observados',
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF0D3B66),
+            ),
+          ),
+        ),
+        historyList,
+      ],
+    );
   }
 
   Widget _card(Map<String, dynamic> item) {

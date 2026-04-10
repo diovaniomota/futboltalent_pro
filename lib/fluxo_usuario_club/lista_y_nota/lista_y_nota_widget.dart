@@ -1,5 +1,6 @@
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
+import '/fluxo_compartilhado/club_identity_utils.dart';
 import 'package:flutter/material.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
@@ -24,6 +25,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   bool _isLoading = true;
   String? _clubId;
   String? _clubName;
+  Set<String> _clubRefs = <String>{};
 
   List<Map<String, dynamic>> _listas = [];
   Map<String, dynamic>? _selectedLista;
@@ -105,25 +107,20 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     return initials.isEmpty ? '?' : initials;
   }
 
+  List<String> _clubRefsForQueries() {
+    final refs = <String>{
+      if (_clubId != null && _clubId!.trim().isNotEmpty) _clubId!.trim(),
+      ..._clubRefs.map((ref) => ref.trim()).where((ref) => ref.isNotEmpty),
+      if (currentUserUid.isNotEmpty) currentUserUid.trim(),
+    };
+    return refs.toList();
+  }
+
   // ============ DATA LOADING ============
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
-    _clubId = currentUserUid;
-
-    // Carregar nome do club (não bloqueia o resto se falhar)
-    try {
-      final clubResponse = await SupaFlow.client
-          .from('clubs')
-          .select('nombre')
-          .eq('owner_id', _clubId!)
-          .maybeSingle();
-      if (clubResponse != null && clubResponse['nombre'] != null) {
-        _clubName = clubResponse['nombre'];
-      }
-    } catch (e) {
-      debugPrint('Club name not found: $e');
-    }
+    await _resolveClubContext();
 
     // Carregar listas
     if (_clubId != null && _clubId!.isNotEmpty) {
@@ -137,14 +134,72 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     if (mounted) setState(() => _isLoading = false);
   }
 
+  Future<void> _resolveClubContext() async {
+    final authUid = currentUserUid;
+    _clubRefs = await resolveClubRefsForUser(authUid);
+    if (_clubRefs.isEmpty && authUid.isNotEmpty) {
+      _clubRefs = {authUid};
+    }
+    final club = await resolveCurrentClubForUser(authUid);
+    _clubId = club?['id']?.toString().trim().isNotEmpty == true
+        ? club!['id'].toString().trim()
+        : (authUid.isNotEmpty ? authUid : null);
+    if (_clubId != null && _clubId!.isNotEmpty) {
+      _clubRefs.add(_clubId!);
+    }
+    _clubName = firstNonEmptyClubValue([
+      club?['nombre'],
+      club?['name'],
+      club?['club_name'],
+      'Mi Club',
+    ]);
+  }
+
   Future<void> _loadListas() async {
     try {
-      final response = await SupaFlow.client
-          .from('listas_club')
-          .select()
-          .eq('club_id', _clubId!)
-          .order('created_at', ascending: false);
-      _listas = List<Map<String, dynamic>>.from(response);
+      final refs = _clubRefsForQueries();
+      final merged = <String, Map<String, dynamic>>{};
+
+      Future<void> collectRows(List<String> queryRefs) async {
+        if (queryRefs.isEmpty) return;
+        final response = queryRefs.length == 1
+            ? await SupaFlow.client
+                .from('listas_club')
+                .select()
+                .eq('club_id', queryRefs.first)
+                .order('created_at', ascending: false)
+            : await SupaFlow.client
+                .from('listas_club')
+                .select()
+                .inFilter('club_id', queryRefs)
+                .order('created_at', ascending: false);
+
+        for (final row in List<Map<String, dynamic>>.from(response)) {
+          final id = row['id']?.toString() ?? '';
+          if (id.isEmpty) continue;
+          merged[id] = row;
+        }
+      }
+
+      try {
+        await collectRows(refs);
+      } catch (_) {
+        for (final ref in refs) {
+          try {
+            await collectRows([ref]);
+          } catch (_) {}
+        }
+      }
+
+      _listas = merged.values.toList()
+        ..sort((a, b) {
+          final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '');
+          final bDate = DateTime.tryParse(b['created_at']?.toString() ?? '');
+          if (aDate == null && bDate == null) return 0;
+          if (aDate == null) return 1;
+          if (bDate == null) return -1;
+          return bDate.compareTo(aDate);
+        });
 
       for (var lista in _listas) {
         try {
@@ -164,8 +219,19 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
             _listas.where((l) => l['id'] == _selectedLista!['id']).toList();
         if (updated.isNotEmpty) {
           _selectedLista = updated.first;
+        } else {
+          _selectedLista = null;
         }
+      }
+
+      if (_selectedLista != null) {
         await _loadJugadoresEnLista(_selectedLista!['id'].toString());
+      } else if (_listas.isNotEmpty) {
+        _selectedLista = _listas.first;
+        await _loadJugadoresEnLista(_selectedLista!['id'].toString());
+      } else {
+        _jugadoresEnLista = [];
+        _filteredJugadores = [];
       }
     } catch (e) {
       debugPrint('❌ Error cargando listas: $e');
@@ -228,14 +294,21 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchCandidatePlayersForClub() async {
-    if (_clubId == null || _clubId!.isEmpty) return [];
+    final clubRefs = _clubRefsForQueries();
+    if (clubRefs.isEmpty) return [];
 
     try {
-      final convocatoriasResponse = await SupaFlow.client
-          .from('convocatorias')
-          .select('id')
-          .eq('club_id', _clubId!)
-          .limit(250);
+      final convocatoriasResponse = clubRefs.length == 1
+          ? await SupaFlow.client
+              .from('convocatorias')
+              .select('id')
+              .eq('club_id', clubRefs.first)
+              .limit(250)
+          : await SupaFlow.client
+              .from('convocatorias')
+              .select('id')
+              .inFilter('club_id', clubRefs)
+              .limit(250);
       final convocatoriaIds = (convocatoriasResponse as List)
           .map((row) => row['id']?.toString() ?? '')
           .where((id) => id.isNotEmpty)
@@ -299,7 +372,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchSavedPlayersForClub() async {
-    if (_clubId == null || _clubId!.isEmpty) return [];
+    final clubRefs = _clubRefsForQueries();
+    if (clubRefs.isEmpty) return [];
 
     try {
       final ids = <String>{};
@@ -308,7 +382,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
         final saved = await SupaFlow.client
             .from('jugadores_guardados')
             .select('jugador_id')
-            .eq('scout_id', _clubId!)
+            .eq('scout_id', currentUserUid)
             .limit(600);
         for (final row in (saved as List)) {
           final id = row['jugador_id']?.toString() ?? '';
@@ -317,11 +391,17 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
       } catch (_) {}
 
       try {
-        final saved = await SupaFlow.client
-            .from('jugadores_guardados')
-            .select('jugador_id')
-            .eq('club_id', _clubId!)
-            .limit(600);
+        final saved = clubRefs.length == 1
+            ? await SupaFlow.client
+                .from('jugadores_guardados')
+                .select('jugador_id')
+                .eq('club_id', clubRefs.first)
+                .limit(600)
+            : await SupaFlow.client
+                .from('jugadores_guardados')
+                .select('jugador_id')
+                .inFilter('club_id', clubRefs)
+                .limit(600);
         for (final row in (saved as List)) {
           final id = row['jugador_id']?.toString() ?? '';
           if (id.isNotEmpty) ids.add(id);
@@ -529,51 +609,56 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                   width: double.infinity,
                   height: double.infinity,
                   color: Colors.white,
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.all(padding),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                            maxWidth: maxContentWidth == double.infinity
-                                ? double.infinity
-                                : maxContentWidth),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildHeader(context),
-                            if (_clubName != null) ...[
-                              const SizedBox(height: 8),
-                              Text('Club: $_clubName',
-                                  style: GoogleFonts.inter(
-                                      fontSize: 14, color: Colors.grey[600])),
-                            ],
-                            SizedBox(height: 16 * scale),
-                            _buildActionButtons(context),
-                            SizedBox(height: 24 * scale),
-                            if (_isLargeScreen(context))
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                      flex: 1,
-                                      child: _buildMisListasCard(context)),
-                                  SizedBox(width: 24 * scale),
-                                  Expanded(
-                                      flex: 2,
-                                      child: _selectedLista != null
-                                          ? _buildSelectedListaCard(context)
-                                          : _buildEmptyListaPlaceholder(
-                                              context)),
-                                ],
-                              )
-                            else ...[
-                              _buildMisListasCard(context),
+                  child: RefreshIndicator(
+                    color: const Color(0xFF0D3B66),
+                    onRefresh: _loadData,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: EdgeInsets.all(padding),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                              maxWidth: maxContentWidth == double.infinity
+                                  ? double.infinity
+                                  : maxContentWidth),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildHeader(context),
+                              if (_clubName != null) ...[
+                                const SizedBox(height: 8),
+                                Text('Club: $_clubName',
+                                    style: GoogleFonts.inter(
+                                        fontSize: 14, color: Colors.grey[600])),
+                              ],
+                              SizedBox(height: 16 * scale),
+                              _buildActionButtons(context),
                               SizedBox(height: 24 * scale),
-                              if (_selectedLista != null)
-                                _buildSelectedListaCard(context),
+                              if (_isLargeScreen(context))
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                        flex: 1,
+                                        child: _buildMisListasCard(context)),
+                                    SizedBox(width: 24 * scale),
+                                    Expanded(
+                                        flex: 2,
+                                        child: _selectedLista != null
+                                            ? _buildSelectedListaCard(context)
+                                            : _buildEmptyListaPlaceholder(
+                                                context)),
+                                  ],
+                                )
+                              else ...[
+                                _buildMisListasCard(context),
+                                SizedBox(height: 24 * scale),
+                                if (_selectedLista != null)
+                                  _buildSelectedListaCard(context),
+                              ],
+                              SizedBox(height: 32 * scale),
                             ],
-                            SizedBox(height: 32 * scale),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -688,7 +773,10 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           Center(
               child: Padding(
                   padding: EdgeInsets.all(24 * scale),
-                  child: Text('No hay listas creadas',
+                  child: Text(
+                      _clubName != null && _clubName!.trim().isNotEmpty
+                          ? 'Todavía no hay listas creadas para $_clubName'
+                          : 'Todavía no hay listas creadas',
                       style: GoogleFonts.inter(
                           fontSize: 14 * scale, color: Colors.grey))))
         else
@@ -922,9 +1010,23 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
               _buildTextField(ctx, 'Descripción', descCtrl, maxLines: 3),
             ], () async {
               if (nombreCtrl.text.isEmpty) return;
+              final primaryClubRef = _clubId?.trim().isNotEmpty == true
+                  ? _clubId!.trim()
+                  : (currentUserUid.isNotEmpty ? currentUserUid.trim() : '');
+              if (primaryClubRef.isEmpty) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('No se pudo identificar el club.'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+                return;
+              }
               final inserted =
                   await SupaFlow.client.from('listas_club').insert({
-                'club_id': _clubId,
+                'club_id': primaryClubRef,
                 'nombre': nombreCtrl.text,
                 'descripcion': descCtrl.text,
                 'created_at': DateTime.now().toIso8601String()
@@ -1115,7 +1217,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                   Padding(
                     padding: const EdgeInsets.only(top: 10),
                     child: Text(
-                      'Sem resultados para esta origem de busca.',
+                      'Sin resultados para este origen de búsqueda.',
                       style: TextStyle(color: Colors.grey[600], fontSize: 12),
                     ),
                   ),

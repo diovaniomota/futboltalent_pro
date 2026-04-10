@@ -155,14 +155,24 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
           name: CursosEjerciciosWidget.routeName,
           path: CursosEjerciciosWidget.routePath,
           builder: (context, params) => CursosEjerciciosWidget(
-            initialChallengeId: params.getParam(
-              'challengeId',
-              ParamType.String,
-            ),
-            initialChallengeType: params.getParam(
-              'challengeType',
-              ParamType.String,
-            ),
+            initialChallengeId:
+                params.getParam(
+                  'challengeId',
+                  ParamType.String,
+                ) ??
+                params.getParam(
+                  'initialChallengeId',
+                  ParamType.String,
+                ),
+            initialChallengeType:
+                params.getParam(
+                  'challengeType',
+                  ParamType.String,
+                ) ??
+                params.getParam(
+                  'initialChallengeType',
+                  ParamType.String,
+                ),
           ),
         ),
         FFRoute(
@@ -183,7 +193,12 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: ExplorarWidget.routeName,
           path: ExplorarWidget.routePath,
-          builder: (context, params) => ExplorarWidget(),
+          builder: (context, params) => ExplorarWidget(
+            initialScoutTab: params.getParam(
+              'initialScoutTab',
+              ParamType.String,
+            ),
+          ),
         ),
         FFRoute(
           name: ListaYNotasWidget.routeName,
@@ -193,7 +208,9 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: ConvocatoriaProfesionalWidget.routeName,
           path: ConvocatoriaProfesionalWidget.routePath,
-          builder: (context, params) => ConvocatoriaProfesionalWidget(),
+          builder: (context, params) => const ExplorarWidget(
+            initialScoutTab: 'convocatorias',
+          ),
         ),
         FFRoute(
           name: DetallesDeLaConvocatoriaProfesionalWidget.routeName,

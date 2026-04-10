@@ -1,5 +1,7 @@
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
+import '/fluxo_compartilhado/club_identity_utils.dart';
+import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
 import 'package:flutter/material.dart';
@@ -31,11 +33,14 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
 
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _isEditingClubProfile = false;
   Map<String, dynamic>? _clubData;
+  Map<String, dynamic>? _currentUserData;
   List<Map<String, dynamic>> _staffMembers = [];
   String? _logoUrl;
   String? _clubId;
   String? _currentUserId;
+  Set<String> _clubRefs = <String>{};
 
   int _convocatoriasActivas = 0;
   int _maxConvocatorias = 20;
@@ -94,6 +99,119 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     }
   }
 
+  String _firstNonEmptyText(Iterable<dynamic> values, {String fallback = ''}) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        return text;
+      }
+    }
+    return fallback;
+  }
+
+  Map<String, dynamic> _mergeClubWithUserFallback(
+    Map<String, dynamic>? club,
+    Map<String, dynamic>? user,
+  ) {
+    final merged = <String, dynamic>{...?club};
+
+    merged['id'] = _firstNonEmptyText([
+      club?['id'],
+    ]);
+    merged['owner_id'] = _firstNonEmptyText([
+      club?['owner_id'],
+      user?['user_id'],
+      _currentUserId,
+    ]);
+    merged['user_id'] = _firstNonEmptyText([
+      club?['user_id'],
+      user?['user_id'],
+      _currentUserId,
+    ]);
+    merged['nombre'] = _firstNonEmptyText([
+      club?['nombre'],
+      club?['name'],
+      club?['club_name'],
+      user?['club_name'],
+      user?['name'],
+      'Mi Club',
+    ]);
+    merged['nombre_corto'] = _firstNonEmptyText([
+      club?['nombre_corto'],
+      user?['nombre_corto'],
+      user?['short_name'],
+    ]);
+    merged['pais'] = _firstNonEmptyText([
+      club?['pais'],
+      club?['country'],
+      user?['pais'],
+      user?['country'],
+      user?['country_name'],
+    ]);
+    merged['liga'] = _firstNonEmptyText([
+      club?['liga'],
+      user?['liga'],
+      user?['league'],
+      user?['organization'],
+    ]);
+    merged['descripcion'] = _firstNonEmptyText([
+      club?['descripcion'],
+      club?['description'],
+      user?['descripcion'],
+      user?['bio'],
+      user?['description'],
+    ]);
+    merged['sitio_web'] = _firstNonEmptyText([
+      club?['sitio_web'],
+      club?['website'],
+      user?['sitio_web'],
+      user?['website'],
+      user?['web'],
+    ]);
+    merged['logo_url'] = _firstNonEmptyText([
+      club?['logo_url'],
+      user?['logo_url'],
+      user?['photo_url'],
+      user?['avatar_url'],
+    ]);
+
+    return merged;
+  }
+
+  void _populateClubControllers(Map<String, dynamic>? clubData) {
+    _nombreController.text = _firstNonEmptyText([
+      clubData?['nombre'],
+      clubData?['name'],
+    ]);
+    _nombreCortoController.text = _firstNonEmptyText([
+      clubData?['nombre_corto'],
+    ]);
+    _paisController.text = _firstNonEmptyText([
+      clubData?['pais'],
+      clubData?['country'],
+    ]);
+    _ligaController.text = _firstNonEmptyText([
+      clubData?['liga'],
+      clubData?['league'],
+    ]);
+    _descripcionController.text = _firstNonEmptyText([
+      clubData?['descripcion'],
+      clubData?['bio'],
+      clubData?['description'],
+    ]);
+    _sitioWebController.text = _firstNonEmptyText([
+      clubData?['sitio_web'],
+      clubData?['website'],
+      clubData?['web'],
+    ]);
+    final logoUrl = _firstNonEmptyText([
+      clubData?['logo_url'],
+      clubData?['photo_url'],
+      clubData?['avatar_url'],
+    ]);
+    _logoUrl = logoUrl.isEmpty ? null : logoUrl;
+  }
+
   // ============ DATA LOADING ============
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
@@ -105,12 +223,18 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         return;
       }
 
-      // Buscar o club pelo owner_id (auth UID)
-      var clubResponse = await SupaFlow.client
-          .from('clubs')
-          .select()
-          .eq('owner_id', _currentUserId!)
-          .maybeSingle();
+      try {
+        _currentUserData = await SupaFlow.client
+            .from('users')
+            .select()
+            .eq('user_id', _currentUserId!)
+            .maybeSingle();
+      } catch (_) {
+        _currentUserData = null;
+      }
+
+      _clubRefs = await resolveClubRefsForUser(_currentUserId!);
+      var clubResponse = await resolveCurrentClubForUser(_currentUserId!);
 
       // Se não encontrou, criar um club básico para este usuário
       if (clubResponse == null) {
@@ -130,31 +254,24 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
             'updated_at': DateTime.now().toIso8601String(),
           });
 
-          clubResponse = await SupaFlow.client
-              .from('clubs')
-              .select()
-              .eq('owner_id', _currentUserId!)
-              .maybeSingle();
+          clubResponse = await resolveCurrentClubForUser(_currentUserId!);
+          _clubRefs = await resolveClubRefsForUser(_currentUserId!);
         } catch (e) {
           debugPrint('Error creando club: $e');
         }
       }
 
-      if (clubResponse != null) {
-        _clubData = clubResponse;
-        _clubId = clubResponse['id']?.toString();
-        _nombreController.text = clubResponse['nombre'] ?? '';
-        _nombreCortoController.text = clubResponse['nombre_corto'] ?? '';
-        _paisController.text = clubResponse['pais'] ?? '';
-        _ligaController.text = clubResponse['liga'] ?? '';
-        _descripcionController.text = clubResponse['descripcion'] ?? '';
-        _sitioWebController.text = clubResponse['sitio_web'] ?? '';
-        _logoUrl = clubResponse['logo_url'];
+      final mergedClub = _mergeClubWithUserFallback(clubResponse, _currentUserData);
+      if (mergedClub.isNotEmpty) {
+        _clubData = mergedClub;
+        _clubId = _firstNonEmptyText([
+          mergedClub['id'],
+        ]);
+        _populateClubControllers(mergedClub);
 
-        // Stats usam auth UID (como convocatorias/listas usam auth UID como club_id)
-        await _loadStats(_currentUserId!);
+        await _loadStats();
         // Staff usa o ID real do club na tabela clubs
-        if (_clubId != null) {
+        if (_clubId != null && _clubId!.isNotEmpty) {
           await _loadStaff(_clubId!);
         }
       }
@@ -192,14 +309,26 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _loadStats(String authUid) async {
+  Future<void> _loadStats() async {
     try {
-      // Convocatorias usam auth UID como club_id
-      final convocatoriasResponse = await SupaFlow.client
-          .from('convocatorias')
-          .select('id')
-          .eq('club_id', authUid)
-          .eq('is_active', true);
+      if (_clubRefs.isEmpty && _currentUserId != null && _currentUserId!.isNotEmpty) {
+        _clubRefs = await resolveClubRefsForUser(_currentUserId!);
+      }
+      if (_clubRefs.isEmpty && _currentUserId != null && _currentUserId!.isNotEmpty) {
+        _clubRefs = {_currentUserId!};
+      }
+
+      final convocatoriasResponse = _clubRefs.length == 1
+          ? await SupaFlow.client
+              .from('convocatorias')
+              .select('id')
+              .eq('club_id', _clubRefs.first)
+              .eq('is_active', true)
+          : await SupaFlow.client
+              .from('convocatorias')
+              .select('id')
+              .inFilter('club_id', _clubRefs.toList())
+              .eq('is_active', true);
 
       // Limites vêm do registro do club (usa _clubData que já foi carregado)
       if (mounted) {
@@ -220,16 +349,60 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     if (_clubData == null) return;
     setState(() => _isSaving = true);
     try {
-      await SupaFlow.client.from('clubs').update({
+      final updatedAt = DateTime.now().toIso8601String();
+      final payload = {
         'nombre': _nombreController.text.trim(),
         'nombre_corto': _nombreCortoController.text.trim(),
         'pais': _paisController.text.trim(),
         'liga': _ligaController.text.trim(),
         'descripcion': _descripcionController.text.trim(),
         'sitio_web': _sitioWebController.text.trim(),
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', _clubData!['id']);
+        'updated_at': updatedAt,
+      };
+      final currentClubId = _clubData?['id']?.toString().trim() ?? '';
+
+      Map<String, dynamic>? persistedClub;
+      if (currentClubId.isNotEmpty) {
+        await SupaFlow.client.from('clubs').update(payload).eq('id', currentClubId);
+        persistedClub = {
+          ...?_clubData,
+          ...payload,
+          'id': currentClubId,
+        };
+      } else {
+        final inserted = await SupaFlow.client.from('clubs').insert({
+          ...payload,
+          'owner_id': _firstNonEmptyText([
+            _clubData?['owner_id'],
+            _currentUserId,
+          ]),
+          'user_id': _firstNonEmptyText([
+            _clubData?['user_id'],
+            _currentUserId,
+          ]),
+          'is_active': true,
+          'created_at': updatedAt,
+        }).select().maybeSingle();
+        persistedClub = inserted == null
+            ? {
+                ...?_clubData,
+                ...payload,
+              }
+            : Map<String, dynamic>.from(inserted);
+        _clubRefs = await resolveClubRefsForUser(_currentUserId ?? '');
+      }
+
+      _clubData = _mergeClubWithUserFallback(persistedClub, _currentUserData);
+      _clubId = _firstNonEmptyText([_clubData?['id']]);
+      _populateClubControllers(_clubData);
+      await _loadStats();
+      if (_clubId != null && _clubId!.isNotEmpty) {
+        await _loadStaff(_clubId!);
+      }
       if (mounted) {
+        setState(() {
+          _isEditingClubProfile = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Cambios guardados'), backgroundColor: Colors.green));
       }
@@ -624,51 +797,122 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                             children: [
                               _buildHeader(context),
                               SizedBox(height: 24 * scale),
-                              if (_isLargeScreen(context))
-                                Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                          flex: 3,
-                                          child:
-                                              _buildClubInfoSection(context)),
-                                      SizedBox(width: 24 * scale),
-                                      Expanded(
-                                          flex: 2,
-                                          child: Column(children: [
-                                            _buildStaffSection(context),
-                                            SizedBox(height: 24 * scale),
-                                            _buildAccountStatusSection(context)
-                                          ])),
-                                    ])
-                              else ...[
+                              _buildClubProfileSummarySection(context),
+                              SizedBox(height: 24 * scale),
+                              if (_isEditingClubProfile) ...[
                                 _buildClubInfoSection(context),
                                 SizedBox(height: 24 * scale),
+                              ],
+                              if (_isLargeScreen(context))
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(child: _buildStaffSection(context)),
+                                    SizedBox(width: 24 * scale),
+                                    Expanded(
+                                        child:
+                                            _buildAccountStatusSection(context)),
+                                  ],
+                                )
+                              else ...[
                                 _buildStaffSection(context),
                                 SizedBox(height: 24 * scale),
                                 _buildAccountStatusSection(context),
                               ],
                               SizedBox(height: 24 * scale),
-                              SizedBox(
-                                  width: double.infinity,
-                                  height: 50 * scale,
-                                  child: ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                          backgroundColor:
-                                              const Color(0xFF0D3B66),
-                                          shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8))),
-                                      onPressed:
-                                          _isSaving ? null : _saveChanges,
-                                      child: _isSaving
-                                          ? const CircularProgressIndicator(
-                                              color: Colors.white)
-                                          : Text('Guardar Cambios',
-                                              style: GoogleFonts.inter(
-                                                  fontSize: 16 * scale,
-                                                  color: Colors.white)))),
+                              _isMediumScreen(context)
+                                  ? Wrap(
+                                      spacing: 12 * scale,
+                                      runSpacing: 12 * scale,
+                                      children: [
+                                        if (_clubData != null)
+                                          SizedBox(
+                                            width: 220 * scale,
+                                            child: SizedBox(
+                                              height: 50 * scale,
+                                              child: _buildPublicProfileButton(
+                                                context,
+                                                scale,
+                                              ),
+                                            ),
+                                          ),
+                                        if (!_isEditingClubProfile)
+                                          SizedBox(
+                                            width: 220 * scale,
+                                            child: SizedBox(
+                                              height: 50 * scale,
+                                              child: _buildEditClubButton(
+                                                context,
+                                                scale,
+                                              ),
+                                            ),
+                                          ),
+                                        if (_isEditingClubProfile) ...[
+                                          SizedBox(
+                                            width: 190 * scale,
+                                            child: SizedBox(
+                                              height: 50 * scale,
+                                              child:
+                                                  _buildCancelEditClubButton(
+                                                context,
+                                                scale,
+                                              ),
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            width: 220 * scale,
+                                            child: SizedBox(
+                                              height: 50 * scale,
+                                              child: _buildSaveClubButton(
+                                                context,
+                                                scale,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    )
+                                  : Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        if (_clubData != null)
+                                          SizedBox(
+                                            height: 50 * scale,
+                                            child: _buildPublicProfileButton(
+                                              context,
+                                              scale,
+                                            ),
+                                          ),
+                                        if (_clubData != null)
+                                          SizedBox(height: 12 * scale),
+                                        if (!_isEditingClubProfile)
+                                          SizedBox(
+                                            height: 50 * scale,
+                                            child: _buildEditClubButton(
+                                              context,
+                                              scale,
+                                            ),
+                                          ),
+                                        if (_isEditingClubProfile) ...[
+                                          SizedBox(
+                                            height: 50 * scale,
+                                            child: _buildCancelEditClubButton(
+                                              context,
+                                              scale,
+                                            ),
+                                          ),
+                                          SizedBox(height: 12 * scale),
+                                          SizedBox(
+                                            height: 50 * scale,
+                                            child: _buildSaveClubButton(
+                                              context,
+                                              scale,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
                               SizedBox(height: 32 * scale),
                             ]),
                       ),
@@ -699,6 +943,346 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     ]);
   }
 
+  Widget _buildPrimaryActionLabel(
+    String text,
+    BuildContext context, {
+    Color color = Colors.white,
+  }) {
+    final scale = _scaleFactor(context);
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        text,
+        maxLines: 1,
+        softWrap: false,
+        style: GoogleFonts.inter(
+          fontSize: 15 * scale,
+          color: color,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClubProfileSummarySection(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final clubName = _nombreController.text.trim().isNotEmpty
+        ? _nombreController.text.trim()
+        : (_clubData?['nombre']?.toString().trim().isNotEmpty ?? false)
+            ? _clubData!['nombre'].toString().trim()
+            : 'Mi Club';
+    final shortName = _nombreCortoController.text.trim();
+    final country = _paisController.text.trim();
+    final league = _ligaController.text.trim();
+    final description = _descripcionController.text.trim();
+    final site = _sitioWebController.text.trim();
+
+    Widget infoTile({
+      required IconData icon,
+      required String label,
+      required String value,
+    }) {
+      return Container(
+        padding: EdgeInsets.all(12 * scale),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 34 * scale,
+              height: 34 * scale,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F0FE),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 18 * scale, color: const Color(0xFF0D3B66)),
+            ),
+            SizedBox(width: 10 * scale),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: GoogleFonts.inter(
+                      fontSize: 12 * scale,
+                      color: const Color(0xFF64748B),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 3 * scale),
+                  Text(
+                    value.isEmpty ? 'Sin completar' : value,
+                    style: GoogleFonts.inter(
+                      fontSize: 13 * scale,
+                      color: const Color(0xFF0F172A),
+                      fontWeight:
+                          value.isEmpty ? FontWeight.w500 : FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: EdgeInsets.all(16 * scale),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: Colors.white,
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D0D3B66),
+            blurRadius: 16,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 74 * scale,
+                height: 74 * scale,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F0FE),
+                  borderRadius: BorderRadius.circular(18),
+                  image: _logoUrl != null
+                      ? DecorationImage(
+                          image: NetworkImage(_logoUrl!),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                ),
+                child: _logoUrl == null
+                    ? Icon(
+                        Icons.shield_outlined,
+                        color: const Color(0xFF0D3B66),
+                        size: 34 * scale,
+                      )
+                    : null,
+              ),
+              SizedBox(width: 14 * scale),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Perfil del club',
+                      style: GoogleFonts.inter(
+                        fontSize: 12 * scale,
+                        color: const Color(0xFF64748B),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 4 * scale),
+                    Text(
+                      clubName,
+                      style: GoogleFonts.inter(
+                        fontSize: 22 * scale,
+                        color: const Color(0xFF0F172A),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (shortName.isNotEmpty) ...[
+                      SizedBox(height: 4 * scale),
+                      Text(
+                        shortName,
+                        style: GoogleFonts.inter(
+                          fontSize: 13 * scale,
+                          color: const Color(0xFF475569),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                    SizedBox(height: 8 * scale),
+                    Wrap(
+                      spacing: 8 * scale,
+                      runSpacing: 8 * scale,
+                      children: [
+                        if (country.isNotEmpty)
+                          _buildInfoChip(country, scale),
+                        if (league.isNotEmpty) _buildInfoChip(league, scale),
+                        _buildInfoChip(
+                          'Plan ${(_clubData?['subscription_plan'] ?? 'free').toString()}',
+                          scale,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 16 * scale),
+          infoTile(
+            icon: Icons.public_rounded,
+            label: 'País',
+            value: country,
+          ),
+          SizedBox(height: 10 * scale),
+          infoTile(
+            icon: Icons.emoji_events_outlined,
+            label: 'Liga',
+            value: league,
+          ),
+          SizedBox(height: 10 * scale),
+          infoTile(
+            icon: Icons.language_rounded,
+            label: 'Sitio web',
+            value: site,
+          ),
+          SizedBox(height: 10 * scale),
+          infoTile(
+            icon: Icons.description_outlined,
+            label: 'Descripción',
+            value: description,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoChip(String text, double scale) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: 10 * scale,
+        vertical: 6 * scale,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.inter(
+          fontSize: 11.5 * scale,
+          color: const Color(0xFF334155),
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPublicProfileButton(BuildContext context, double scale) {
+    return OutlinedButton(
+      onPressed: () {
+        final clubRef = (_clubData!['id']?.toString().trim().isNotEmpty ?? false)
+            ? _clubData!['id'].toString().trim()
+            : (_clubData!['owner_id']?.toString().trim().isNotEmpty ?? false)
+                ? _clubData!['owner_id'].toString().trim()
+                : _currentUserId!;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => PerfilPublicoClubWidget(
+              clubRef: clubRef,
+              initialClubData: _clubData,
+            ),
+          ),
+        );
+      },
+      style: OutlinedButton.styleFrom(
+        side: const BorderSide(color: Color(0xFF0D3B66)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        padding: EdgeInsets.symmetric(
+          horizontal: 14 * scale,
+          vertical: 12 * scale,
+        ),
+      ),
+      child: _buildPrimaryActionLabel(
+        'Ver perfil público',
+        context,
+        color: const Color(0xFF0D3B66),
+      ),
+    );
+  }
+
+  Widget _buildEditClubButton(BuildContext context, double scale) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF0D3B66),
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        padding: EdgeInsets.symmetric(
+          horizontal: 14 * scale,
+          vertical: 12 * scale,
+        ),
+      ),
+      onPressed: () {
+        setState(() => _isEditingClubProfile = true);
+      },
+      icon: const Icon(Icons.edit_outlined),
+      label: _buildPrimaryActionLabel(
+        'Editar datos del club',
+        context,
+      ),
+    );
+  }
+
+  Widget _buildCancelEditClubButton(BuildContext context, double scale) {
+    return OutlinedButton(
+      onPressed: _isSaving
+          ? null
+          : () {
+              setState(() {
+                _isEditingClubProfile = false;
+                _populateClubControllers(_clubData);
+              });
+            },
+      style: OutlinedButton.styleFrom(
+        side: const BorderSide(color: Color(0xFF0D3B66)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        padding: EdgeInsets.symmetric(
+          horizontal: 14 * scale,
+          vertical: 12 * scale,
+        ),
+      ),
+      child: _buildPrimaryActionLabel(
+        'Cancelar edición',
+        context,
+        color: const Color(0xFF0D3B66),
+      ),
+    );
+  }
+
+  Widget _buildSaveClubButton(BuildContext context, double scale) {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF0D3B66),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        padding: EdgeInsets.symmetric(
+          horizontal: 14 * scale,
+          vertical: 12 * scale,
+        ),
+      ),
+      onPressed: _isSaving ? null : _saveChanges,
+      child: _isSaving
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2.2,
+              ),
+            )
+          : _buildPrimaryActionLabel(
+              'Guardar cambios',
+              context,
+            ),
+    );
+  }
+
   Widget _buildClubInfoSection(BuildContext context) {
     final scale = _scaleFactor(context);
     return Container(
@@ -708,9 +1292,9 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
           border: Border.all(color: Colors.grey[300]!)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          const Icon(Icons.shield_outlined),
+          const Icon(Icons.edit_outlined),
           const SizedBox(width: 8),
-          Text('Información del Club',
+          Text('Editar datos del club',
               style:
                   TextStyle(fontSize: 16 * scale, fontWeight: FontWeight.w500))
         ]),
@@ -755,7 +1339,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
           const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Escudo del Club',
                 style: TextStyle(fontWeight: FontWeight.w500)),
-            Text('Tap para subir',
+            Text('Toca para subir',
                 style: TextStyle(fontSize: 12, color: Colors.grey))
           ])
         ]));

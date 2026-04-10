@@ -1,5 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
@@ -1993,14 +1994,17 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   }
 
   Widget _buildHistorySection() {
-    final clubs = _userData?['clubs'] ?? _userData?['historial_clubes'];
+    final clubs = normalizeProfileHistory(
+      _userData?['clubs'] ?? _userData?['historial_clubes'],
+    );
 
-    if (clubs != null && clubs is List && clubs.isNotEmpty) {
+    if (clubs.isNotEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: clubs.map<Widget>((club) {
           final position = club['position'] ?? club['posicion'] ?? '';
           final note = club['note'] ?? club['nota'] ?? '';
+          final period = formatProfileHistoryPeriod(club);
           
           return Padding(
             padding: const EdgeInsets.only(bottom: 16),
@@ -2021,7 +2025,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                       ),
                     ),
                     Text(
-                      club['period'] ?? club['periodo'] ?? '',
+                      period,
                       style: GoogleFonts.inter(color: Colors.black, fontSize: 13, fontWeight: FontWeight.normal),
                     ),
                   ],

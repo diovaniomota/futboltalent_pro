@@ -249,8 +249,8 @@ class _DetallesDeLaConvocatoriaWidgetState
     context.pushNamed(
       'cursos_ejercicios',
       queryParameters: {
-        'initialChallengeId': serializeParam(challengeId, ParamType.String),
-        'initialChallengeType': serializeParam(challengeType, ParamType.String),
+        'challengeId': serializeParam(challengeId, ParamType.String),
+        'challengeType': serializeParam(challengeType, ParamType.String),
       }.withoutNulls,
     );
   }

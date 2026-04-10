@@ -168,9 +168,7 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
       .length;
 
   bool get _canSubmitApplication {
-    if (_requiredChallenges.isEmpty) return true;
-    if (currentUserUid.isEmpty) return true;
-    return _requiredChallenges.every(_isRequiredChallengeCompleted);
+    return true;
   }
 
   Future<void> _loadRequiredChallengesProgress() async {
@@ -233,17 +231,16 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
   }
 
   void _openRequiredChallenge(Map<String, dynamic> challenge) {
-    final challengeId = challenge['id']?.toString().trim() ?? '';
-    final challengeType =
-        challenge['type']?.toString().trim().toLowerCase() ?? '';
-    if (challengeId.isEmpty || challengeType.isEmpty) return;
-
-    context.pushNamed(
-      'cursos_ejercicios',
-      queryParameters: {
-        'initialChallengeId': serializeParam(challengeId, ParamType.String),
-        'initialChallengeType': serializeParam(challengeType, ParamType.String),
-      }.withoutNulls,
+    final title = challenge['title']?.toString().trim().isNotEmpty == true
+        ? challenge['title'].toString().trim()
+        : 'requisito';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '“$title” es un requisito para jugadores. Como scout, podés solicitar acceso sin completarlo.',
+        ),
+        backgroundColor: const Color(0xFF0D3B66),
+      ),
     );
   }
 
@@ -342,7 +339,7 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
                   const SizedBox(width: 10),
                   TextButton(
                     onPressed: () => _openRequiredChallenge(challenge),
-                    child: const Text('Abrir'),
+                    child: const Text('Ver requisito'),
                   ),
                 ],
               ),
@@ -359,8 +356,8 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
             ),
             child: Text(
               missingCount == 0
-                  ? 'Todo listo. Ya podés enviar tu postulación.'
-                  : 'Te faltan $missingCount desafío(s) para habilitar la postulación.',
+                  ? 'Como scout, ya podés solicitar acceso a esta convocatoria.'
+                  : 'Estos desafíos aplican al flujo del jugador. Como scout, podés solicitar acceso sin completarlos.',
               style: GoogleFonts.inter(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -385,7 +382,7 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Debes completar todos los desafíos requeridos antes de enviar tu postulación.',
+            'Esta convocatoria solo permite solicitud de acceso para scouts.',
           ),
           backgroundColor: Colors.orange,
         ),
@@ -718,7 +715,7 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
                                 Text(
                                     _hasApplied
                                         ? 'Solicitud Enviada'
-                                        : 'Quiero participar',
+                                        : 'Solicitar acceso',
                                     style: GoogleFonts.inter(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w600,

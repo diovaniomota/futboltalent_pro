@@ -87,8 +87,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
     try {
       final response = await SupaFlow.client
           .from('users')
-          .select(
-              'user_id, name, lastname, userType, plan_id, banned_until, photo_url, full_profile, is_test_account, verification_status, is_verified, city, country, pais, posicion, categoria, birthday, birth_date')
+          .select()
           .order('name', ascending: true);
 
       if (mounted) {
@@ -127,9 +126,15 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
       final normalizedType = FFAppState.normalizeUserType(user['userType']);
       final matchesType =
           _selectedFilter == 'todos' || normalizedType == _selectedFilter;
-      final name =
-          '${user['name'] ?? ''} ${user['lastname'] ?? ''}'.toLowerCase();
-      final matchesSearch = query.isEmpty || name.contains(query);
+      final searchable = [
+        user['name'],
+        user['lastname'],
+        user['username'],
+        user['city'],
+        user['country'],
+        user['pais'],
+      ].map((value) => value?.toString().toLowerCase() ?? '').join(' ');
+      final matchesSearch = query.isEmpty || searchable.contains(query);
       return matchesType && matchesSearch;
     }).toList();
   }
@@ -1264,74 +1269,79 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
               ),
           ],
         ),
-        subtitle: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: typeColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(typeLabel,
-                  style: TextStyle(color: typeColor, fontSize: 11)),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: planId == 2
-                    ? Colors.amber.withValues(alpha: 0.1)
-                    : Colors.grey.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                planLabel,
-                style: TextStyle(
-                  color: planId == 2 ? Colors.amber.shade800 : Colors.grey,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: hasFullCapabilities
-                    ? Colors.blue.withValues(alpha: 0.1)
-                    : Colors.grey.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                hasFullCapabilities ? 'FULL' : 'LIMITADO',
-                style: TextStyle(
-                  color: hasFullCapabilities ? Colors.blue : Colors.grey,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            if (userType == 'profesional') ...[
-              const SizedBox(width: 8),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: isVerified
-                      ? Colors.green.withValues(alpha: 0.1)
+                  color: typeColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(typeLabel,
+                    style: TextStyle(color: typeColor, fontSize: 11)),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: planId == 2
+                      ? Colors.amber.withValues(alpha: 0.1)
+                      : Colors.grey.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  planLabel,
+                  style: TextStyle(
+                    color: planId == 2 ? Colors.amber.shade800 : Colors.grey,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: hasFullCapabilities
+                      ? Colors.blue.withValues(alpha: 0.1)
                       : Colors.grey.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
-                  isVerified ? 'VERIFICADO' : 'NO VERIFICADO',
+                  hasFullCapabilities ? 'FULL' : 'LIMITADO',
                   style: TextStyle(
-                    color: isVerified ? Colors.green : Colors.grey,
+                    color: hasFullCapabilities ? Colors.blue : Colors.grey,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
+              if (userType == 'profesional')
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isVerified
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.grey.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    isVerified ? 'VERIFICADO' : 'NO VERIFICADO',
+                    style: TextStyle(
+                      color: isVerified ? Colors.green : Colors.grey,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
             ],
-          ],
+          ),
         ),
         trailing: PopupMenuButton<String>(
           onSelected: (value) {

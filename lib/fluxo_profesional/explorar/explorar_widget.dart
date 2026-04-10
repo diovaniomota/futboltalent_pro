@@ -52,10 +52,15 @@ void _openPublicClubProfile(
 }
 
 class ExplorarWidget extends StatefulWidget {
-  const ExplorarWidget({super.key});
+  const ExplorarWidget({
+    super.key,
+    this.initialScoutTab,
+  });
 
   static String routeName = 'Explorar';
   static String routePath = '/explorar';
+
+  final String? initialScoutTab;
 
   @override
   State<ExplorarWidget> createState() => _ExplorarWidgetState();
@@ -108,7 +113,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   String? _jugadorPlayerLevel;
   String? _jugadorConvocatoriaCategory;
   String? _jugadorConvocatoriaPosition;
-  String? _jugadorConvocatoriaCountry;
+  String? _jugadorConvocatoriaLocation;
   String? _jugadorClubCountry;
   String? _jugadorClubState;
   String? _jugadorClubCity;
@@ -129,16 +134,27 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   List<String> _realPlayerCities = [];
   List<String> _realPlayerLevels = [];
   List<String> _realClubCountries = [];
+  List<String> _realClubStates = [];
   List<String> _realClubCities = [];
   List<String> _realClubLeagues = [];
   List<String> _realConvocatoriaCategories = [];
   List<String> _realConvocatoriaPositions = [];
   List<String> _realConvocatoriaCountries = [];
+  List<String> _realConvocatoriaCities = [];
+  List<String> _realConvocatoriaLocations = [];
 
   @override
   void initState() {
     super.initState();
     _model = createModel(context, () => ExplorarModel());
+    final initialScoutTab = widget.initialScoutTab?.trim().toLowerCase();
+    if (initialScoutTab == 'convocatorias') {
+      _scoutTab = _ScoutTab.convocatorias;
+    } else if (initialScoutTab == 'clubes') {
+      _scoutTab = _ScoutTab.clubes;
+    } else if (initialScoutTab == 'jugadores') {
+      _scoutTab = _ScoutTab.jugadores;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
     _loadAll();
   }
@@ -184,8 +200,21 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
   Future<void> _loadRealFilterOptions() async {
     try {
-      final pRes = await SupaFlow.client.from('users').select('posicion, birthday, country, city, profile_completed').eq('userType', 'jugador').limit(3000);
-      final listP = List<Map<String, dynamic>>.from(pRes);
+      dynamic pRes;
+      try {
+        pRes = await SupaFlow.client
+            .from('users')
+            .select()
+            .eq('userType', 'jugador')
+            .limit(3000);
+      } catch (_) {
+        pRes = await SupaFlow.client
+            .from('users')
+            .select()
+            .eq('usertype', 'jugador')
+            .limit(3000);
+      }
+      final listP = List<Map<String, dynamic>>.from(pRes as List);
       _realPlayerPositions = _extractUniqueStrings(listP.map((u) => u['posicion']));
       _realPlayerCategories = _extractUniqueStrings(listP.map((u) => _categoryFromBirthday(u['birthday'])));
       _realPlayerCountries = _extractUniqueStrings(listP.map(_resolveCountryFromUser));
@@ -193,18 +222,30 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       _realPlayerLevels = _extractUniqueStrings(listP.map(_resolvePlayerLevel));
     } catch (_) {}
     try {
-      final cRes = await SupaFlow.client.from('clubs').select('country, state, city, league').limit(1500);
-      final listC = List<Map<String, dynamic>>.from(cRes);
+      final cRes =
+          await SupaFlow.client.from('clubs').select().limit(1500);
+      final listC = List<Map<String, dynamic>>.from(cRes as List);
       _realClubCountries = _extractUniqueStrings(listC.map(_resolveCountryFromClub));
+      _realClubStates = _extractUniqueStrings(listC.map(_resolveState));
       _realClubCities = _extractUniqueStrings(listC.map(_resolveCity));
       _realClubLeagues = _extractUniqueStrings(listC.map(_resolveClubLeague));
     } catch (_) {}
     try {
-      final convRes = await SupaFlow.client.from('convocatorias').select('category, country, city, state, posicion').eq('is_active', true).limit(1500);
-      final listConv = List<Map<String, dynamic>>.from(convRes);
+      final convRes = await SupaFlow.client
+          .from('convocatorias')
+          .select()
+          .eq('is_active', true)
+          .limit(1500);
+      final listConv = List<Map<String, dynamic>>.from(convRes as List);
       _realConvocatoriaCategories = _extractUniqueStrings(listConv.map(_resolveConvocatoriaCategory));
       _realConvocatoriaPositions = _extractUniqueStrings(listConv.map(_resolveConvocatoriaPosition));
-      _realConvocatoriaCountries = _extractUniqueStrings(listConv.map(_resolveConvocatoriaCountry));
+      _realConvocatoriaCountries =
+          _extractUniqueStrings(listConv.map(_resolveConvocatoriaCountry));
+      _realConvocatoriaCities =
+          _extractUniqueStrings(listConv.map(_resolveConvocatoriaCity));
+      _realConvocatoriaLocations = _extractUniqueStrings(
+        listConv.map(_resolveConvocatoriaLocationLabel),
+      );
     } catch (_) {}
   }
 
@@ -671,12 +712,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   List<String> _extractUniqueStrings(Iterable<dynamic> values) {
-    final set = <String>{};
+    final uniqueByKey = <String, String>{};
     for (final raw in values) {
-      final value = raw?.toString().trim() ?? '';
-      if (value.isNotEmpty) set.add(value);
+      final value =
+          raw?.toString().trim().replaceAll(RegExp(r'\s+'), ' ') ?? '';
+      if (value.isEmpty || value.toLowerCase() == 'null') continue;
+      uniqueByKey.putIfAbsent(value.toLowerCase(), () => value);
     }
-    final list = set.toList()..sort();
+    final list = uniqueByKey.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return list;
   }
 
@@ -797,6 +841,25 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     final fallbackLocation = convocatoria['ubicacion']?.toString().trim() ?? '';
     return fallbackLocation;
+  }
+
+  String _resolveConvocatoriaLocationLabel(Map<String, dynamic> convocatoria) {
+    final direct = _firstNonEmpty([
+      convocatoria['ubicacion'],
+      convocatoria['location'],
+      convocatoria['localidad'],
+      convocatoria['cidade'],
+    ]);
+    if (direct != null && direct.isNotEmpty) return direct;
+
+    final city = _resolveConvocatoriaCity(convocatoria);
+    final country = _resolveConvocatoriaCountry(convocatoria);
+    if (city.isNotEmpty && country.isNotEmpty) {
+      if (city.toLowerCase() == country.toLowerCase()) return city;
+      return '$city, $country';
+    }
+    if (city.isNotEmpty) return city;
+    return country;
   }
 
   String _resolveConvocatoriaCategory(Map<String, dynamic> convocatoria) {
@@ -1131,10 +1194,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           _jugadorConvocatoriaPosition!.toLowerCase());
     }
 
-    if (_jugadorConvocatoriaCountry != null) {
+    if (_jugadorConvocatoriaLocation != null) {
       filtered = filtered.where((conv) =>
-          _resolveConvocatoriaCountry(conv).toLowerCase() ==
-          _jugadorConvocatoriaCountry!.toLowerCase());
+          _resolveConvocatoriaLocationLabel(conv).toLowerCase() ==
+          _jugadorConvocatoriaLocation!.toLowerCase());
     }
 
     return filtered.toList();
@@ -1218,7 +1281,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     _jugadorPlayerLevel = null;
     _jugadorConvocatoriaCategory = null;
     _jugadorConvocatoriaPosition = null;
-    _jugadorConvocatoriaCountry = null;
+    _jugadorConvocatoriaLocation = null;
     _jugadorClubCountry = null;
     _jugadorClubState = null;
     _jugadorClubCity = null;
@@ -1264,7 +1327,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       case _JugadorSearchTab.convocatorias:
         return _jugadorConvocatoriaCategory != null ||
             _jugadorConvocatoriaPosition != null ||
-            _jugadorConvocatoriaCountry != null;
+            _jugadorConvocatoriaLocation != null;
       case _JugadorSearchTab.clubes:
         return _jugadorClubCountry != null ||
             _jugadorClubState != null ||
@@ -1367,7 +1430,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       _showUpsellDialog(
         title: 'Acción bloqueada',
         message:
-            'Para ver vídeos desde Explorer necesitas verificación o un plan activo.',
+            'Para ver videos desde Explorer necesitás verificación o un plan activo.',
       );
       return;
     }
@@ -1666,7 +1729,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     final clubLeagueOptions = _realClubLeagues;
     
     final convocatoriaCountryOptions = _realConvocatoriaCountries;
-    final convocatoriaCityOptions = _realConvocatoriaCountries; // City missing but fallback to countries/regions
+    final convocatoriaCityOptions = _realConvocatoriaCities;
     final convocatoriaCategoryOptions = _realConvocatoriaCategories;
     final convocatoriaPositionOptions = _realConvocatoriaPositions;
 
@@ -1699,19 +1762,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               ],
             ),
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildSearchBar(
-                    hint: _scoutTab == _ScoutTab.convocatorias
-                        ? 'Buscar convocatoria, país, ciudad, categoría...'
-                        : _scoutTab == _ScoutTab.clubes
-                            ? 'Buscar club, país, ciudad, liga...'
-                            : 'Buscar jugador, categoría, posición, país, ciudad...',
-                  ),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 430;
+                final filterButton = OutlinedButton.icon(
                   onPressed: () => _openScoutFilters(
                     playerPositionOptions: playerPositionOptions,
                     playerCategoryOptions: playerCategoryOptions,
@@ -1729,8 +1783,29 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   style: _explorerSecondaryButtonStyle(),
                   icon: const Icon(Icons.tune_rounded),
                   label: const Text('Filtros'),
-                ),
-              ],
+                );
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildSearchBar(
+                      hint: _scoutTab == _ScoutTab.convocatorias
+                          ? 'Buscar convocatoria, país, ciudad o categoría...'
+                          : _scoutTab == _ScoutTab.clubes
+                              ? 'Buscar club, país, ciudad o liga...'
+                              : 'Buscar jugador, categoría, posición, país o ciudad...',
+                    ),
+                    const SizedBox(height: 8),
+                    if (isCompact)
+                      SizedBox(width: double.infinity, child: filterButton)
+                    else
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: filterButton,
+                      ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 16),
             _buildScoutTabBar(),
@@ -1765,6 +1840,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         controller: _searchController,
         focusNode: _searchFocusNode,
         onChanged: _onSearchChanged,
+        onSubmitted: _onSearchChanged,
+        textInputAction: TextInputAction.search,
         decoration: InputDecoration(
           hintText: hint,
           border: InputBorder.none,
@@ -1840,36 +1917,122 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     );
   }
 
+  Widget _compactButtonLabel(
+    String label, {
+    required Color color,
+    FontWeight weight = FontWeight.w700,
+    double fontSize = 12.5,
+  }) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        label,
+        softWrap: false,
+        maxLines: 1,
+        style: GoogleFonts.inter(
+          color: color,
+          fontWeight: weight,
+          fontSize: fontSize,
+        ),
+      ),
+    );
+  }
+
+  String _challengeIdFromMap(Map<String, dynamic> challenge) {
+    final candidates = [
+      challenge['id'],
+      challenge['challenge_id'],
+      challenge['item_id'],
+      challenge['course_id'],
+      challenge['exercise_id'],
+    ];
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim() ?? '';
+      if (value.isNotEmpty && value.toLowerCase() != 'null') {
+        return value;
+      }
+    }
+    return '';
+  }
+
+  String _challengeTypeFromMap(Map<String, dynamic> challenge) {
+    final candidates = [
+      challenge['type'],
+      challenge['challenge_type'],
+      challenge['item_type'],
+    ];
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim().toLowerCase() ?? '';
+      if (value == 'course' || value == 'curso') return 'course';
+      if (value == 'exercise' || value == 'ejercicio') return 'exercise';
+    }
+    if ((challenge['course_id']?.toString().trim() ?? '').isNotEmpty) {
+      return 'course';
+    }
+    if ((challenge['exercise_id']?.toString().trim() ?? '').isNotEmpty) {
+      return 'exercise';
+    }
+    return '';
+  }
+
+  void _openExplorerChallenge(Map<String, dynamic> challenge) {
+    final challengeId = _challengeIdFromMap(challenge);
+    final challengeType = _challengeTypeFromMap(challenge);
+    if (challengeId.isEmpty) {
+      context.pushNamed(CursosEjerciciosWidget.routeName);
+      return;
+    }
+
+    context.pushNamed(
+      CursosEjerciciosWidget.routeName,
+      queryParameters: {
+        'challengeId': serializeParam(challengeId, ParamType.String),
+        'challengeType': serializeParam(
+          challengeType.isEmpty ? null : challengeType,
+          ParamType.String,
+        ),
+      }.withoutNulls,
+    );
+  }
+
   Widget _buildQuickActionsJugador() {
-    return GridView.count(
-      crossAxisCount: 2,
-      childAspectRatio: 2.6,
-      crossAxisSpacing: 10,
-      mainAxisSpacing: 10,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      children: [
-        _quickActionCard(
-          icon: Icons.local_fire_department_rounded,
-          title: 'Desafíos',
-          onTap: () => context.pushNamed(CursosEjerciciosWidget.routeName),
-        ),
-        _quickActionCard(
-          icon: Icons.campaign_rounded,
-          title: 'Convocatorias',
-          onTap: () => context.pushNamed(ConvocatoriaJugador1Widget.routeName),
-        ),
-        _quickActionCard(
-          icon: Icons.shield_rounded,
-          title: 'Clubes',
-          onTap: _openClubShortcuts,
-        ),
-        _quickActionCard(
-          icon: Icons.manage_search_rounded,
-          title: 'Scouts verificados',
-          onTap: _openVerifiedScoutsResults,
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 360;
+        return GridView(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            mainAxisExtent: isCompact ? 96 : 92,
+          ),
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            _quickActionCard(
+              icon: Icons.local_fire_department_rounded,
+              title: 'Desafíos',
+              onTap: () => context.pushNamed(CursosEjerciciosWidget.routeName),
+            ),
+            _quickActionCard(
+              icon: Icons.campaign_rounded,
+              title: 'Convocatorias',
+              onTap: () =>
+                  context.pushNamed(ConvocatoriaJugador1Widget.routeName),
+            ),
+            _quickActionCard(
+              icon: Icons.shield_rounded,
+              title: 'Clubes',
+              onTap: _openClubShortcuts,
+            ),
+            _quickActionCard(
+              icon: Icons.manage_search_rounded,
+              title: 'Scouts verificados',
+              onTap: _openVerifiedScoutsResults,
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1895,24 +2058,32 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _explorerIconBadge(icon),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  title,
-                  style: GoogleFonts.inter(
-                    color: const Color(0xFF2D3748),
-                    fontWeight: FontWeight.w700,
+              Row(
+                children: [
+                  _explorerIconBadge(icon),
+                  const Spacer(),
+                  const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Color(0xFF94A3B8),
+                    size: 18,
                   ),
-                ),
+                ],
               ),
-              const Icon(
-                Icons.arrow_forward_rounded,
-                color: Color(0xFF94A3B8),
-                size: 18,
+              const Spacer(),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: const Color(0xFF2D3748),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  height: 1.15,
+                ),
               ),
             ],
           ),
@@ -1964,8 +2135,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           ),
           const SizedBox(width: 8),
           ElevatedButton.icon(
-            onPressed: () =>
-                context.pushNamed(CursosEjerciciosWidget.routeName),
+            onPressed: () => _openExplorerChallenge(challenge),
             style: _explorerPrimaryButtonStyle(),
             icon: const Icon(
               Icons.arrow_forward_rounded,
@@ -2015,7 +2185,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
           return InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: () => context.pushNamed(CursosEjerciciosWidget.routeName),
+            onTap: () => _openExplorerChallenge(challenge),
             child: Container(
               width: 235,
               decoration: BoxDecoration(
@@ -2126,10 +2296,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     
     final convocatoriaCategoryOptions = _realConvocatoriaCategories;
     final convocatoriaPositionOptions = _realConvocatoriaPositions;
-    final convocatoriaCountryOptions = _realConvocatoriaCountries;
+    final convocatoriaLocationOptions = _realConvocatoriaLocations;
     
     final clubCountryOptions = _realClubCountries;
-    final clubStateOptions = _realClubCities; // Assuming state falls back to city logic as missing
+    final clubStateOptions = _realClubStates;
     final clubCityOptions = _realClubCities;
     final clubLeagueOptions = _realClubLeagues;
     
@@ -2200,7 +2370,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               playerLevelOptions: playerLevelOptions,
               convocatoriaCategoryOptions: convocatoriaCategoryOptions,
               convocatoriaPositionOptions: convocatoriaPositionOptions,
-              convocatoriaCountryOptions: convocatoriaCountryOptions,
+              convocatoriaLocationOptions: convocatoriaLocationOptions,
               clubCountryOptions: clubCountryOptions,
               clubStateOptions: clubStateOptions,
               clubCityOptions: clubCityOptions,
@@ -2229,8 +2399,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               if (currentResults.isEmpty)
                 _buildInlineStatus(
                   icon: Icons.search_off,
-                  title: 'Sem resultados.',
-                  subtitle: 'Tente outros termos ou ajuste os filtros.',
+                  title: 'Sin resultados.',
+                  subtitle: 'Probá con otros términos o ajustá los filtros.',
                 )
               else
                 _buildJugadorSearchResultsList(currentResults),
@@ -2316,7 +2486,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     required List<String> playerLevelOptions,
     required List<String> convocatoriaCategoryOptions,
     required List<String> convocatoriaPositionOptions,
-    required List<String> convocatoriaCountryOptions,
+    required List<String> convocatoriaLocationOptions,
     required List<String> clubCountryOptions,
     required List<String> clubStateOptions,
     required List<String> clubCityOptions,
@@ -2380,11 +2550,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                 setState(() => _jugadorConvocatoriaPosition = value),
           ),
           _ExplorerFilterDropdown(
-            label: 'País',
-            value: _jugadorConvocatoriaCountry,
-            options: convocatoriaCountryOptions,
+            label: 'Ubicación',
+            value: _jugadorConvocatoriaLocation,
+            options: convocatoriaLocationOptions,
             onChanged: (value) =>
-                setState(() => _jugadorConvocatoriaCountry = value),
+                setState(() => _jugadorConvocatoriaLocation = value),
           ),
         ]);
         break;
@@ -2454,7 +2624,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   case _JugadorSearchTab.convocatorias:
                     _jugadorConvocatoriaCategory = null;
                     _jugadorConvocatoriaPosition = null;
-                    _jugadorConvocatoriaCountry = null;
+                    _jugadorConvocatoriaLocation = null;
                     break;
                   case _JugadorSearchTab.clubes:
                     _jugadorClubCountry = null;
@@ -2597,7 +2767,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                     _simpleBadge(country, color: const Color(0xFF0F766E)),
                   _simpleBadge(levelName, color: const Color(0xFF1D4ED8)),
                   _simpleBadge(
-                    hasVideo ? 'Tem vídeo' : 'Sem vídeo',
+                    hasVideo ? 'Tiene video' : 'Sin video',
                     color: hasVideo
                         ? const Color(0xFF2F855A)
                         : const Color(0xFF718096),
@@ -2611,24 +2781,53 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                     child: OutlinedButton.icon(
                       onPressed:
                           hasVideo ? () => _openPlayerVideos(player) : null,
-                      style: _explorerSecondaryButtonStyle(),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF0D3B66),
+                        side: const BorderSide(color: Color(0xFFD6DEE8)),
+                        minimumSize: const Size.fromHeight(42),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        backgroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 10,
+                        ),
+                      ),
                       icon: const Icon(Icons.smart_display_rounded, size: 16),
-                      label: const Text('Ver vídeo'),
+                      label: _compactButtonLabel(
+                        'Ver video',
+                        color: hasVideo
+                            ? const Color(0xFF0D3B66)
+                            : const Color(0xFF9CA3AF),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () => _openPublicPlayerProfile(player),
-                      style: _explorerPrimaryButtonStyle(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0D3B66),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        minimumSize: const Size.fromHeight(42),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 10,
+                        ),
+                      ),
                       icon: const Icon(
                         Icons.person_search_rounded,
                         size: 16,
                         color: Colors.white,
                       ),
-                      label: const Text(
+                      label: _compactButtonLabel(
                         'Ver perfil',
-                        style: TextStyle(color: Colors.white),
+                        color: Colors.white,
                       ),
                     ),
                   ),
@@ -2984,7 +3183,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     if (convocatorias.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.campaign_outlined,
-        title: 'Sem resultados',
+        title: 'Sin resultados',
         subtitle: 'No hay convocatorias activas en este momento.',
       );
     }
@@ -3079,80 +3278,90 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       required IconData icon,
     }) {
       final selected = _scoutTab == tab;
-      return Expanded(
-        child: InkWell(
-          onTap: () => setState(() => _scoutTab = tab),
-          borderRadius: BorderRadius.circular(10),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(
-              color: selected ? const Color(0xFF0D3B66) : Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: selected
-                    ? const Color(0xFF0D3B66)
-                    : const Color(0xFFD6DEE8),
-              ),
+      return InkWell(
+        onTap: () => setState(() => _scoutTab = tab),
+        borderRadius: BorderRadius.circular(22),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF0D3B66) : Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF0D3B66)
+                  : const Color(0xFFD6DEE8),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? Colors.white.withValues(alpha: 0.16)
-                        : const Color(0xFFE8F0FE),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Icon(
-                    icon,
-                    size: 15,
-                    color: selected ? Colors.white : const Color(0xFF0D3B66),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      color: selected ? Colors.white : const Color(0xFF4A5568),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+            boxShadow: selected
+                ? const [
+                    BoxShadow(
+                      color: Color(0x1A0D3B66),
+                      blurRadius: 14,
+                      offset: Offset(0, 6),
                     ),
-                  ),
+                  ]
+                : const [
+                    BoxShadow(
+                      color: Color(0x0D0D3B66),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.16)
+                      : const Color(0xFFE8F0FE),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ],
-            ),
+                child: Icon(
+                  icon,
+                  size: 17,
+                  color: selected ? Colors.white : const Color(0xFF0D3B66),
+                ),
+              ),
+              const SizedBox(width: 10),
+              _compactButtonLabel(
+                label,
+                color: selected ? Colors.white : const Color(0xFF334155),
+                weight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ],
           ),
         ),
       );
     }
 
-    return Row(
-      children: [
-        tab(
-          tab: _ScoutTab.jugadores,
-          label: 'Jugadores',
-          icon: Icons.sports_soccer_rounded,
-        ),
-        const SizedBox(width: 8),
-        tab(
-          tab: _ScoutTab.clubes,
-          label: 'Clubes',
-          icon: Icons.shield_rounded,
-        ),
-        const SizedBox(width: 8),
-        tab(
-          tab: _ScoutTab.convocatorias,
-          label: 'Convocatorias',
-          icon: Icons.campaign_rounded,
-        ),
-      ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          tab(
+            tab: _ScoutTab.jugadores,
+            label: 'Jugadores',
+            icon: Icons.sports_soccer_rounded,
+          ),
+          const SizedBox(width: 10),
+          tab(
+            tab: _ScoutTab.clubes,
+            label: 'Clubes',
+            icon: Icons.shield_rounded,
+          ),
+          const SizedBox(width: 10),
+          tab(
+            tab: _ScoutTab.convocatorias,
+            label: 'Convocatorias',
+            icon: Icons.campaign_rounded,
+          ),
+        ],
+      ),
     );
   }
 
@@ -3162,7 +3371,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     if (players.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.search_off,
-        title: 'Sem resultados',
+        title: 'Sin resultados',
         subtitle: 'No se encontraron jugadores con los filtros aplicados.',
       );
     }
@@ -3259,7 +3468,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         : const Color(0xFFB7791F),
                   ),
                   _simpleBadge(
-                    hasVideo ? 'Tem vídeo' : 'Sem vídeo',
+                    hasVideo ? 'Tiene video' : 'Sin video',
                     color: hasVideo
                         ? const Color(0xFF0D3B66)
                         : const Color(0xFF718096),
@@ -3290,6 +3499,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       style: ElevatedButton.styleFrom(
                         elevation: 0,
                         minimumSize: const Size.fromHeight(42),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 10,
+                        ),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                         backgroundColor:
@@ -3317,7 +3530,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                               isSaved ? Icons.bookmark : Icons.bookmark_border,
                               size: 16,
                             ),
-                      label: Text(isSaved ? 'Guardado' : 'Guardar'),
+                      label: _compactButtonLabel(
+                        isSaved ? 'Guardado' : 'Guardar',
+                        color:
+                            isSaved ? Colors.white : const Color(0xFF0D3B66),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -3325,9 +3542,26 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                     child: OutlinedButton.icon(
                       onPressed:
                           hasVideo ? () => _openPlayerVideos(player) : null,
-                      style: _explorerSecondaryButtonStyle(),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF0D3B66),
+                        side: const BorderSide(color: Color(0xFFD6DEE8)),
+                        minimumSize: const Size.fromHeight(42),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        backgroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 10,
+                        ),
+                      ),
                       icon: const Icon(Icons.smart_display_rounded, size: 16),
-                      label: const Text('Ver vídeo'),
+                      label: _compactButtonLabel(
+                        'Ver video',
+                        color: hasVideo
+                            ? const Color(0xFF0D3B66)
+                            : const Color(0xFF9CA3AF),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -3336,12 +3570,24 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       onPressed: () {
                         _openPublicPlayerProfile(player);
                       },
-                      style: _explorerPrimaryButtonStyle(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0D3B66),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        minimumSize: const Size.fromHeight(42),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 10,
+                        ),
+                      ),
                       icon: const Icon(Icons.person_search_rounded,
                           size: 16, color: Colors.white),
-                      label: const Text(
+                      label: _compactButtonLabel(
                         'Ver perfil',
-                        style: TextStyle(color: Colors.white),
+                        color: Colors.white,
                       ),
                     ),
                   ),
@@ -3360,7 +3606,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     if (clubs.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.search_off,
-        title: 'Sem resultados',
+        title: 'Sin resultados',
         subtitle: 'No se encontraron clubes para esta búsqueda.',
       );
     }
@@ -3411,7 +3657,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     if (convocatorias.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.search_off,
-        title: 'Sem resultados',
+        title: 'Sin resultados',
         subtitle: 'No hay convocatorias para los filtros seleccionados.',
       );
     }
@@ -3678,7 +3924,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                               }
                             });
                           },
-                          child: const Text('Limpar'),
+                          child: const Text('Limpiar'),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -3719,7 +3965,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   const SizedBox(height: 4),
                   if (_scoutTab == _ScoutTab.jugadores && !_isClubStaff)
                     Text(
-                      'Compartilhar listas só aparece para staff de clube.',
+                      'Compartir listas solo está disponible para staff del club.',
                       style: GoogleFonts.inter(
                         color: const Color(0xFF718096),
                         fontSize: 12,
@@ -3929,7 +4175,7 @@ class _JugadorScoutsResultsPageState extends State<_JugadorScoutsResultsPage> {
                 child: scouts.isEmpty
                     ? _ExplorerEmptyState(
                         icon: Icons.search_off,
-                        title: 'Sem resultados',
+                        title: 'Sin resultados',
                         subtitle:
                             'No se encontraron scouts con los filtros aplicados.',
                       )
@@ -4226,7 +4472,7 @@ class _JugadorClubsResultsPageState extends State<_JugadorClubsResultsPage> {
                 child: clubs.isEmpty
                     ? _ExplorerEmptyState(
                         icon: Icons.search_off,
-                        title: 'Sem resultados',
+                        title: 'Sin resultados',
                         subtitle:
                             'No se encontraron clubes con los filtros aplicados.',
                       )

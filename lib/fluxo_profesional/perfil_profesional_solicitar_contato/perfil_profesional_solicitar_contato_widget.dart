@@ -1,6 +1,7 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
@@ -48,6 +49,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   String? _guardianName;
   String? _guardianId;
   String _guardianStatus = GuardianMvpService.approvedStatus;
+  String _selectedProfileTabKey = 'perfil';
 
   @override
   void initState() {
@@ -91,6 +93,16 @@ class _PerfilProfesionalSolicitarContatoWidgetState
               merged.addAll(Map<String, dynamic>.from(player));
             }
           } catch (_) {}
+          try {
+            final progress = await SupaFlow.client
+                .from('user_progress')
+                .select('total_xp, courses_completed, exercises_completed')
+                .eq('user_id', widget.userId!)
+                .maybeSingle();
+            if (progress != null) {
+              merged.addAll(Map<String, dynamic>.from(progress));
+            }
+          } catch (_) {}
         } else if (targetType == 'profesional') {
           try {
             final scout = await SupaFlow.client
@@ -108,16 +120,18 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           } catch (_) {}
         }
         _userData = merged;
+        _selectedProfileTabKey = targetType == 'jugador' ? 'videos' : 'perfil';
         _guardianStatus = GuardianMvpService.normalizedGuardianStatus(merged);
         if (merged['colaboraciones'] != null) {
-          if (merged['colaboraciones'] is List)
+          if (merged['colaboraciones'] is List) {
             _colabs = List<String>.from(merged['colaboraciones']);
-          else if (merged['colaboraciones'] is String)
+          } else if (merged['colaboraciones'] is String) {
             _colabs = (merged['colaboraciones'] as String)
                 .split(',')
                 .map((e) => e.trim())
                 .where((e) => e.isNotEmpty)
                 .toList();
+          }
         }
         if (_isTargetPlayer) {
           await _registerProfileView();
@@ -224,6 +238,20 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     if (parsed != null) return parsed.year.toString();
     final match = RegExp(r'(\d{4})').firstMatch(text);
     return match?.group(1);
+  }
+
+  String? _formatBirthDateDisplay(dynamic raw) {
+    final text = raw?.toString().trim() ?? '';
+    if (text.isEmpty) return null;
+    final parsed = DateTime.tryParse(text);
+    if (parsed == null) return text;
+    return '${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year}';
+  }
+
+  int _intValue(dynamic raw) {
+    if (raw is int) return raw;
+    if (raw is double) return raw.round();
+    return int.tryParse(raw?.toString() ?? '') ?? 0;
   }
 
   Map<String, String>? _parseChallengeRef(String description) {
@@ -1005,26 +1033,11 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                               border: Border.all(
                                                   color: Colors.grey)),
                                           child: Text(c,
-                                              style: GoogleFonts.inter(
+                                          style: GoogleFonts.inter(
                                                   fontSize: 12))))
                                       .toList()))
                         ],
-                        _buildFichaDeportivaSection(),
-                        _buildTrayectoriaSection(),
-                        _buildVideosSection(),
-                        if (_scoutHistory.isNotEmpty) ...[
-                          Padding(
-                              padding: EdgeInsets.fromLTRB(0, 20, 0, 10),
-                              child: Center(
-                                  child: Text('Historial de Scouting',
-                                      style: GoogleFonts.inter(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w500,
-                                          color: Color(0xFF0D3B66),
-                                          decoration:
-                                              TextDecoration.underline)))),
-                          _list(),
-                        ],
+                        _buildPublicTabbedContent(horizontalPadding),
                         SizedBox(height: 100)
                       ]),
                 ),
@@ -1063,7 +1076,229 @@ class _PerfilProfesionalSolicitarContatoWidgetState
               color: Colors.white.withOpacity(0.9), shape: BoxShape.circle),
           child: Icon(i, color: Colors.black, size: 24)));
 
+  List<Map<String, String>> _publicTabs() {
+    if (_isTargetPlayer) {
+      return const [
+        {'key': 'videos', 'label': 'Videos'},
+        {'key': 'ficha', 'label': 'Ficha completa'},
+      ];
+    }
+
+    return const [
+      {'key': 'perfil', 'label': 'Perfil profesional'},
+      {'key': 'historial', 'label': 'Historial'},
+    ];
+  }
+
+  Widget _buildPublicTabSelector(double horizontalPadding) {
+    final tabs = _publicTabs();
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(horizontalPadding, 20, horizontalPadding, 0),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Colors.grey[200]!, width: 1),
+          ),
+        ),
+        child: Row(
+          children: tabs.map((tab) {
+            final isSelected = _selectedProfileTabKey == tab['key'];
+            return Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() => _selectedProfileTabKey = tab['key']!);
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: isSelected
+                            ? const Color(0xFF0D3B66)
+                            : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  child: Text(
+                    tab['label']!,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight:
+                          isSelected ? FontWeight.w700 : FontWeight.w500,
+                      color: isSelected
+                          ? const Color(0xFF0D3B66)
+                          : const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScoutProfessionalSection() {
+    final club = _firstNonEmptyValue([
+      _userData?['club'],
+      _userData?['organization'],
+    ]);
+    final phone = _firstNonEmptyValue([
+      _userData?['telephone'],
+      _userData?['phone'],
+    ]);
+    final url = _firstNonEmptyValue([
+      _userData?['url_profesional'],
+      _userData?['website'],
+    ]);
+    final dni = _firstNonEmptyValue([
+      _userData?['dni'],
+      _userData?['documento'],
+    ]);
+    final city = _firstNonEmptyValue([
+      _userData?['city'],
+      _userData?['ciudad'],
+    ]);
+    final country = _firstNonEmptyValue([
+      _userData?['country'],
+      _userData?['pais'],
+    ]);
+
+    final chips = <Widget>[
+      if (club != null) _buildProfileInfoTile(Icons.apartment_rounded, 'Organización', club),
+      if (phone != null) _buildProfileInfoTile(Icons.call_outlined, 'Teléfono', phone),
+      if (url != null) _buildProfileInfoTile(Icons.language_rounded, 'Link profesional', url),
+      if (dni != null) _buildProfileInfoTile(Icons.badge_outlined, 'Documento', dni),
+      if (city != null || country != null)
+        _buildProfileInfoTile(
+          Icons.location_on_outlined,
+          'Ubicación',
+          [if (city != null) city, if (country != null) country].join(' · '),
+        ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Perfil profesional',
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF0D3B66),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (chips.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Text(
+                'Este scout todavía no completó su ficha profesional.',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+            )
+          else
+            ...chips,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileInfoTile(IconData icon, String label, String value) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF0D3B66)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$label: $value',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: const Color(0xFF334155),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPublicTabbedContent(double horizontalPadding) {
+    return Column(
+      children: [
+        _buildPublicTabSelector(horizontalPadding),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child: KeyedSubtree(
+            key: ValueKey(_selectedProfileTabKey),
+            child: () {
+              if (_isTargetPlayer) {
+                switch (_selectedProfileTabKey) {
+                  case 'videos':
+                    return _buildVideosSection();
+                  case 'ficha':
+                  default:
+                    return _buildFichaDeportivaSection();
+                }
+              }
+
+              switch (_selectedProfileTabKey) {
+                case 'historial':
+                  return _scoutHistory.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+                          child: Text(
+                            'Este scout todavía no registró historial de scouting.',
+                            style: GoogleFonts.inter(
+                              color: const Color(0xFF64748B),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        )
+                      : _list();
+                case 'perfil':
+                default:
+                  return _buildScoutProfessionalSection();
+              }
+            }(),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildFichaDeportivaSection() {
+    final normalizedHistory =
+        normalizeProfileHistory(_userData?['historial_clubes'] ?? _userData?['clubs']);
     final position = _firstNonEmptyValue([
       _userData?['position'],
       _userData?['posicion'],
@@ -1083,7 +1318,12 @@ class _PerfilProfesionalSolicitarContatoWidgetState
       _userData?['fecha_nacimiento'],
       _userData?['data_nascimento'],
     ]);
-    final category = _birthYearFromRaw(birthDateRaw);
+    final category = _firstNonEmptyValue([
+          _userData?['category'],
+          _userData?['categoria'],
+          _userData?['categoría'],
+        ]) ??
+        _birthYearFromRaw(birthDateRaw);
     final height = _firstNonEmptyValue([
       _userData?['height'],
       _userData?['altura'],
@@ -1107,6 +1347,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
       _userData?['cidade'],
     ]);
     final club = _firstNonEmptyValue([
+          currentClubFromProfileHistory(normalizedHistory),
       _userData?['club'],
       _userData?['club_actual'],
       _userData?['current_club'],
@@ -1114,71 +1355,47 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     final playerStatus = _firstNonEmptyValue([
       _userData?['player_status'],
     ]);
-
-    Widget dataTile(IconData icon, String label, dynamic rawValue) {
-      final value = rawValue?.toString().trim() ?? '';
-      if (value.isEmpty) return const SizedBox.shrink();
-      return Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: const Color(0xFF0D3B66)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '$label: $value',
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: const Color(0xFF334155),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    final totalXp = _intValue(_userData?['total_xp']);
+    final coursesCompleted = _intValue(_userData?['courses_completed']);
+    final exercisesCompleted = _intValue(_userData?['exercises_completed']);
+    final age = () {
+      final year = int.tryParse(_birthYearFromRaw(birthDateRaw) ?? '');
+      if (year == null) return null;
+      return DateTime.now().year - year;
+    }();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 22, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Ficha deportiva',
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF0D3B66),
-            ),
-          ),
+          _buildFichaSectionHeader('Información personal'),
           const SizedBox(height: 10),
-          dataTile(Icons.shield_outlined, 'Posición', position),
-          dataTile(Icons.directions_walk, 'Pierna hábil', dominantFoot),
-          dataTile(Icons.category_outlined, 'Categoría', category),
-          dataTile(
+          _buildPlayerPublicInfoRow(
+            Icons.calendar_today_outlined,
+            birthDateRaw != null && birthDateRaw.isNotEmpty
+                ? [
+                    _formatBirthDateDisplay(birthDateRaw) ?? birthDateRaw,
+                    if (age != null && age >= 0) '$age años',
+                  ].join(' · ')
+                : null,
+          ),
+          _buildPlayerPublicInfoRow(Icons.shield_outlined, position),
+          _buildPlayerPublicInfoRow(Icons.directions_walk, dominantFoot),
+          _buildPlayerPublicInfoRow(Icons.category_outlined, category),
+          _buildPlayerPublicInfoRow(
             Icons.height,
-            'Altura',
             height != null ? '$height cm' : null,
           ),
-          dataTile(
+          _buildPlayerPublicInfoRow(
             Icons.fitness_center_outlined,
-            'Peso',
             weight != null ? '$weight kg' : null,
           ),
-          dataTile(Icons.flag_outlined, 'Nacionalidad / País', country),
-          dataTile(Icons.location_on_outlined, 'Ciudad', city),
-          dataTile(Icons.groups_outlined, 'Club', club),
-          dataTile(
+          _buildPlayerPublicInfoRow(Icons.flag_outlined, country),
+          _buildPlayerPublicInfoRow(Icons.location_on_outlined, city),
+          _buildPlayerPublicInfoRow(Icons.groups_outlined, club),
+          _buildPlayerPublicInfoRow(
             Icons.track_changes_rounded,
-            'Status del jugador',
             playerStatus,
           ),
           if (position == null &&
@@ -1208,81 +1425,190 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                 ),
               ),
             ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTrayectoriaSection() {
-    if (!_isTargetPlayer) return const SizedBox.shrink();
-
-    final rawHistory = _userData?['historial_clubes'] ?? _userData?['clubs'];
-    if (rawHistory is! List || rawHistory.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final items = rawHistory
-        .whereType<Map>()
-        .map((item) => {
-              'name': _firstNonEmptyValue([item['name'], item['nombre']]),
-              'period': _firstNonEmptyValue([item['period'], item['periodo']]),
-            })
-        .where((item) =>
-            (item['name']?.isNotEmpty ?? false) ||
-            (item['period']?.isNotEmpty ?? false))
-        .toList();
-
-    if (items.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Trayectoria deportiva',
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF0D3B66),
-            ),
-          ),
+          const SizedBox(height: 20),
+          _buildFichaSectionHeader('Historial deportivo'),
           const SizedBox(height: 10),
-          ...items.map((item) {
-            final name = item['name'] ?? 'Club';
-            final period = item['period'] ?? '';
-            return Container(
+          if (normalizedHistory.isEmpty)
+            Container(
               width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.history_edu_outlined,
-                      size: 18, color: Color(0xFF0D3B66)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
+              child: Text(
+                'Este jugador todavía no cargó su historial deportivo.',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: const Color(0xFF64748B),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else
+            ...normalizedHistory.map((item) {
+              final name = item['name']?.toString().trim().isNotEmpty == true
+                  ? item['name'].toString().trim()
+                  : 'Club';
+              final period = formatProfileHistoryPeriod(item);
+              final itemPosition = _firstNonEmptyValue([
+                item['position'],
+                item['posicion'],
+              ]);
+              final note = _firstNonEmptyValue([
+                item['note'],
+                item['nota'],
+              ]);
+
+              return Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
                       period.isNotEmpty ? '$name · $period' : name,
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         color: const Color(0xFF334155),
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
-                ],
+                    if (itemPosition != null && itemPosition.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          itemPosition,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFF475569),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    if (note != null && note.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          note,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+          const SizedBox(height: 20),
+          _buildFichaSectionHeader('Estadísticas de entrenamiento'),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _buildPlayerPublicStatCard(
+                'Cursos',
+                coursesCompleted.toString(),
+                Icons.school_outlined,
               ),
-            );
-          }),
+              const SizedBox(width: 10),
+              _buildPlayerPublicStatCard(
+                'Ejercicios',
+                exercisesCompleted.toString(),
+                Icons.fitness_center_outlined,
+              ),
+              const SizedBox(width: 10),
+              _buildPlayerPublicStatCard(
+                'XP',
+                totalXp.toString(),
+                Icons.bolt_rounded,
+              ),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFichaSectionHeader(String title) {
+    return Text(
+      title,
+      style: GoogleFonts.inter(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        color: const Color(0xFF0D3B66),
+      ),
+    );
+  }
+
+  Widget _buildPlayerPublicInfoRow(IconData icon, String? rawValue) {
+    final value = rawValue?.trim() ?? '';
+    if (value.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: const Color(0xFF444444)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.inter(
+                color: const Color(0xFF444444),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlayerPublicStatCard(
+    String label,
+    String value,
+    IconData icon,
+  ) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEAF6FC),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: const Color(0xFF0D3B66), size: 22),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: GoogleFonts.inter(
+                color: const Color(0xFF0D3B66),
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                color: const Color(0xFF444444),
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1530,7 +1856,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                   Expanded(
                       child: Text(
                           item['club_fichado'] != null
-                              ? 'Fichado: ${_date(item['created_at'])}'
+                              ? 'Agregado: ${_date(item['created_at'])}'
                               : 'Agregado: ${_date(item['created_at'])}',
                           style: GoogleFonts.inter(
                               fontSize: 11, color: Colors.grey)))

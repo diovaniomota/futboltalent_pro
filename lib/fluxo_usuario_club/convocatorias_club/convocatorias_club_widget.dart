@@ -1,5 +1,7 @@
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
+import '/fluxo_compartilhado/club_application_utils.dart';
+import '/fluxo_compartilhado/club_identity_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
 import 'package:flutter/material.dart';
@@ -76,6 +78,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
   List<Map<String, dynamic>> _convocatorias = [];
   String? _clubId;
   String? _clubName;
+  Set<String> _clubRefs = <String>{};
 
   // Stats
   int _convocatoriasActivas = 0;
@@ -100,21 +103,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
-    _clubId = currentUserUid;
-
-    // Carregar nome do club (não bloqueia o resto se falhar)
-    try {
-      final clubResponse = await SupaFlow.client
-          .from('clubs')
-          .select('nombre')
-          .eq('owner_id', _clubId!)
-          .maybeSingle();
-      if (clubResponse != null && clubResponse['nombre'] != null) {
-        _clubName = clubResponse['nombre'];
-      }
-    } catch (e) {
-      debugPrint('Club name not found: $e');
-    }
+    await _resolveClubContext();
 
     // Carregar convocatorias e stats
     if (_clubId != null && _clubId!.isNotEmpty) {
@@ -127,28 +116,63 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
     }
   }
 
+  Future<void> _resolveClubContext() async {
+    final authUid = currentUserUid;
+    _clubRefs = await resolveClubRefsForUser(authUid);
+    if (_clubRefs.isEmpty && authUid.isNotEmpty) {
+      _clubRefs = {authUid};
+    }
+
+    final club = await resolveCurrentClubForUser(authUid);
+    _clubId = club?['id']?.toString().trim().isNotEmpty == true
+        ? club!['id'].toString().trim()
+        : (authUid.isNotEmpty ? authUid : null);
+    _clubName = club?['nombre']?.toString();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadClubConvocatoriasRows({
+    String columns = '*',
+  }) async {
+    if (_clubRefs.isEmpty) return [];
+
+    final response = _clubRefs.length == 1
+        ? await SupaFlow.client
+            .from('convocatorias')
+            .select(columns)
+            .eq('club_id', _clubRefs.first)
+            .order('created_at', ascending: false)
+        : await SupaFlow.client
+            .from('convocatorias')
+            .select(columns)
+            .inFilter('club_id', _clubRefs.toList())
+            .order('created_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(response as List);
+  }
+
   Future<void> _loadConvocatorias() async {
     try {
-      final response = await SupaFlow.client
-          .from('convocatorias')
-          .select()
-          .eq('club_id', _clubId!)
-          .order('created_at', ascending: false);
+      _convocatorias = await _loadClubConvocatoriasRows();
+      final convocatoriaIds = _convocatorias
+          .map((row) => row['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final applications = await fetchClubApplicationsForConvocatorias(
+        convocatoriaIds: convocatoriaIds,
+        limitPerTable: 800,
+      );
+      final countByConvocatoria = <String, int>{};
+      for (final application in applications) {
+        final convocatoriaId =
+            application['convocatoria_id']?.toString().trim() ?? '';
+        if (convocatoriaId.isEmpty) continue;
+        countByConvocatoria[convocatoriaId] =
+            (countByConvocatoria[convocatoriaId] ?? 0) + 1;
+      }
 
-      _convocatorias = List<Map<String, dynamic>>.from(response);
-
-      // Carregar contagem de postulações para cada convocatoria
-      for (var conv in _convocatorias) {
-        try {
-          final postulacionesResponse = await SupaFlow.client
-              .from('postulaciones')
-              .select('id')
-              .eq('convocatoria_id', conv['id']);
-
-          conv['postulaciones_count'] = (postulacionesResponse as List).length;
-        } catch (e) {
-          conv['postulaciones_count'] = 0;
-        }
+      for (final conv in _convocatorias) {
+        final convocatoriaId = conv['id']?.toString().trim() ?? '';
+        conv['postulaciones_count'] = countByConvocatoria[convocatoriaId] ?? 0;
       }
     } catch (e) {
       debugPrint('Error cargando convocatorias: $e');
@@ -157,30 +181,46 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
 
   Future<void> _loadStats() async {
     try {
+      final convocatoriaIds = _convocatorias
+          .map((row) => row['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final applications = await fetchClubApplicationsForConvocatorias(
+        convocatoriaIds: convocatoriaIds,
+        limitPerTable: 800,
+      );
+
       // Convocatorias activas
       _convocatoriasActivas = _convocatorias
           .where((c) => c['estado']?.toString().toLowerCase() == 'activa')
           .length;
 
       // Total postulaciones
-      _totalPostulaciones = _convocatorias.fold<int>(
-          0, (sum, c) => sum + (c['postulaciones_count'] as int? ?? 0));
+      _totalPostulaciones = applications.length;
 
       // Promedio por convocatoria
       if (_convocatoriasActivas > 0) {
         _promedioPostulaciones = _totalPostulaciones / _convocatoriasActivas;
       }
 
-      // Total videos (das postulações)
-      try {
-        final videosResponse = await SupaFlow.client
-            .from('postulaciones')
-            .select('id, convocatorias!inner(club_id)')
-            .eq('convocatorias.club_id', _clubId!);
-
-        _totalVideos = (videosResponse as List).length;
-      } catch (e) {
+      final playerIds = applications
+          .map(clubApplicationPlayerId)
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      if (playerIds.isEmpty) {
         _totalVideos = 0;
+      } else {
+        try {
+          final videosResponse = await SupaFlow.client
+              .from('videos')
+              .select('id')
+              .eq('is_public', true)
+              .inFilter('user_id', playerIds);
+          _totalVideos = (videosResponse as List).length;
+        } catch (_) {
+          _totalVideos = 0;
+        }
       }
     } catch (e) {
       debugPrint('Error cargando stats: $e');
@@ -329,7 +369,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.list_alt_outlined,
-                                  'Listas',
+                                  'Scouting',
                                   false,
                                   () async => context
                                       .pushNamed(ListaYNotaWidget.routeName)),
@@ -1488,13 +1528,608 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
 }
 
 // ===== MODAL VER CONVOCATORIA =====
-class _ViewConvocatoriaModal extends StatelessWidget {
+class _ViewConvocatoriaModal extends StatefulWidget {
   const _ViewConvocatoriaModal({
     Key? key,
     required this.convocatoria,
   }) : super(key: key);
 
   final Map<String, dynamic> convocatoria;
+
+  @override
+  State<_ViewConvocatoriaModal> createState() => _ViewConvocatoriaModalState();
+}
+
+class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
+  bool _isLoadingCandidates = true;
+  String? _loadError;
+  List<Map<String, dynamic>> _candidates = [];
+
+  Map<String, dynamic> get convocatoria => widget.convocatoria;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCandidates();
+  }
+
+  String _playerId(Map<String, dynamic> row) => clubApplicationPlayerId(row);
+
+  String _statusLabel(String rawStatus) {
+    switch (rawStatus.toLowerCase()) {
+      case 'aceptado':
+      case 'aceptada':
+        return 'Aceptado';
+      case 'rechazado':
+      case 'rechazada':
+        return 'Rechazado';
+      case 'revisado':
+      case 'revisada':
+        return 'Revisado';
+      default:
+        return 'Nuevo';
+    }
+  }
+
+  Color _statusColor(String rawStatus) {
+    switch (rawStatus.toLowerCase()) {
+      case 'aceptado':
+      case 'aceptada':
+        return const Color(0xFF16A34A);
+      case 'rechazado':
+      case 'rechazada':
+        return const Color(0xFFDC2626);
+      case 'revisado':
+      case 'revisada':
+        return const Color(0xFF475569);
+      default:
+        return const Color(0xFF0D3B66);
+    }
+  }
+
+  int _calculateAge(dynamic birthDate) {
+    final parsed = DateTime.tryParse(birthDate?.toString() ?? '');
+    if (parsed == null) return 0;
+    final now = DateTime.now();
+    var age = now.year - parsed.year;
+    if (now.month < parsed.month ||
+        (now.month == parsed.month && now.day < parsed.day)) {
+      age--;
+    }
+    return age;
+  }
+
+  DateTime _submittedAt(Map<String, dynamic> row) {
+    final parsed = DateTime.tryParse(row['submitted_at']?.toString() ?? '');
+    return parsed ?? DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  Future<void> _updateCandidateStatus(
+    Map<String, dynamic> candidate,
+    String newStatus,
+  ) async {
+    final rowId = candidate['id']?.toString().trim() ?? '';
+    if (rowId.isEmpty) return;
+
+    final sourceTable =
+        candidate['_source_table']?.toString() == 'aplicaciones_convocatoria'
+            ? 'aplicaciones_convocatoria'
+            : 'postulaciones';
+
+    try {
+      await SupaFlow.client.from(sourceTable).update({
+        'estado': newStatus,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', rowId);
+
+      if (!mounted) return;
+      setState(() {
+        for (final row in _candidates) {
+          if ((row['id']?.toString().trim() ?? '') == rowId &&
+              (row['_source_table']?.toString() ?? 'postulaciones') ==
+                  sourceTable) {
+            row['estado'] = newStatus;
+          }
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Estado actualizado a ${_statusLabel(newStatus)}'),
+          backgroundColor: const Color(0xFF0D3B66),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo actualizar el estado: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showCandidateStatusMenu(Map<String, dynamic> candidate) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Cambiar estado',
+              style: GoogleFonts.inter(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 14),
+            ...[
+              {'value': 'pendiente', 'label': 'Nuevo'},
+              {'value': 'revisado', 'label': 'Revisado'},
+              {'value': 'aceptado', 'label': 'Aceptado'},
+              {'value': 'rechazado', 'label': 'Rechazado'},
+            ].map((entry) {
+              final value = entry['value']!;
+              final label = entry['label']!;
+              return ListTile(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _updateCandidateStatus(candidate, value);
+                },
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: _statusColor(value),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                ),
+                title: Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loadCandidates() async {
+    final convocatoriaId = convocatoria['id']?.toString().trim() ?? '';
+    if (convocatoriaId.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingCandidates = false;
+        _candidates = [];
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoadingCandidates = true;
+      _loadError = null;
+    });
+
+    try {
+      final applications = await fetchClubApplicationsForConvocatorias(
+        convocatoriaIds: [convocatoriaId],
+        limitPerTable: 240,
+      );
+      final playerIds = applications
+          .map(_playerId)
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      final usersById = <String, Map<String, dynamic>>{};
+      if (playerIds.isNotEmpty) {
+        final usersResponse = await SupaFlow.client
+            .from('users')
+            .select()
+            .inFilter('user_id', playerIds);
+        for (final row in List<Map<String, dynamic>>.from(usersResponse as List)) {
+          final id = row['user_id']?.toString().trim() ?? '';
+          if (id.isNotEmpty) {
+            usersById[id] = row;
+          }
+        }
+      }
+
+      final requiredChallenges =
+          _convocatoriaRequiredChallengesFrom(convocatoria['required_challenges']);
+      final attemptByKey = <String, Map<String, dynamic>>{};
+
+      Future<void> loadAttemptsForType(String type, List<String> ids) async {
+        if (playerIds.isEmpty || ids.isEmpty) return;
+        try {
+          final attemptsResponse = await SupaFlow.client
+              .from('user_challenge_attempts')
+              .select(
+                'id, user_id, item_id, item_type, video_url, status, submitted_at, video_id',
+              )
+              .eq('item_type', type)
+              .inFilter('user_id', playerIds)
+              .inFilter('item_id', ids);
+          for (final row
+              in List<Map<String, dynamic>>.from(attemptsResponse as List)) {
+            final userId = row['user_id']?.toString().trim() ?? '';
+            final itemId = row['item_id']?.toString().trim() ?? '';
+            if (userId.isEmpty || itemId.isEmpty) continue;
+            attemptByKey['$userId::$type:$itemId'] = row;
+          }
+        } catch (_) {}
+      }
+
+      final requiredCourseIds = requiredChallenges
+          .where((item) => item['type'] == 'course')
+          .map((item) => item['id']?.toString().trim() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final requiredExerciseIds = requiredChallenges
+          .where((item) => item['type'] == 'exercise')
+          .map((item) => item['id']?.toString().trim() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      await Future.wait([
+        loadAttemptsForType('course', requiredCourseIds),
+        loadAttemptsForType('exercise', requiredExerciseIds),
+      ]);
+
+      final publicVideoByPlayer = <String, Map<String, dynamic>>{};
+      if (playerIds.isNotEmpty) {
+        try {
+          final videosResponse = await SupaFlow.client
+              .from('videos')
+              .select('id, user_id, title, thumbnail_url, video_url, created_at')
+              .eq('is_public', true)
+              .inFilter('user_id', playerIds)
+              .order('created_at', ascending: false)
+              .limit(400);
+
+          for (final video in List<Map<String, dynamic>>.from(videosResponse as List)) {
+            final userId = video['user_id']?.toString().trim() ?? '';
+            if (userId.isEmpty) continue;
+            publicVideoByPlayer.putIfAbsent(userId, () => video);
+          }
+        } catch (_) {}
+      }
+
+      final candidates = applications.map((application) {
+        final playerId = _playerId(application);
+        final attemptVideos = requiredChallenges
+            .map((challenge) {
+              final type = challenge['type']?.toString().trim() ?? '';
+              final id = challenge['id']?.toString().trim() ?? '';
+              final attempt = attemptByKey['$playerId::$type:$id'];
+              if (attempt == null) return null;
+              return {
+                ...attempt,
+                'challenge_title': _convocatoriaChallengeTitle(challenge),
+                'challenge_type': type,
+              };
+            })
+            .whereType<Map<String, dynamic>>()
+            .toList()
+          ..sort((a, b) => _submittedAt(b).compareTo(_submittedAt(a)));
+
+        return {
+          ...application,
+          'jugador': usersById[playerId],
+          'attempt_videos': attemptVideos,
+          'required_videos_total': requiredChallenges.length,
+          'latest_public_video': publicVideoByPlayer[playerId],
+        };
+      }).toList();
+
+      if (!mounted) return;
+      setState(() {
+        _candidates = candidates;
+        _isLoadingCandidates = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = e.toString();
+        _isLoadingCandidates = false;
+      });
+    }
+  }
+
+  Future<void> _openVideo(String url) async {
+    final cleanUrl = url.trim();
+    if (cleanUrl.isEmpty) return;
+    try {
+      await launchURL(cleanUrl);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo abrir el video.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _openPlayerProfile(String playerId) {
+    if (playerId.trim().isEmpty) return;
+    Navigator.of(context).pop();
+    context.pushNamed(
+      'perfil_profesional_solicitar_Contato',
+      queryParameters: {'userId': playerId},
+    );
+  }
+
+  Widget _buildCandidateCard(Map<String, dynamic> candidate) {
+    final jugador = candidate['jugador'] as Map<String, dynamic>?;
+    final name = jugador?['name']?.toString().trim() ?? '';
+    final lastname = jugador?['lastname']?.toString().trim() ?? '';
+    final playerId = _playerId(candidate);
+    final fullName = '$name $lastname'.trim().isEmpty
+        ? 'Jugador sin nombre'
+        : '$name $lastname'.trim();
+    final position = jugador?['posicion']?.toString().trim() ?? '';
+    final city = jugador?['city']?.toString().trim() ?? '';
+    final age = _calculateAge(jugador?['birthday'] ?? jugador?['birth_date']);
+    final status = candidate['estado']?.toString().trim() ?? 'pendiente';
+    final attemptVideos =
+        List<Map<String, dynamic>>.from(candidate['attempt_videos'] ?? const []);
+    final latestPublicVideo =
+        candidate['latest_public_video'] as Map<String, dynamic>?;
+    final primaryVideoUrl = attemptVideos.isNotEmpty
+        ? attemptVideos.first['video_url']?.toString() ?? ''
+        : latestPublicVideo?['video_url']?.toString() ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fullName,
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      [
+                        if (position.isNotEmpty) position,
+                        if (age > 0) '$age años',
+                        if (city.isNotEmpty) city,
+                      ].join(' • ').isEmpty
+                          ? 'Perfil pendiente de completar'
+                          : [
+                              if (position.isNotEmpty) position,
+                              if (age > 0) '$age años',
+                              if (city.isNotEmpty) city,
+                            ].join(' • '),
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _statusColor(status),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: InkWell(
+                  onTap: () => _showCandidateStatusMenu(candidate),
+                  borderRadius: BorderRadius.circular(999),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _statusLabel(status),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              candidate['required_videos_total'] == 0
+                  ? 'Esta convocatoria no tiene desafíos requeridos. Se muestra como apoyo el último video público del jugador.'
+                  : '${attemptVideos.length}/${candidate['required_videos_total']} desafíos requeridos con video encontrado.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF334155),
+              ),
+            ),
+          ),
+          if (attemptVideos.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ...attemptVideos.map((attempt) {
+              final challengeTitle =
+                  attempt['challenge_title']?.toString().trim() ?? 'Desafío';
+              final submittedAt = DateTime.tryParse(
+                attempt['submitted_at']?.toString() ?? '',
+              );
+              final videoUrl = attempt['video_url']?.toString() ?? '';
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFD6DEE8)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            challengeTitle,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            submittedAt != null
+                                ? 'Enviado el ${submittedAt.day.toString().padLeft(2, '0')}/${submittedAt.month.toString().padLeft(2, '0')}/${submittedAt.year}'
+                                : 'Video enviado',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    TextButton(
+                      onPressed: videoUrl.isEmpty ? null : () => _openVideo(videoUrl),
+                      child: const Text('Ver video'),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ] else if (latestPublicVideo != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFD6DEE8)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'No se encontró video de desafío asociado. Se muestra el último video público disponible.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  TextButton(
+                    onPressed: () => _openVideo(
+                      latestPublicVideo['video_url']?.toString() ?? '',
+                    ),
+                    child: const Text('Ver video'),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 12),
+            Text(
+              'Todavía no hay video visible para este jugador dentro de esta convocatoria.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: const Color(0xFF64748B),
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              SizedBox(
+                width: 160,
+                child: OutlinedButton(
+                  onPressed:
+                      playerId.isEmpty ? null : () => _openPlayerProfile(playerId),
+                  child: const Text('Ver perfil'),
+                ),
+              ),
+              SizedBox(
+                width: 160,
+                child: ElevatedButton(
+                  onPressed: primaryVideoUrl.trim().isEmpty
+                      ? null
+                      : () => _openVideo(primaryVideoUrl),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D3B66),
+                  ),
+                  child: const Text(
+                    'Abrir video',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1589,6 +2224,69 @@ class _ViewConvocatoriaModal extends StatelessWidget {
                           .toList(),
                     ),
                   ],
+                  const SizedBox(height: 24),
+                  Text(
+                    'Postulantes y videos',
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Se muestran las solicitudes consolidadas de la convocatoria y, cuando existen, los videos asociados a sus desafíos requeridos.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_isLoadingCandidates)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF0D3B66),
+                        ),
+                      ),
+                    )
+                  else if (_loadError != null)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFFECACA)),
+                      ),
+                      child: Text(
+                        'No se pudieron cargar los postulantes: $_loadError',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: const Color(0xFF991B1B),
+                        ),
+                      ),
+                    )
+                  else if (_candidates.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Text(
+                        'Todavía no hay postulaciones para esta convocatoria.',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: const Color(0xFF475569),
+                        ),
+                      ),
+                    )
+                  else
+                    ..._candidates.map(_buildCandidateCard),
                 ],
               ),
             ),

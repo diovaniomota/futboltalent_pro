@@ -32,6 +32,23 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
   int _totalConvocatorias = 0;
   int _totalPostulaciones = 0;
 
+  String _resolveVideoType(Map<String, dynamic> video) {
+    final persistedType =
+        (video['videoType'] ?? '').toString().trim().toLowerCase();
+    if (persistedType == 'ugc' || persistedType == 'challenge') {
+      return persistedType;
+    }
+
+    final title = (video['title'] ?? '').toString().trim().toLowerCase();
+    final description =
+        (video['description'] ?? '').toString().trim().toLowerCase();
+    final looksLikeChallenge = description.contains('[challenge_ref:') ||
+        title.startsWith('desafío:') ||
+        title.startsWith('desafio:') ||
+        title.startsWith('challenge:');
+    return looksLikeChallenge ? 'challenge' : 'ugc';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -50,13 +67,20 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
       final usersResponse =
           await SupaFlow.client.from('users').select('userType');
 
-      final videosResponse = await SupaFlow.client.from('videos').select('id');
+      final videosResponse = await SupaFlow.client
+          .from('videos')
+          .select('id, title, description, videoType')
+          .eq('is_public', true);
       final coursesResponse =
           await SupaFlow.client.from('courses').select('id');
       final exercisesResponse =
           await SupaFlow.client.from('exercises').select('id');
       final convocatoriasResponse =
           await SupaFlow.client.from('convocatorias').select('id');
+
+      final publicFeedVideos = List<Map<String, dynamic>>.from(
+        videosResponse as List,
+      ).where((video) => _resolveVideoType(video) == 'ugc').length;
 
       int totalAttempts = 0;
       try {
@@ -97,7 +121,7 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
           _totalJugadores = jugadores;
           _totalProfesionales = profesionales;
           _totalClubes = clubes;
-          _totalVideos = (videosResponse as List).length;
+          _totalVideos = publicFeedVideos;
           _totalChallenges = (coursesResponse as List).length +
               (exercisesResponse as List).length;
           _totalChallengeAttempts = totalAttempts;
@@ -120,7 +144,7 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
       appBar: AppBar(
         backgroundColor: FlutterFlowTheme.of(context).primary,
         title: Text(
-          'Painel Admin',
+          'Panel Admin',
           style: FlutterFlowTheme.of(context).headlineMedium.override(
                 fontFamily: 'Poppins',
                 color: Colors.white,
@@ -174,7 +198,7 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
                     _buildMenuCard(
                       icon: Icons.video_library,
                       title: 'Videos',
-                      subtitle: '$_totalVideos videos publicados',
+                      subtitle: '$_totalVideos videos publicados en el feed',
                       onTap: () =>
                           context.pushNamed(AdminVideosWidget.routeName),
                     ),
@@ -198,15 +222,15 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
                     const SizedBox(height: 12),
                     _buildMenuCard(
                       icon: Icons.category,
-                      title: 'CategorÃ­as',
-                      subtitle: 'Gestionar categorÃ­as de desafÃ­os',
+                      title: 'Categorías',
+                      subtitle: 'Gestionar categorías de desafíos',
                       onTap: () =>
                           context.pushNamed(AdminCategoriesWidget.routeName),
                     ),
                     const SizedBox(height: 12),
                     _buildMenuCard(
                       icon: Icons.settings,
-                      title: 'Configuraciones',
+                      title: 'Configuración',
                       subtitle: 'Piloto, flags y textos',
                       onTap: () =>
                           context.pushNamed(AdminSettingsWidget.routeName),
@@ -236,7 +260,7 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
         _buildStatCard('Clubes', _totalClubes, Icons.business, Colors.purple),
         _buildStatCard(
             'Videos', _totalVideos, Icons.video_library, Colors.redAccent),
-        _buildStatCard('Desafios', _totalChallenges, Icons.fitness_center,
+        _buildStatCard('Desafíos', _totalChallenges, Icons.fitness_center,
             Colors.deepOrange),
         _buildStatCard('Convocatorias', _totalConvocatorias,
             Icons.campaign, Colors.teal),

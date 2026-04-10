@@ -84,6 +84,176 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     );
   }
 
+  String _assetDisplayName(String rawUrl) {
+    final url = rawUrl.trim();
+    if (url.isEmpty) return '';
+    try {
+      final uri = Uri.parse(url);
+      if (uri.pathSegments.isNotEmpty) {
+        return Uri.decodeComponent(uri.pathSegments.last);
+      }
+    } catch (_) {}
+    if (url.length <= 42) return url;
+    return '${url.substring(0, 39)}...';
+  }
+
+  Widget _buildPersistedAssetCard({
+    required String title,
+    required String url,
+    required IconData icon,
+    bool isImage = false,
+  }) {
+    final hasAsset = url.trim().isNotEmpty;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: const Color(0xFF0D3B66)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: hasAsset
+                      ? const Color(0xFFDCFCE7)
+                      : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  hasAsset ? 'Cargado' : 'Sin cargar',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: hasAsset
+                        ? const Color(0xFF166534)
+                        : const Color(0xFF64748B),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (!hasAsset)
+            const Text(
+              'Todavía no hay un archivo guardado.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            )
+          else ...[
+            if (isImage)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      url,
+                      height: 84,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 84,
+                        width: double.infinity,
+                        color: const Color(0xFFE2E8F0),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          'No se pudo cargar la portada',
+                          style:
+                              TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _assetDisplayName(url),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF334155),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              )
+            else
+              Row(
+                children: [
+                  const Icon(
+                    Icons.play_circle_outline_rounded,
+                    size: 18,
+                    color: Color(0xFF0D3B66),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _assetDisplayName(url),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF334155),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _resolvedChallengeVideoUrl(Map<String, dynamic> challenge) {
+    final candidates = [
+      challenge['video_url'],
+      challenge['tutorial_video_url'],
+      challenge['tutorial_url'],
+    ];
+    for (final raw in candidates) {
+      final value = raw?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  String _resolvedChallengeCoverUrl(Map<String, dynamic> challenge) {
+    final candidates = [
+      challenge['thumbnail_url'],
+      challenge['image_url'],
+      challenge['cover_url'],
+    ];
+    for (final raw in candidates) {
+      final value = raw?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  String _cacheBustedAssetUrl(String rawUrl, dynamic versionSeed) {
+    final url = rawUrl.trim();
+    if (url.isEmpty) return '';
+    final seed = versionSeed?.toString().trim() ?? '';
+    if (seed.isEmpty) return url;
+    final separator = url.contains('?') ? '&' : '?';
+    return '$url${separator}v=${Uri.encodeQueryComponent(seed)}';
+  }
+
   Future<void> _loadData() async {
     if (mounted) setState(() => _isLoading = true);
 
@@ -237,6 +407,61 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     }
   }
 
+  String _extensionFromName(String fileName, String fallback) {
+    final dot = fileName.lastIndexOf('.');
+    if (dot < 0 || dot == fileName.length - 1) return fallback;
+    return fileName.substring(dot + 1).toLowerCase();
+  }
+
+  String _contentTypeForExtension(String ext) {
+    switch (ext) {
+      case 'mov':
+        return 'video/quicktime';
+      case 'webm':
+        return 'video/webm';
+      case 'mkv':
+        return 'video/x-matroska';
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      case 'gif':
+        return 'image/gif';
+      case 'mp4':
+      default:
+        return 'video/mp4';
+    }
+  }
+
+  Future<String> _uploadChallengeAsset({
+    required XFile file,
+    required String folder,
+    required String fallbackExt,
+  }) async {
+    final fileName = file.name.isNotEmpty ? file.name : file.path;
+    final ext = _extensionFromName(fileName, fallbackExt);
+    Uint8List bytes;
+    if (kIsWeb) {
+      bytes = await file.readAsBytes();
+    } else {
+      bytes = await File(file.path).readAsBytes();
+    }
+    final path =
+        'challenge_assets/admin/$folder/${DateTime.now().millisecondsSinceEpoch}_${fileName.replaceAll(' ', '_')}';
+    await SupaFlow.client.storage.from('Videos').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: _contentTypeForExtension(ext),
+            upsert: true,
+          ),
+        );
+    return SupaFlow.client.storage.from('Videos').getPublicUrl(path);
+  }
+
   Future<void> _toggleActive(Map<String, dynamic> challenge) async {
     final type = challenge['type']?.toString() ?? 'exercise';
     final table = type == 'course' ? 'courses' : 'exercises';
@@ -287,61 +512,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          String extensionFromName(String fileName, String fallback) {
-            final dot = fileName.lastIndexOf('.');
-            if (dot < 0 || dot == fileName.length - 1) return fallback;
-            return fileName.substring(dot + 1).toLowerCase();
-          }
-
-          String contentTypeForExtension(String ext) {
-            switch (ext) {
-              case 'mov':
-                return 'video/quicktime';
-              case 'webm':
-                return 'video/webm';
-              case 'mkv':
-                return 'video/x-matroska';
-              case 'png':
-                return 'image/png';
-              case 'jpg':
-              case 'jpeg':
-                return 'image/jpeg';
-              case 'webp':
-                return 'image/webp';
-              case 'gif':
-                return 'image/gif';
-              case 'mp4':
-              default:
-                return 'video/mp4';
-            }
-          }
-
-          Future<String> uploadPickedFile({
-            required XFile file,
-            required String folder,
-            required String fallbackExt,
-          }) async {
-            final fileName = file.name.isNotEmpty ? file.name : file.path;
-            final ext = extensionFromName(fileName, fallbackExt);
-            Uint8List bytes;
-            if (kIsWeb) {
-              bytes = await file.readAsBytes();
-            } else {
-              bytes = await File(file.path).readAsBytes();
-            }
-            final path =
-                'challenge_assets/admin/$folder/${DateTime.now().millisecondsSinceEpoch}_${fileName.replaceAll(' ', '_')}';
-            await SupaFlow.client.storage.from('Videos').uploadBinary(
-                  path,
-                  bytes,
-                  fileOptions: FileOptions(
-                    contentType: contentTypeForExtension(ext),
-                    upsert: true,
-                  ),
-                );
-            return SupaFlow.client.storage.from('Videos').getPublicUrl(path);
-          }
-
           Future<void> submit() async {
             if (isSaving) return;
             if (!(formKey.currentState?.validate() ?? false)) return;
@@ -359,7 +529,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
             try {
               var finalVideoUrl = videoUrlController.text.trim();
               if (selectedVideoFile != null) {
-                finalVideoUrl = await uploadPickedFile(
+                finalVideoUrl = await _uploadChallengeAsset(
                   file: selectedVideoFile!,
                   folder: 'tutorials',
                   fallbackExt: 'mp4',
@@ -367,7 +537,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
               }
               if (finalVideoUrl.isEmpty) {
                 _showSnack(
-                  'Subí o informá la URL del video tutorial.',
+                  'Seleccioná un video tutorial desde el dispositivo.',
                   color: Colors.red,
                 );
                 setDialogState(() => isSaving = false);
@@ -376,7 +546,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
 
               var finalThumbnailUrl = thumbnailController.text.trim();
               if (selectedCoverFile != null) {
-                finalThumbnailUrl = await uploadPickedFile(
+                finalThumbnailUrl = await _uploadChallengeAsset(
                   file: selectedCoverFile!,
                   folder: 'covers',
                   fallbackExt: 'jpg',
@@ -384,7 +554,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
               }
               if (finalThumbnailUrl.isEmpty) {
                 _showSnack(
-                  'La capa del desafío es obligatoria (subí una imagen o URL).',
+                  'Seleccioná la portada del desafío desde el dispositivo.',
                   color: Colors.red,
                 );
                 setDialogState(() => isSaving = false);
@@ -488,11 +658,11 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                             const InputDecoration(labelText: 'Descripción'),
                       ),
                       const SizedBox(height: 10),
-                      TextFormField(
-                        controller: videoUrlController,
-                        enabled: !isSaving,
-                        decoration: const InputDecoration(
-                          labelText: 'URL tutorial (video)',
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Seleccioná el video tutorial desde tu dispositivo.',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -528,11 +698,11 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      TextFormField(
-                        controller: thumbnailController,
-                        enabled: !isSaving,
-                        decoration: const InputDecoration(
-                          labelText: 'URL capa del desafío',
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Seleccioná la portada del desafío desde tu dispositivo.',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -562,8 +732,8 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                           icon: const Icon(Icons.image_outlined),
                           label: Text(
                             selectedCoverFile == null
-                                ? 'Subir capa desde dispositivo'
-                                : 'Capa seleccionada: ${selectedCoverFile!.name}',
+                                ? 'Subir portada desde dispositivo'
+                                : 'Portada seleccionada: ${selectedCoverFile!.name}',
                           ),
                         ),
                       ),
@@ -571,12 +741,12 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                       DropdownButtonFormField<String?>(
                         value: selectedCategoryId,
                         decoration: const InputDecoration(
-                          labelText: 'CategorÃ­a',
+                          labelText: 'Categoría',
                         ),
                         items: [
                           const DropdownMenuItem<String?>(
                             value: null,
-                            child: Text('Sin categorÃ­a'),
+                            child: Text('Sin categoría'),
                           ),
                           ..._categories.map(
                             (cat) => DropdownMenuItem<String?>(
@@ -599,7 +769,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                         enabled: !isSaving,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: 'Vigencia (dÃ­as)',
+                          labelText: 'Vigencia (días)',
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -632,7 +802,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                         enabled: !isSaving,
                         keyboardType: TextInputType.number,
                         decoration:
-                            const InputDecoration(labelText: 'XP reward'),
+                            const InputDecoration(labelText: 'Recompensa XP'),
                       ),
                       const SizedBox(height: 10),
                       if (selectedType == 'course') ...[
@@ -640,14 +810,18 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                           controller: rewardTypeController,
                           enabled: !isSaving,
                           decoration:
-                              const InputDecoration(labelText: 'Reward type'),
+                              const InputDecoration(
+                                labelText: 'Tipo de recompensa',
+                              ),
                         ),
                         const SizedBox(height: 10),
                         TextFormField(
                           controller: rewardNameController,
                           enabled: !isSaving,
                           decoration:
-                              const InputDecoration(labelText: 'Reward name'),
+                              const InputDecoration(
+                                labelText: 'Nombre de recompensa',
+                              ),
                         ),
                       ] else ...[
                         Row(
@@ -755,10 +929,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
         TextEditingController(text: challenge['title'] ?? '');
     final descriptionController =
         TextEditingController(text: challenge['description'] ?? '');
-    final videoUrlController =
-        TextEditingController(text: challenge['video_url'] ?? '');
-    final thumbnailController =
-        TextEditingController(text: challenge['thumbnail_url'] ?? '');
     final difficultyController =
         TextEditingController(text: challenge['difficulty'] ?? '');
     final durationController = TextEditingController(
@@ -781,12 +951,20 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     bool isActive = challenge['is_active'] == true;
     bool isPremium = challenge['is_premium'] == true;
     final type = challenge['type']?.toString() ?? 'exercise';
+    final currentVideoUrl = _resolvedChallengeVideoUrl(challenge);
+    final currentCoverUrl = _resolvedChallengeCoverUrl(challenge);
+    final currentCoverPreviewUrl = _cacheBustedAssetUrl(
+      currentCoverUrl,
+      challenge['updated_at'],
+    );
+    XFile? selectedVideoFile;
+    XFile? selectedCoverFile;
 
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Editar desafÃ­o'),
+          title: const Text('Editar desafío'),
           content: SizedBox(
             width: 520,
             child: SingleChildScrollView(
@@ -795,37 +973,120 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                 children: [
                   TextFormField(
                     controller: titleController,
-                    decoration: const InputDecoration(labelText: 'TÃ­tulo'),
+                    decoration: const InputDecoration(labelText: 'Título'),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: descriptionController,
                     minLines: 2,
                     maxLines: 3,
-                    decoration: const InputDecoration(labelText: 'DescripciÃ³n'),
+                    decoration: const InputDecoration(labelText: 'Descripción'),
                   ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: videoUrlController,
-                    decoration: const InputDecoration(
-                      labelText: 'URL tutorial (video)',
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      selectedVideoFile == null
+                          ? currentVideoUrl.isNotEmpty
+                              ? 'Video tutorial guardado. Podés reemplazarlo desde tu dispositivo.'
+                              : 'Todavía no cargaste un video tutorial para este desafío.'
+                          : 'Nuevo video seleccionado: ${selectedVideoFile!.name}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildPersistedAssetCard(
+                    title: 'Video tutorial actual',
+                    url: currentVideoUrl,
+                    icon: Icons.smart_display_outlined,
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                              try {
+                                final picker = ImagePicker();
+                                final picked = await picker.pickVideo(
+                                  source: ImageSource.gallery,
+                                  maxDuration: const Duration(minutes: 10),
+                                );
+                                if (picked == null) return;
+                                setDialogState(() => selectedVideoFile = picked);
+                              } catch (_) {
+                                _showSnack(
+                                  'No se pudo seleccionar el video.',
+                                  color: Colors.red,
+                                );
+                              }
+                            },
+                      icon: const Icon(Icons.upload_file),
+                      label: Text(
+                        selectedVideoFile == null
+                            ? currentVideoUrl.isNotEmpty
+                                ? 'Reemplazar video del dispositivo'
+                                : 'Seleccionar video del dispositivo'
+                            : 'Cambiar video seleccionado',
+                      ),
                     ),
                   ),
                   const SizedBox(height: 10),
-                  TextFormField(
-                    controller: thumbnailController,
-                    decoration: const InputDecoration(
-                      labelText: 'URL capa del desafÃ­o',
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      selectedCoverFile == null
+                          ? currentCoverUrl.isNotEmpty
+                              ? 'Portada guardada. Podés reemplazarla desde tu dispositivo.'
+                              : 'Todavía no cargaste una portada para este desafío.'
+                          : 'Nueva portada seleccionada: ${selectedCoverFile!.name}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildPersistedAssetCard(
+                    title: 'Portada actual',
+                    url: currentCoverPreviewUrl,
+                    icon: Icons.image_outlined,
+                    isImage: true,
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                              try {
+                                final picker = ImagePicker();
+                                final picked = await picker.pickImage(
+                                  source: ImageSource.gallery,
+                                  imageQuality: 90,
+                                );
+                                if (picked == null) return;
+                                setDialogState(() => selectedCoverFile = picked);
+                              } catch (_) {
+                                _showSnack(
+                                  'No se pudo seleccionar la portada.',
+                                  color: Colors.red,
+                                );
+                              }
+                            },
+                      icon: const Icon(Icons.image_outlined),
+                      label: Text(
+                        selectedCoverFile == null
+                            ? currentCoverUrl.isNotEmpty
+                                ? 'Reemplazar portada del dispositivo'
+                                : 'Seleccionar portada del dispositivo'
+                            : 'Cambiar portada seleccionada',
+                      ),
                     ),
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String?>(
                     value: selectedCategoryId,
-                    decoration: const InputDecoration(labelText: 'CategorÃ­a'),
+                    decoration: const InputDecoration(labelText: 'Categoría'),
                     items: [
                       const DropdownMenuItem<String?>(
                         value: null,
-                        child: Text('Sin categorÃ­a'),
+                        child: Text('Sin categoría'),
                       ),
                       ..._categories.map(
                         (cat) => DropdownMenuItem<String?>(
@@ -835,14 +1096,14 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                       ),
                     ],
                     onChanged: (value) =>
-                        setDialogState(() => selectedCategoryId = value),
+                            setDialogState(() => selectedCategoryId = value),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: validityController,
                     keyboardType: TextInputType.number,
                     decoration:
-                        const InputDecoration(labelText: 'Vigencia (dÃ­as)'),
+                        const InputDecoration(labelText: 'Vigencia (días)'),
                   ),
                   const SizedBox(height: 10),
                   Row(
@@ -860,7 +1121,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                           controller: durationController,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'DuraciÃ³n (min)',
+                            labelText: 'Duración (min)',
                           ),
                         ),
                       ),
@@ -870,22 +1131,23 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                   TextFormField(
                     controller: xpController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'XP reward'),
+                    decoration:
+                        const InputDecoration(labelText: 'Recompensa XP'),
                   ),
                   const SizedBox(height: 10),
                   if (type == 'course') ...[
                     TextFormField(
                       controller: rewardTypeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Tipo recompensa',
-                      ),
+                        decoration: const InputDecoration(
+                          labelText: 'Tipo de recompensa',
+                        ),
                     ),
                     const SizedBox(height: 10),
                     TextFormField(
                       controller: rewardNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre recompensa',
-                      ),
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre de recompensa',
+                        ),
                     ),
                   ] else ...[
                     TextFormField(
@@ -898,7 +1160,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                     TextFormField(
                       controller: setsController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Sets'),
+                      decoration: const InputDecoration(labelText: 'Series'),
                     ),
                     const SizedBox(height: 10),
                     TextFormField(
@@ -947,59 +1209,114 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     }
 
     final table = type == 'course' ? 'courses' : 'exercises';
-    final payload = <String, dynamic>{
-      'title': titleController.text.trim(),
-      'description': descriptionController.text.trim().isEmpty
-          ? null
-          : descriptionController.text.trim(),
-      'video_url': videoUrlController.text.trim().isEmpty
-          ? null
-          : videoUrlController.text.trim(),
-      'thumbnail_url': thumbnailController.text.trim().isEmpty
-          ? null
-          : thumbnailController.text.trim(),
-      'category_id': selectedCategoryId,
-      'validity_days': maybeInt(validityController.text) ?? 60,
-      'difficulty': difficultyController.text.trim().isEmpty
-          ? null
-          : difficultyController.text.trim(),
-      'duration_minutes': maybeInt(durationController.text),
-      'xp_reward': maybeInt(xpController.text) ?? 100,
-      'is_active': isActive,
-      'is_premium': isPremium,
-      'updated_at': DateTime.now().toIso8601String(),
-    };
-
-    if (type == 'course') {
-      payload['reward_type'] =
-          rewardTypeController.text.trim().isEmpty
-              ? null
-              : rewardTypeController.text.trim();
-      payload['reward_name'] =
-          rewardNameController.text.trim().isEmpty
-              ? null
-              : rewardNameController.text.trim();
-    } else {
-      payload['repetitions'] = maybeInt(repetitionsController.text);
-      payload['sets'] = maybeInt(setsController.text);
-      payload['instructions'] = instructionsController.text.trim().isEmpty
-          ? null
-          : instructionsController.text.trim();
-    }
-
     try {
+      if (mounted) {
+        setState(() => _isLoading = true);
+      }
+      var finalVideoUrl = _resolvedChallengeVideoUrl(challenge);
+      if (selectedVideoFile != null) {
+        finalVideoUrl = await _uploadChallengeAsset(
+          file: selectedVideoFile!,
+          folder: 'tutorials',
+          fallbackExt: 'mp4',
+        );
+      }
+
+      var finalThumbnailUrl = _resolvedChallengeCoverUrl(challenge);
+      if (selectedCoverFile != null) {
+        finalThumbnailUrl = await _uploadChallengeAsset(
+          file: selectedCoverFile!,
+          folder: 'covers',
+          fallbackExt: 'jpg',
+        );
+      }
+
+      final payload = <String, dynamic>{
+        'title': titleController.text.trim(),
+        'description': descriptionController.text.trim().isEmpty
+            ? null
+            : descriptionController.text.trim(),
+        'video_url': finalVideoUrl.isEmpty ? null : finalVideoUrl,
+        'thumbnail_url': finalThumbnailUrl.isEmpty ? null : finalThumbnailUrl,
+        'category_id': selectedCategoryId,
+        'validity_days': maybeInt(validityController.text) ?? 60,
+        'difficulty': difficultyController.text.trim().isEmpty
+            ? null
+            : difficultyController.text.trim(),
+        'duration_minutes': maybeInt(durationController.text),
+        'xp_reward': maybeInt(xpController.text) ?? 100,
+        'is_active': isActive,
+        'is_premium': isPremium,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+
+      if (type == 'course') {
+        payload['reward_type'] =
+            rewardTypeController.text.trim().isEmpty
+                ? null
+                : rewardTypeController.text.trim();
+        payload['reward_name'] =
+            rewardNameController.text.trim().isEmpty
+                ? null
+                : rewardNameController.text.trim();
+      } else {
+        payload['repetitions'] = maybeInt(repetitionsController.text);
+        payload['sets'] = maybeInt(setsController.text);
+        payload['instructions'] = instructionsController.text.trim().isEmpty
+            ? null
+            : instructionsController.text.trim();
+      }
+
       await SupaFlow.client.from(table).update(payload).eq(
             'id',
             challenge['id'],
           );
+      final updatedAt = payload['updated_at']?.toString();
+      challenge['video_url'] = finalVideoUrl.isEmpty ? null : finalVideoUrl;
+      challenge['thumbnail_url'] =
+          finalThumbnailUrl.isEmpty ? null : finalThumbnailUrl;
+      if (finalThumbnailUrl.isNotEmpty) {
+        challenge['image_url'] = finalThumbnailUrl;
+      }
+      if (updatedAt != null && updatedAt.isNotEmpty) {
+        challenge['updated_at'] = updatedAt;
+      }
+      if (mounted) {
+        setState(() {
+          _challenges = _challenges.map((row) {
+            final sameId =
+                (row['id'] ?? '').toString() == (challenge['id'] ?? '').toString();
+            final sameType =
+                (row['type'] ?? '').toString() ==
+                (challenge['type'] ?? '').toString();
+            if (!sameId || !sameType) return row;
+            return {
+              ...row,
+              'video_url': finalVideoUrl.isEmpty ? null : finalVideoUrl,
+              'thumbnail_url':
+                  finalThumbnailUrl.isEmpty ? null : finalThumbnailUrl,
+              if (finalThumbnailUrl.isNotEmpty) 'image_url': finalThumbnailUrl,
+              if (updatedAt != null && updatedAt.isNotEmpty)
+                'updated_at': updatedAt,
+            };
+          }).toList();
+          _applyFilters();
+        });
+      }
       await _loadData();
+      _showSnack(
+        'Desafío actualizado correctamente.',
+        color: const Color(0xFF0D3B66),
+      );
     } catch (e) {
       debugPrint('Edit challenge failed: $e');
+      _showSnack('No se pudo actualizar el desafío.', color: Colors.red);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     } finally {
       titleController.dispose();
       descriptionController.dispose();
-      videoUrlController.dispose();
-      thumbnailController.dispose();
       difficultyController.dispose();
       durationController.dispose();
       xpController.dispose();
@@ -1016,7 +1333,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar desafÃ­o'),
+        title: const Text('Eliminar desafío'),
         content: Text('Eliminar ${challenge['title'] ?? ''}?'),
         actions: [
           TextButton(
@@ -1489,7 +1806,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                 _infoTag('+$xpReward XP'),
                 if (categoryLabel.isNotEmpty) _infoTag(categoryLabel),
                 if (difficulty.isNotEmpty) _infoTag(difficulty),
-                if (validityDays > 0) _infoTag('$validityDays dÃ­as'),
+                if (validityDays > 0) _infoTag('$validityDays días'),
                 _infoTag('$attempts envío(s)'),
               ],
             ),

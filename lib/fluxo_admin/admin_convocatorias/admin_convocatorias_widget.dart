@@ -24,6 +24,195 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _convocatorias = [];
   List<Map<String, dynamic>> _filtered = [];
+  List<Map<String, dynamic>> _clubs = [];
+
+  String _firstNonEmptyValue(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final text = data[key]?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        return text;
+      }
+    }
+    return '';
+  }
+
+  String _normalizedUserType(Map<String, dynamic> user) {
+    return (user['userType'] ?? user['usertype'] ?? user['user_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+  }
+
+  String _clubBaseName(Map<String, dynamic> club) {
+    return _firstNonEmptyValue(club, [
+      'nombre',
+      'name',
+      'club_name',
+      'display_name',
+      'username',
+      'user_name',
+    ]);
+  }
+
+  List<String> _clubRefs(Map<String, dynamic> club) {
+    final refs = <String>{};
+    for (final key in ['value', 'id', 'owner_id', 'user_id', 'club_id']) {
+      final ref = club[key]?.toString().trim() ?? '';
+      if (ref.isNotEmpty && ref.toLowerCase() != 'null') {
+        refs.add(ref);
+      }
+    }
+    final extraRefs = club['refs'];
+    if (extraRefs is List) {
+      for (final value in extraRefs) {
+        final ref = value?.toString().trim() ?? '';
+        if (ref.isNotEmpty && ref.toLowerCase() != 'null') {
+          refs.add(ref);
+        }
+      }
+    }
+    return refs.toList();
+  }
+
+  bool _clubMatchesRef(Map<String, dynamic> club, String? ref) {
+    final normalizedRef = ref?.trim() ?? '';
+    if (normalizedRef.isEmpty) return false;
+    return _clubRefs(club).contains(normalizedRef);
+  }
+
+  String _clubValue(Map<String, dynamic> club) {
+    return _firstNonEmptyValue(club, ['value', 'id', 'owner_id', 'user_id', 'club_id']);
+  }
+
+  Map<String, dynamic>? _findClubByValue(String? value) {
+    final normalizedValue = value?.trim() ?? '';
+    if (normalizedValue.isEmpty) return null;
+    for (final club in _clubs) {
+      if (_clubValue(club) == normalizedValue || _clubMatchesRef(club, normalizedValue)) {
+        return club;
+      }
+    }
+    return null;
+  }
+
+  String? _selectedClubValueForDialog(String? currentRef) {
+    final normalizedRef = currentRef?.trim() ?? '';
+    if (normalizedRef.isEmpty) return null;
+    for (final club in _clubs) {
+      if (_clubMatchesRef(club, normalizedRef)) {
+        return _clubValue(club);
+      }
+    }
+    return null;
+  }
+
+  void _mergeClubOption(
+    List<Map<String, dynamic>> clubs,
+    Map<String, dynamic> candidate,
+  ) {
+    final candidateValue = _clubValue(candidate);
+    if (candidateValue.isEmpty) return;
+
+    final candidateRefs = _clubRefs(candidate).toSet();
+    if (candidateRefs.isEmpty) return;
+
+    for (final existing in clubs) {
+      final existingRefs = _clubRefs(existing).toSet();
+      if (existingRefs.intersection(candidateRefs).isEmpty) {
+        continue;
+      }
+
+      if (_clubBaseName(existing).isEmpty && _clubBaseName(candidate).isNotEmpty) {
+        existing['nombre'] = candidate['nombre'];
+        existing['name'] = candidate['name'];
+        existing['club_name'] = candidate['club_name'];
+        existing['display_name'] = candidate['display_name'];
+      }
+
+      if ((existing['nombre_corto']?.toString().trim().isEmpty ?? true) &&
+          (candidate['nombre_corto']?.toString().trim().isNotEmpty ?? false)) {
+        existing['nombre_corto'] = candidate['nombre_corto'];
+      }
+
+      for (final key in ['id', 'owner_id', 'user_id', 'club_id']) {
+        if ((existing[key]?.toString().trim().isEmpty ?? true) &&
+            (candidate[key]?.toString().trim().isNotEmpty ?? false)) {
+          existing[key] = candidate[key];
+        }
+      }
+
+      existing['refs'] = {...existingRefs, ...candidateRefs}.toList();
+      existing['value'] = _clubValue(existing);
+      if ((existing['value']?.toString().trim().isEmpty ?? true) &&
+          candidateValue.isNotEmpty) {
+        existing['value'] = candidateValue;
+      }
+      return;
+    }
+
+    clubs.add({
+      ...candidate,
+      'value': candidateValue,
+      'refs': candidateRefs.toList(),
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> _loadClubOptions() async {
+    final clubs = <Map<String, dynamic>>[];
+
+    try {
+      final clubsResponse = await SupaFlow.client.from('clubs').select();
+      for (final row in List<Map<String, dynamic>>.from(clubsResponse as List)) {
+        final normalized = Map<String, dynamic>.from(row);
+        normalized['value'] = _firstNonEmptyValue(normalized, [
+          'id',
+          'owner_id',
+          'user_id',
+          'club_id',
+        ]);
+        _mergeClubOption(clubs, normalized);
+      }
+    } catch (error) {
+      debugPrint('AdminConvocatorias clubs table load error: $error');
+    }
+
+    try {
+      final usersResponse = await SupaFlow.client.from('users').select();
+      for (final row in List<Map<String, dynamic>>.from(usersResponse as List)) {
+        final normalized = Map<String, dynamic>.from(row);
+        if (_normalizedUserType(normalized) != 'club') continue;
+
+        final userId = _firstNonEmptyValue(normalized, ['user_id', 'id']);
+        if (userId.isEmpty) continue;
+
+        _mergeClubOption(clubs, {
+          'value': userId,
+          'user_id': userId,
+          'id': normalized['id'],
+          'display_name': _firstNonEmptyValue(normalized, [
+            'club_name',
+            'name',
+            'username',
+          ]),
+          'nombre': _firstNonEmptyValue(normalized, [
+            'club_name',
+            'name',
+            'username',
+          ]),
+          'club_name': normalized['club_name'],
+          'username': normalized['username'],
+          'refs': [userId],
+        });
+      }
+    } catch (error) {
+      debugPrint('AdminConvocatorias club users load error: $error');
+    }
+
+    clubs.sort((a, b) => _clubLabel(a).toLowerCase().compareTo(
+          _clubLabel(b).toLowerCase(),
+        ));
+    return clubs;
+  }
 
   @override
   void initState() {
@@ -48,6 +237,13 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
           .select()
           .order('created_at', ascending: false);
       final convocatorias = List<Map<String, dynamic>>.from(response as List);
+
+      try {
+        _clubs = await _loadClubOptions();
+      } catch (clubError) {
+        debugPrint('AdminConvocatorias clubs load error: $clubError');
+        _clubs = [];
+      }
 
       final ids = convocatorias
           .map((c) => c['id']?.toString() ?? '')
@@ -112,6 +308,15 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
     if (mounted) setState(() {});
   }
 
+  String _clubLabel(Map<String, dynamic> club) {
+    final name = _clubBaseName(club).isNotEmpty ? _clubBaseName(club) : 'Club';
+    final short = (club['nombre_corto'] ?? '').toString().trim();
+    if (short.isNotEmpty && short.toLowerCase() != name.toLowerCase()) {
+      return '$name · $short';
+    }
+    return name;
+  }
+
   Future<void> _openEditor({Map<String, dynamic>? convocatoria}) async {
     final titleCtrl =
         TextEditingController(text: convocatoria?['titulo']?.toString() ?? '');
@@ -125,8 +330,8 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
         text: convocatoria?['ciudad']?.toString() ??
             convocatoria?['ubicacion']?.toString() ??
             '');
-    final clubCtrl =
-        TextEditingController(text: convocatoria?['club_id']?.toString() ?? '');
+    final originalClubRef = convocatoria?['club_id']?.toString().trim();
+    String? selectedClubId = _selectedClubValueForDialog(originalClubRef);
     DateTime? startDate = _parseDate(convocatoria?['fecha_inicio']);
     DateTime? endDate = _parseDate(convocatoria?['fecha_fin']) ??
         _parseDate(convocatoria?['fecha_cierre']);
@@ -169,9 +374,25 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
                       const InputDecoration(labelText: 'Ciudad / Ubicación'),
                 ),
                 const SizedBox(height: 8),
-                TextField(
-                  controller: clubCtrl,
-                  decoration: const InputDecoration(labelText: 'Club ID'),
+                DropdownButtonFormField<String>(
+                  value: _clubs.any((club) => _clubValue(club) == selectedClubId)
+                      ? selectedClubId
+                      : null,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Club'),
+                  items: _clubs
+                      .map(
+                        (club) => DropdownMenuItem<String>(
+                          value: _clubValue(club),
+                          child: Text(
+                            _clubLabel(club),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) =>
+                      setDialogState(() => selectedClubId = value),
                 ),
                 const SizedBox(height: 8),
                 SwitchListTile(
@@ -246,6 +467,20 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
 
     if (result != true) return;
 
+    final selectedClub = _findClubByValue(selectedClubId);
+    final selectedClubRefs = selectedClub == null ? const <String>[] : _clubRefs(selectedClub);
+    final clubIdForSave = (originalClubRef?.isNotEmpty ?? false) &&
+            selectedClubRefs.contains(originalClubRef)
+        ? originalClubRef
+        : (selectedClubId?.trim().isNotEmpty ?? false)
+            ? selectedClubId!.trim()
+            : (convocatoria?['club_id']?.toString().trim() ?? '');
+    final selectedClubName = selectedClub == null
+        ? ''
+        : (_clubBaseName(selectedClub).isNotEmpty
+            ? _clubBaseName(selectedClub)
+            : _clubLabel(selectedClub));
+
     final payload = <String, dynamic>{
       if (convocatoria != null) 'id': convocatoria['id'],
       'titulo': titleCtrl.text.trim().isEmpty
@@ -256,9 +491,9 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
       'pais': countryCtrl.text.trim(),
       'ciudad': cityCtrl.text.trim(),
       'ubicacion': cityCtrl.text.trim(),
-      'club_id': clubCtrl.text.trim().isEmpty
-          ? (convocatoria == null ? '' : (convocatoria['club_id'] ?? ''))
-          : clubCtrl.text.trim(),
+      'club_id': clubIdForSave,
+      if (selectedClubName.isNotEmpty) 'club_name': selectedClubName,
+      if (selectedClubName.isNotEmpty) 'club_nombre': selectedClubName,
       'is_active': isActive,
       'estado': isActive ? 'activa' : 'cerrada',
       'updated_at': DateTime.now().toIso8601String(),
@@ -279,7 +514,6 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
       positionCtrl.dispose();
       countryCtrl.dispose();
       cityCtrl.dispose();
-      clubCtrl.dispose();
     }
   }
 

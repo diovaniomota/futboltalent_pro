@@ -52,12 +52,15 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   Map<String, dynamic>? _userProgress;
   List<Map<String, dynamic>> _courses = [];
   List<Map<String, dynamic>> _exercises = [];
+  List<Map<String, dynamic>> _challengeCategories = [];
   List<Map<String, dynamic>> _allItems = [];
   List<Map<String, dynamic>> _filteredItems = [];
   final Map<String, String> _userCourseStatus = {};
   final Map<String, String> _userExerciseStatus = {};
+  final Map<String, String> _categoryNameById = {};
   final Map<String, _ChallengeAttempt> _attemptByItemKey = {};
   bool _didHandleInitialChallenge = false;
+  String? _selectedExerciseCategoryKey;
 
   bool get _coursesEnabled => FFAppState().isFeatureEnabled('cursos');
   bool get _exercisesEnabled => FFAppState().isFeatureEnabled('desafios');
@@ -119,6 +122,22 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   bool _isLargeScreen(BuildContext context) =>
       MediaQuery.of(context).size.width >= 1024;
 
+  String _cacheBustedMediaUrl(Map<String, dynamic> item, String rawUrl) {
+    final url = rawUrl.trim();
+    if (url.isEmpty) return '';
+
+    final version = (item['updated_at'] ??
+            item['update_at'] ??
+            item['created_at'] ??
+            item['id'])
+        ?.toString()
+        .trim();
+    if (version == null || version.isEmpty) return url;
+
+    final separator = url.contains('?') ? '&' : '?';
+    return '$url${separator}v=${Uri.encodeComponent(version)}';
+  }
+
   Future<void> _loadData() async {
     try {
       setState(() {
@@ -134,6 +153,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
 
       await Future.wait([
         _loadUserProgress(),
+        _loadChallengeCategories(),
         _loadCourses(),
         _loadExercises(),
         _loadSavedAttempts(),
@@ -197,6 +217,94 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     } catch (e) {
       debugPrint('Error loading courses: $e');
     }
+  }
+
+  Future<void> _loadChallengeCategories() async {
+    try {
+      final response = await SupaFlow.client
+          .from('challenge_categories')
+          .select('id, name')
+          .order('name');
+      _challengeCategories = List<Map<String, dynamic>>.from(response as List);
+      _categoryNameById.clear();
+      for (final row in _challengeCategories) {
+        final id = row['id']?.toString().trim() ?? '';
+        final name = row['name']?.toString().trim() ?? '';
+        if (id.isNotEmpty) {
+          _categoryNameById[id] = name.isEmpty ? id : name;
+        }
+      }
+    } catch (_) {
+      _challengeCategories = [];
+      _categoryNameById.clear();
+    }
+  }
+
+  String _resolveCategoryLabel(Map<String, dynamic> item) {
+    final categoryId = item['category_id']?.toString().trim() ?? '';
+    if (categoryId.isNotEmpty && _categoryNameById.containsKey(categoryId)) {
+      return _categoryNameById[categoryId]!;
+    }
+
+    final fallback = (item['category_label'] ??
+            item['category'] ??
+            item['categoria'] ??
+            item['categoría'] ??
+            '')
+        .toString()
+        .trim();
+    return fallback.isEmpty ? 'Sin categoría' : fallback;
+  }
+
+  String _exerciseCategoryKey(Map<String, dynamic> item) {
+    final categoryId = item['category_id']?.toString().trim() ?? '';
+    if (categoryId.isNotEmpty) return categoryId;
+    final label = _resolveCategoryLabel(item);
+    return label.isEmpty ? 'sin_categoria' : 'label:$label';
+  }
+
+  List<Map<String, dynamic>> get _exerciseItems => _allItems
+      .where((item) => item['type'] == 'exercise')
+      .map((item) => Map<String, dynamic>.from(item))
+      .toList();
+
+  List<Map<String, dynamic>> get _exerciseCategorySummaries {
+    final grouped = <String, Map<String, dynamic>>{};
+    for (final item in _exerciseItems) {
+      final key = _exerciseCategoryKey(item);
+      final label = _resolveCategoryLabel(item);
+      final current = grouped[key];
+      if (current == null) {
+        grouped[key] = {
+          'key': key,
+          'label': label,
+          'count': 1,
+          'cover_item': item,
+        };
+      } else {
+        current['count'] = (current['count'] as int? ?? 0) + 1;
+      }
+    }
+
+    final summaries = grouped.values.toList();
+    summaries.sort((a, b) => (a['label']?.toString() ?? '')
+        .toLowerCase()
+        .compareTo((b['label']?.toString() ?? '').toLowerCase()));
+    return summaries;
+  }
+
+  bool get _shouldShowExerciseCategoryHub =>
+      _selectedFilter == 'Ejercicios' && _selectedExerciseCategoryKey == null;
+
+  List<Map<String, dynamic>> get _visibleCatalogItems {
+    if (_selectedFilter == 'Ejercicios' && _selectedExerciseCategoryKey != null) {
+      return _filteredItems
+          .where((item) =>
+              item['type'] == 'exercise' &&
+              _exerciseCategoryKey(item) == _selectedExerciseCategoryKey)
+          .toList();
+    }
+    return _filteredItems;
   }
 
   Future<void> _loadExercises() async {
@@ -394,7 +502,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       ),
       background: const Color(0xFF0D3B66),
       icon: Icons.videocam_rounded,
-      title: 'Subí tu vídeo',
+      title: 'Subí tu video',
     );
 
     try {
@@ -409,7 +517,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           'No se grabó ningún video. El desafío sigue pendiente.',
           background: Colors.orange,
           icon: Icons.pause_circle_outline_rounded,
-          title: 'Vídeo não enviado',
+          title: 'Video no enviado',
         );
         return null;
       }
@@ -514,7 +622,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           'No se pudo registrar el video en tu perfil. Intentá de nuevo.',
           background: Colors.red,
           icon: Icons.error_outline_rounded,
-          title: 'Falha ao registrar',
+          title: 'No se pudo registrar',
         );
         return null;
       }
@@ -561,7 +669,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
               ),
         background: const Color(0xFF48BB78),
         icon: Icons.emoji_events_rounded,
-        title: 'Vídeo enviado com sucesso',
+        title: 'Video enviado con éxito',
       );
       return attempt;
     } catch (e) {
@@ -570,7 +678,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
         'No se pudo subir el video. Revisá permisos e intentá de nuevo.',
         background: Colors.red,
         icon: Icons.cloud_off_rounded,
-        title: 'Erro no upload',
+        title: 'Error al subir',
       );
       return null;
     } finally {
@@ -683,6 +791,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           ...course,
           'type': 'course',
           'status': _userCourseStatus[course['id'].toString()] ?? 'not_started',
+          'category_label': _resolveCategoryLabel(course),
           'placeholder_image': _placeholderImages[i % _placeholderImages.length]
         });
       }
@@ -695,6 +804,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           'type': 'exercise',
           'status':
               _userExerciseStatus[exercise['id'].toString()] ?? 'not_started',
+          'category_label': _resolveCategoryLabel(exercise),
           'placeholder_image':
               _placeholderImages[(i + 3) % _placeholderImages.length]
         });
@@ -731,7 +841,12 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   }
 
   void _onFilterSelected(String filter) {
-    setState(() => _selectedFilter = filter);
+    setState(() {
+      _selectedFilter = filter;
+      if (filter != 'Ejercicios') {
+        _selectedExerciseCategoryKey = null;
+      }
+    });
     _applyFilter();
   }
 
@@ -846,7 +961,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           '🔥 +${GamificationService.challengeParticipatedPoints} XP por activar este desafío.',
           background: const Color(0xFF0D3B66),
           icon: Icons.local_fire_department_rounded,
-          title: 'Desafio ativado',
+          title: 'Desafío activado',
         );
       }
     }
@@ -864,12 +979,15 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final isCourse = item['type'] == 'course';
     final itemId = item['id'].toString();
     final itemKey = _itemKey(item);
-    final completionCallout = '🔥 +$pointsReward XP ao completar';
-    final uploadCallout = '🎥 +$participationReward XP ao subir o vídeo';
-    final imageUrl = item['thumbnail_url'] ??
-        item['image_url'] ??
-        item['placeholder_image'] ??
-        '';
+    final completionCallout = '🔥 +$pointsReward XP al completar';
+    final uploadCallout = '🎥 +$participationReward XP al subir el video';
+    final imageUrl = _cacheBustedMediaUrl(
+      item,
+      item['thumbnail_url'] ??
+          item['image_url'] ??
+          item['placeholder_image'] ??
+          '',
+    );
     _ChallengeAttempt? modalAttempt = _attemptByItemKey[itemKey];
     bool isSendingAttempt = false;
     String uploadStateMessage = modalAttempt != null
@@ -1069,6 +1187,15 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                   ),
                                 ),
                               ),
+                            SizedBox(height: 8 * scale),
+                            Text(
+                              'Compatibilidad recomendada: video subido desde admin o URL directa .mp4/.webm.',
+                              style: GoogleFonts.inter(
+                                color: Colors.white.withValues(alpha: 0.7),
+                                fontSize: 11.5 * scale,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                             SizedBox(height: 14 * scale),
                             Container(
                               width: double.infinity,
@@ -1220,8 +1347,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                       ),
                                 label: Text(
                                   modalAttempt != null
-                                      ? 'Reenviar vídeo'
-                                      : 'Subir vídeo e ganhar XP',
+                                      ? 'Reenviar video'
+                                      : 'Subir video y ganar XP',
                                   style: GoogleFonts.inter(
                                     color: Colors.white,
                                     fontSize: 15 * scale,
@@ -1290,7 +1417,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: PlanPaywallCard(
-              title: 'Desafios e cursos no Plano Pro',
+              title: 'Desafíos y cursos en Plan Pro',
               message:
                   'Este módulo de entrenamiento está disponible para usuarios Pro. Si el modo piloto está ON, el acceso es libre.',
             ),
@@ -1319,16 +1446,21 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                             _buildHeader(context),
                             SizedBox(height: 20 * scale),
                             _buildFilters(context),
+                            if (_selectedFilter == 'Ejercicios')
+                              _buildExerciseCategoryHeader(context),
                             SizedBox(height: 24 * scale),
                             Expanded(
-                              child: _filteredItems.isEmpty
-                                  ? _buildEmptyState(context)
-                                  : _isLargeScreen(context)
-                                      ? _buildGridView(context)
-                                      : _buildCarousel(context),
+                              child: _shouldShowExerciseCategoryHub
+                                  ? _buildExerciseCategoryHub(context)
+                                  : _visibleCatalogItems.isEmpty
+                                      ? _buildEmptyState(context)
+                                      : _isLargeScreen(context)
+                                          ? _buildGridView(context)
+                                          : _buildCarousel(context),
                             ),
                             if (!_isLargeScreen(context) &&
-                                _filteredItems.isNotEmpty)
+                                !_shouldShowExerciseCategoryHub &&
+                                _visibleCatalogItems.isNotEmpty)
                               _buildPageIndicators(context),
                             const SizedBox(height: 92),
                           ],
@@ -1387,71 +1519,342 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final levelName = GamificationService.levelNameFromPoints(totalPoints);
     final horizontalPadding =
         _responsive(context, mobile: 16, tablet: 24, desktop: 32);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isCompact = screenWidth < 390;
 
     return Padding(
       padding: EdgeInsets.symmetric(
           horizontal: horizontalPadding, vertical: 12 * scale),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Mi Progreso',
-                  style: GoogleFonts.inter(
-                      fontSize: 14 * scale, color: Colors.grey[600])),
-              SizedBox(height: 4 * scale),
-              Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                        horizontal: 10 * scale, vertical: 4 * scale),
-                    decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                            colors: [Color(0xFF0D3B66), Color(0xFF1E5A8A)]),
-                        borderRadius: BorderRadius.circular(20)),
-                    child: Row(children: [
-                      Icon(Icons.bolt,
-                          color: const Color(0xFFFFD700), size: 16 * scale),
-                      SizedBox(width: 4 * scale),
-                      Text('$totalPoints XP',
-                          style: GoogleFonts.inter(
-                              color: Colors.white,
-                              fontSize: 14 * scale,
-                              fontWeight: FontWeight.bold))
-                    ]),
-                  ),
-                  SizedBox(width: 8 * scale),
-                  Text(levelName,
-                      style: GoogleFonts.inter(
-                          fontSize: 16 * scale,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF0D3B66))),
-                ],
-              ),
-            ],
-          ),
-          GestureDetector(
-            onTap: () => context.pushNamed('ranking'),
-            child: Container(
+      child: isCompact
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildProgressSummary(scale, totalPoints, levelName),
+                SizedBox(height: 12 * scale),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _buildHeaderActions(scale),
+                ),
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildProgressSummary(scale, totalPoints, levelName),
+                ),
+                SizedBox(width: 12 * scale),
+                _buildHeaderActions(scale),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildProgressSummary(
+    double scale,
+    int totalPoints,
+    String levelName,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Mi Progreso',
+            style: GoogleFonts.inter(
+                fontSize: 14 * scale, color: Colors.grey[600])),
+        SizedBox(height: 4 * scale),
+        Wrap(
+          spacing: 8 * scale,
+          runSpacing: 6 * scale,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Container(
               padding: EdgeInsets.symmetric(
-                  horizontal: 16 * scale, vertical: 10 * scale),
+                  horizontal: 10 * scale, vertical: 4 * scale),
               decoration: BoxDecoration(
-                  color: const Color(0xFF0D3B66),
-                  borderRadius: BorderRadius.circular(25)),
-              child: Row(children: [
-                Icon(Icons.leaderboard, color: Colors.white, size: 18 * scale),
-                SizedBox(width: 6 * scale),
+                  gradient: const LinearGradient(
+                      colors: [Color(0xFF0D3B66), Color(0xFF1E5A8A)]),
+                  borderRadius: BorderRadius.circular(20)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.bolt,
+                    color: const Color(0xFFFFD700), size: 16 * scale),
+                SizedBox(width: 4 * scale),
+                Text('$totalPoints XP',
+                    style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 14 * scale,
+                        fontWeight: FontWeight.bold))
+              ]),
+            ),
+            Text(levelName,
+                style: GoogleFonts.inter(
+                    fontSize: 16 * scale,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF0D3B66))),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeaderActions(double scale) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: _loadData,
+          child: Container(
+            width: 42 * scale,
+            height: 42 * scale,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF6FC),
+              borderRadius: BorderRadius.circular(21),
+            ),
+            child: Icon(
+              Icons.refresh_rounded,
+              color: const Color(0xFF0D3B66),
+              size: 20 * scale,
+            ),
+          ),
+        ),
+        SizedBox(width: 10 * scale),
+        GestureDetector(
+          onTap: () => context.pushNamed('ranking'),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+                horizontal: 14 * scale, vertical: 10 * scale),
+            decoration: BoxDecoration(
+                color: const Color(0xFF0D3B66),
+                borderRadius: BorderRadius.circular(25)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.leaderboard,
+                    color: Colors.white, size: 18 * scale),
+                SizedBox(width: 10 * scale),
                 Text('Ranking',
                     style: GoogleFonts.inter(
                         color: Colors.white,
                         fontSize: 14 * scale,
                         fontWeight: FontWeight.w600))
-              ]),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExerciseCategoryHeader(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final horizontalPadding =
+        _responsive(context, mobile: 16, tablet: 24, desktop: 32);
+
+    if (_selectedExerciseCategoryKey == null) {
+      return Padding(
+        padding:
+            EdgeInsets.fromLTRB(horizontalPadding, 14 * scale, horizontalPadding, 0),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Elegí una categoría para ver los desafíos',
+            style: GoogleFonts.inter(
+              fontSize: 13 * scale,
+              color: const Color(0xFF64748B),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final selectedSummary = _exerciseCategorySummaries.firstWhere(
+      (item) => item['key'] == _selectedExerciseCategoryKey,
+      orElse: () => <String, dynamic>{},
+    );
+    final label = selectedSummary['label']?.toString() ?? 'Categoría';
+    final count = selectedSummary['count'] as int? ?? 0;
+
+    return Padding(
+      padding:
+          EdgeInsets.fromLTRB(horizontalPadding, 14 * scale, horizontalPadding, 0),
+      child: Row(
+        children: [
+          TextButton.icon(
+            onPressed: () {
+              setState(() {
+                _selectedExerciseCategoryKey = null;
+                _currentPage = 0;
+              });
+              if (_pageController.hasClients) {
+                _pageController.jumpToPage(0);
+              }
+            },
+            icon: const Icon(Icons.arrow_back_rounded, size: 18),
+            label: const Text('Categorías'),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF0D3B66),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$label · $count desafío(s)',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 13 * scale,
+                color: const Color(0xFF475569),
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildExerciseCategoryHub(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final summaries = _exerciseCategorySummaries;
+    final horizontalPadding =
+        _responsive(context, mobile: 16, tablet: 24, desktop: 32);
+
+    if (summaries.isEmpty) {
+      return _buildEmptyState(context);
+    }
+
+    return GridView.builder(
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: _isLargeScreen(context) ? 3 : 2,
+        crossAxisSpacing: 14 * scale,
+        mainAxisSpacing: 14 * scale,
+        childAspectRatio: _isLargeScreen(context) ? 1.05 : 0.92,
+      ),
+      itemCount: summaries.length,
+      itemBuilder: (context, index) {
+        final summary = summaries[index];
+        final coverItem = summary['cover_item'] as Map<String, dynamic>? ??
+            <String, dynamic>{};
+        final imageUrl = _cacheBustedMediaUrl(
+          coverItem,
+          coverItem['thumbnail_url'] ??
+              coverItem['image_url'] ??
+              coverItem['placeholder_image'] ??
+              '',
+        );
+        final label = summary['label']?.toString() ?? 'Categoría';
+        final count = summary['count']?.toString() ?? '0';
+
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              _selectedExerciseCategoryKey = summary['key']?.toString() ?? '';
+              _currentPage = 0;
+            });
+            if (_pageController.hasClients) {
+              _pageController.jumpToPage(0);
+            }
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.10),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (imageUrl.isNotEmpty)
+                    CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) =>
+                          Container(color: Colors.grey[300]),
+                      errorWidget: (_, __, ___) =>
+                          Container(color: const Color(0xFF0D3B66)),
+                    )
+                  else
+                    Container(color: const Color(0xFF0D3B66)),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.12),
+                          Colors.black.withOpacity(0.26),
+                          Colors.black.withOpacity(0.82),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 14,
+                    left: 14,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.20),
+                        ),
+                      ),
+                      child: Text(
+                        '$count desafío(s)',
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 18,
+                    right: 18,
+                    bottom: 18,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 20 * scale,
+                            fontWeight: FontWeight.w800,
+                            height: 1.1,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Ver desafíos de esta categoría',
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withValues(alpha: 0.84),
+                            fontSize: 12 * scale,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1557,11 +1960,11 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final scale = _scaleFactor(context);
     return PageView.builder(
       controller: _pageController,
-      itemCount: _filteredItems.length,
+      itemCount: _visibleCatalogItems.length,
       onPageChanged: (index) => setState(() => _currentPage = index),
       itemBuilder: (context, index) => Padding(
           padding: EdgeInsets.symmetric(horizontal: 8 * scale),
-          child: _buildCard(context, _filteredItems[index])),
+          child: _buildCard(context, _visibleCatalogItems[index])),
     );
   }
 
@@ -1577,9 +1980,9 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           crossAxisSpacing: 16 * scale,
           mainAxisSpacing: 16 * scale,
           childAspectRatio: 0.75),
-      itemCount: _filteredItems.length,
+      itemCount: _visibleCatalogItems.length,
       itemBuilder: (context, index) =>
-          _buildCard(context, _filteredItems[index]),
+          _buildCard(context, _visibleCatalogItems[index]),
     );
   }
 
@@ -1592,10 +1995,13 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final title = item['title'] ?? (isCourse ? 'Curso' : 'Ejercicio');
     final pointsReward = GamificationService.challengeCompletedPoints;
     final participationReward = GamificationService.challengeParticipatedPoints;
-    final imageUrl = item['thumbnail_url'] ??
-        item['image_url'] ??
-        item['placeholder_image'] ??
-        '';
+    final imageUrl = _cacheBustedMediaUrl(
+      item,
+      item['thumbnail_url'] ??
+          item['image_url'] ??
+          item['placeholder_image'] ??
+          '',
+    );
 
     String statusText = isCompleted
         ? '✓ Completado'
@@ -1731,14 +2137,14 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                           children: [
                             _buildMotivationChip(
                               icon: Icons.local_fire_department_rounded,
-                              label: '🔥 +$pointsReward XP ao completar',
+                              label: '🔥 +$pointsReward XP al completar',
                               backgroundColor:
                                   Colors.white.withValues(alpha: 0.18),
                               borderColor: Colors.white.withValues(alpha: 0.18),
                             ),
                             _buildMotivationChip(
                               icon: Icons.videocam_rounded,
-                              label: '+$participationReward XP ao subir vídeo',
+                              label: '+$participationReward XP al subir video',
                               backgroundColor:
                                   Colors.white.withValues(alpha: 0.12),
                               borderColor: Colors.white.withValues(alpha: 0.14),
@@ -1788,7 +2194,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
         child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(
-                _filteredItems.length,
+                _visibleCatalogItems.length,
                 (index) => AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     margin: EdgeInsets.symmetric(horizontal: 4 * scale),
@@ -1905,8 +2311,8 @@ class _CompletarButtonState extends State<_CompletarButton> {
             .maybeSingle();
         if (existing != null && existing['status'] == 'completed') {
           _showActionSnack(
-            title: 'Desafio já concluído',
-            message: 'Esse curso já foi marcado como concluído.',
+            title: 'Desafío ya completado',
+            message: 'Este curso ya fue marcado como completado.',
             background: Colors.orange,
             icon: Icons.check_circle_outline_rounded,
           );
@@ -1944,8 +2350,8 @@ class _CompletarButtonState extends State<_CompletarButton> {
             .maybeSingle();
         if (existing != null && existing['status'] == 'completed') {
           _showActionSnack(
-            title: 'Desafio já concluído',
-            message: 'Esse exercício já foi marcado como concluído.',
+            title: 'Desafío ya completado',
+            message: 'Este ejercicio ya fue marcado como completado.',
             background: Colors.orange,
             icon: Icons.check_circle_outline_rounded,
           );
@@ -1974,9 +2380,9 @@ class _CompletarButtonState extends State<_CompletarButton> {
         await _updateUserProgress();
       }
       _showActionSnack(
-        title: widget.isCourse ? 'Curso concluído' : 'Desafio concluído',
+        title: widget.isCourse ? 'Curso completado' : 'Desafío completado',
         message:
-            '🔥 +${widget.pointsReward} XP ao completar. Seu progresso já foi atualizado.',
+            '🔥 +${widget.pointsReward} XP al completar. Tu progreso ya fue actualizado.',
         background: const Color(0xFF48BB78),
         icon: Icons.emoji_events_rounded,
       );
@@ -1984,8 +2390,8 @@ class _CompletarButtonState extends State<_CompletarButton> {
     } catch (e) {
       debugPrint('Error: $e');
       _showActionSnack(
-        title: 'Não foi possível concluir',
-        message: 'Ocorreu um erro ao finalizar este desafio.',
+        title: 'No se pudo completar',
+        message: 'Ocurrió un error al finalizar este desafío.',
         background: Colors.red,
         icon: Icons.error_outline_rounded,
       );
@@ -2035,14 +2441,12 @@ class _CompletarButtonState extends State<_CompletarButton> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        widget.canComplete
-                            ? 'Completar y recibir +${widget.pointsReward} XP'
-                            : 'Sube un video para poder completar',
+                        'Completar y recibir +${widget.pointsReward} XP',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
                           color: Colors.white,
                           fontSize: 15,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -2051,7 +2455,7 @@ class _CompletarButtonState extends State<_CompletarButton> {
         Text(
           widget.canComplete
               ? 'Feedback inmediato y progreso actualizado'
-              : 'Primero validamos tu intento con video',
+              : 'Primero subí tu video. Este paso se habilita cuando ya existe un intento cargado.',
           textAlign: TextAlign.center,
           style: GoogleFonts.inter(
             color: Colors.white.withValues(alpha: 0.6),
@@ -2119,10 +2523,89 @@ class _InlineVideoPlayer extends StatefulWidget {
 }
 
 class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
+  static const String _legacyAdminTutorialFallbackUrl =
+      'https://zwjdxizbakfhklpjoalt.supabase.co/storage/v1/object/public/Videos/challenge_assets/admin/tutorials/1772711907004_105920.mp4';
+
   VideoPlayerController? _controller;
   bool _loading = true;
   String? _error;
   String? _fallbackUrl;
+
+  String _storagePublicBaseUrl() {
+    final probeUrl =
+        SupaFlow.client.storage.from('Videos').getPublicUrl('__probe__.mp4');
+    const marker = '/storage/v1/object/public/';
+    final markerIndex = probeUrl.indexOf(marker);
+    if (markerIndex <= 0) return '';
+    return probeUrl.substring(0, markerIndex);
+  }
+
+  String _normalizeVideoSource(String raw) {
+    final input = raw.trim();
+    if (input.isEmpty) return '';
+
+    final lower = input.toLowerCase();
+    if (lower.startsWith('blob:') || lower.startsWith('data:')) {
+      return input;
+    }
+
+    if (input.startsWith('//')) {
+      return 'https:$input';
+    }
+
+    if (lower.startsWith('http://') || lower.startsWith('https://')) {
+      return input;
+    }
+
+    if (lower.startsWith('www.')) {
+      return 'https://$input';
+    }
+
+    final storageBase = _storagePublicBaseUrl();
+    if (input.startsWith('/storage/v1/object/public/')) {
+      return storageBase.isEmpty ? input : '$storageBase$input';
+    }
+
+    if (input.startsWith('storage/v1/object/public/')) {
+      return storageBase.isEmpty ? input : '$storageBase/$input';
+    }
+
+    final normalizedPath = input.replaceFirst(RegExp(r'^/+'), '');
+    final normalizedLower = normalizedPath.toLowerCase();
+    final hasVideoExtension = normalizedLower.endsWith('.mp4') ||
+        normalizedLower.endsWith('.webm') ||
+        normalizedLower.endsWith('.mov') ||
+        normalizedLower.endsWith('.mkv') ||
+        normalizedLower.endsWith('.m3u8');
+    final looksLikeStoragePath = normalizedPath.contains('/') &&
+        (normalizedPath.startsWith('challenge_assets/') ||
+            normalizedPath.startsWith('videos/') ||
+            normalizedPath.startsWith('tutorials/') ||
+            normalizedPath.startsWith('covers/') ||
+            hasVideoExtension);
+
+    if (looksLikeStoragePath) {
+      try {
+        return SupaFlow.client.storage.from('Videos').getPublicUrl(
+              normalizedPath,
+            );
+      } catch (_) {
+        return input;
+      }
+    }
+
+    return input;
+  }
+
+  bool _isLegacyPlaceholderVideoUrl(String raw) {
+    final input = raw.trim().toLowerCase();
+    if (input.isEmpty) return false;
+    if (input.contains('https://...')) return true;
+    if (input.contains('tutorial_curso.mp4')) return true;
+    if (input.contains('tutorial_ejercicio.mp4')) return true;
+    final uri = Uri.tryParse(raw.trim());
+    return uri?.host == '...';
+  }
 
   @override
   void initState() {
@@ -2236,7 +2719,7 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
   }
 
   List<String> _buildVideoCandidates(String raw) {
-    final input = raw.trim();
+    final input = _normalizeVideoSource(raw);
     if (input.isEmpty) return const [];
 
     final seen = <String>{};
@@ -2246,6 +2729,11 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
       if (v.isEmpty || seen.contains(v)) return;
       seen.add(v);
       result.add(v);
+    }
+
+    if (_isLegacyPlaceholderVideoUrl(raw)) {
+      add(_legacyAdminTutorialFallbackUrl);
+      return result;
     }
 
     add(input);

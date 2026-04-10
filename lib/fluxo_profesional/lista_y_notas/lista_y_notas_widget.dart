@@ -105,6 +105,60 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
   }
 
+  String _tagLabelFromRating(int rating) {
+    switch (rating) {
+      case 1:
+        return 'Nuevos';
+      case 2:
+        return 'En revisión';
+      case 3:
+        return 'Interesados';
+      case 4:
+        return 'Seguimiento';
+      case 5:
+        return 'Seleccionados';
+      default:
+        return 'Sin etiqueta';
+    }
+  }
+
+  Color _tagColorFromRating(int rating) {
+    switch (rating) {
+      case 1:
+        return const Color(0xFF2563EB);
+      case 2:
+        return const Color(0xFFF59E0B);
+      case 3:
+        return const Color(0xFF7C3AED);
+      case 4:
+        return const Color(0xFF0F766E);
+      case 5:
+        return const Color(0xFF15803D);
+      default:
+        return const Color(0xFF64748B);
+    }
+  }
+
+  Widget _buildTagPill(int rating) {
+    final color = _tagColorFromRating(rating);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.28)),
+      ),
+      child: Text(
+        _tagLabelFromRating(rating),
+        style: GoogleFonts.inter(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   bool get _canUseSensitiveActions =>
       FFAppState().unlockSensitiveActions ||
       (_currentPlanId != null && _currentUserVerified);
@@ -132,6 +186,17 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
       _loadListas(),
       _loadJugadoresGuardados(),
     ]);
+  }
+
+  Future<void> _refreshData() async {
+    await _loadViewerCapabilities();
+    await Future.wait([
+      _loadListas(),
+      _loadJugadoresGuardados(),
+    ]);
+    if (_selectedLista != null) {
+      await _loadJugadoresEnLista();
+    }
   }
 
   Future<void> _loadViewerCapabilities() async {
@@ -323,7 +388,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
         'lista_id': listaId,
         'jugador_id': jugadorId,
         'nota': '',
-        'calificacion': 3,
+        'calificacion': 1,
       });
 
       if (!mounted) return;
@@ -532,6 +597,16 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
           'nota': result,
           'updated_at': DateTime.now().toIso8601String()
         }).eq('id', guardado['id']);
+        if (mounted) {
+          setState(() {
+            for (final item in _jugadoresGuardados) {
+              if (item['id']?.toString() == guardado['id']?.toString()) {
+                item['nota'] = result;
+                item['updated_at'] = DateTime.now().toIso8601String();
+              }
+            }
+          });
+        }
         await _loadJugadoresGuardados();
       } catch (_) {}
     }
@@ -558,6 +633,13 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     if (confirm == true) {
       try {
         await SupaFlow.client.from('jugadores_guardados').delete().eq('id', id);
+        if (mounted) {
+          setState(() {
+            _jugadoresGuardados.removeWhere(
+              (item) => item['id']?.toString() == id.toString(),
+            );
+          });
+        }
         await _loadJugadoresGuardados();
       } catch (_) {}
     }
@@ -613,7 +695,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
           'lista_id': selectedLista['id'],
           'jugador_id': guardado['jugador_id'],
           'nota': guardado['nota'] ?? '',
-          'calificacion': 3,
+          'calificacion': 1,
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -778,27 +860,53 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
   Future<void> _editarNotaJugador(Map<String, dynamic> jugadorEnLista) async {
     final notaController =
         TextEditingController(text: jugadorEnLista['nota'] ?? '');
-    int rating = jugadorEnLista['calificacion'] ?? 0;
+    int rating = jugadorEnLista['calificacion'] ?? 1;
 
     final result = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (ctx) => StatefulBuilder(
             builder: (ctx, setDialogState) => AlertDialog(
-                    title: const Text('Editar Nota'),
+                    title: const Text('Editar seguimiento'),
                     content: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(
-                              5,
-                              (index) => GestureDetector(
-                                    onTap: () => setDialogState(
-                                        () => rating = index + 1),
-                                    child: Icon(
-                                        index < rating
-                                            ? Icons.circle
-                                            : Icons.circle_outlined,
-                                        color: const Color(0xFFFDC700)),
-                                  ))),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Etiqueta',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF334155),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: List.generate(5, (index) {
+                          final current = index + 1;
+                          final isSelected = rating == current;
+                          final color = _tagColorFromRating(current);
+                          return ChoiceChip(
+                            label: Text(_tagLabelFromRating(current)),
+                            selected: isSelected,
+                            selectedColor: color.withOpacity(0.16),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? color
+                                  : const Color(0xFFD0D7DE),
+                            ),
+                            labelStyle: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color:
+                                  isSelected ? color : const Color(0xFF475569),
+                            ),
+                            onSelected: (_) =>
+                                setDialogState(() => rating = current),
+                          );
+                        }),
+                      ),
                       const SizedBox(height: 10),
                       TextField(
                           controller: notaController,
@@ -820,8 +928,27 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
       try {
         await SupaFlow.client.from('listas_jugadores').update({
           'nota': result['notas'],
-          'calificacion': result['rating']
+          'calificacion': result['rating'],
+          'updated_at': DateTime.now().toIso8601String(),
         }).eq('id', jugadorEnLista['id']);
+        if (mounted) {
+          setState(() {
+            for (final item in _jugadoresEnLista) {
+              if (item['id']?.toString() == jugadorEnLista['id']?.toString()) {
+                item['nota'] = result['notas'];
+                item['calificacion'] = result['rating'];
+                item['updated_at'] = DateTime.now().toIso8601String();
+              }
+            }
+            for (final item in _filteredJugadores) {
+              if (item['id']?.toString() == jugadorEnLista['id']?.toString()) {
+                item['nota'] = result['notas'];
+                item['calificacion'] = result['rating'];
+                item['updated_at'] = DateTime.now().toIso8601String();
+              }
+            }
+          });
+        }
         await _loadJugadoresEnLista();
       } catch (e) {}
     }
@@ -850,122 +977,126 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                 height: MediaQuery.sizeOf(context).height * 1.0,
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : SingleChildScrollView(
-                        padding: EdgeInsets.all(padding),
-                        child: Column(children: [
-                          Text('Cuaderno de Campo',
+                    : RefreshIndicator(
+                        onRefresh: _refreshData,
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: EdgeInsets.all(padding),
+                          child: Column(children: [
+                            Text('Cuaderno de Campo',
+                                style: GoogleFonts.inter(
+                                    fontSize: 24 * scale,
+                                    fontWeight: FontWeight.bold)),
+                            SizedBox(height: 4 * scale),
+                            Text(
+                              'Etiquetá y organizá a los jugadores por etapa de seguimiento',
                               style: GoogleFonts.inter(
-                                  fontSize: 24 * scale,
-                                  fontWeight: FontWeight.bold)),
-                          SizedBox(height: 4 * scale),
-                          Text(
-                            'Decisión de jugadores',
-                            style: GoogleFonts.inter(
-                              fontSize: 13 * scale,
-                              color: const Color(0xFF64748B),
-                              fontWeight: FontWeight.w500,
+                                fontSize: 13 * scale,
+                                color: const Color(0xFF64748B),
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                          ),
-                          SizedBox(height: 16 * scale),
-                          // Toggle Mis Listas / Guardados
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            padding: const EdgeInsets.all(4),
-                            child: Row(children: [
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: () =>
-                                      setState(() => _showGuardados = false),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 10),
-                                    decoration: BoxDecoration(
-                                      color: !_showGuardados
-                                          ? const Color(0xFF0D3B66)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Center(
-                                      child: Text('Listas',
-                                          style: TextStyle(
-                                            color: !_showGuardados
-                                                ? Colors.white
-                                                : Colors.grey[700],
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 14 * scale,
-                                          )),
+                            SizedBox(height: 16 * scale),
+                            // Toggle Mis Listas / Guardados
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.grey[200],
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              padding: const EdgeInsets.all(4),
+                              child: Row(children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () =>
+                                        setState(() => _showGuardados = false),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: !_showGuardados
+                                            ? const Color(0xFF0D3B66)
+                                            : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Center(
+                                        child: Text('Listas',
+                                            style: TextStyle(
+                                              color: !_showGuardados
+                                                  ? Colors.white
+                                                  : Colors.grey[700],
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14 * scale,
+                                            )),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: () =>
-                                      setState(() => _showGuardados = true),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 10),
-                                    decoration: BoxDecoration(
-                                      color: _showGuardados
-                                          ? const Color(0xFF0D3B66)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Center(
-                                      child: Text('Guardados',
-                                          style: TextStyle(
-                                            color: _showGuardados
-                                                ? Colors.white
-                                                : Colors.grey[700],
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 14 * scale,
-                                          )),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () =>
+                                        setState(() => _showGuardados = true),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: _showGuardados
+                                            ? const Color(0xFF0D3B66)
+                                            : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Center(
+                                        child: Text('Guardados',
+                                            style: TextStyle(
+                                              color: _showGuardados
+                                                  ? Colors.white
+                                                  : Colors.grey[700],
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14 * scale,
+                                            )),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ]),
-                          ),
-                          SizedBox(height: 16 * scale),
-                          if (!_showGuardados) ...[
-                            Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  _buildActionButton(context, '+ Nueva Lista',
-                                      _createNewLista),
-                                  SizedBox(width: 12 * scale),
-                                  _buildActionButton(
-                                      context, '+ Decisión', _createNewNota),
-                                ]),
-                            SizedBox(height: 24 * scale),
-                            if (_isLargeScreen(context))
+                              ]),
+                            ),
+                            SizedBox(height: 16 * scale),
+                            if (!_showGuardados) ...[
                               Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Expanded(
-                                        flex: 2,
-                                        child: _buildMisListasSection(context)),
-                                    SizedBox(width: 24 * scale),
-                                    Expanded(
-                                        flex: 3,
-                                        child: _selectedLista != null
-                                            ? _buildDetalleListaSection(context)
-                                            : _buildEmptyDetailSection(
-                                                context)),
-                                  ])
-                            else ...[
-                              _buildMisListasSection(context),
+                                    _buildActionButton(context, '+ Nueva Lista',
+                                        _createNewLista),
+                                  ]),
                               SizedBox(height: 24 * scale),
-                              if (_selectedLista != null)
-                                _buildDetalleListaSection(context),
-                            ],
-                          ] else
-                            _buildGuardadosSection(context),
-                          const SizedBox(height: 100),
-                        ]),
+                              if (_isLargeScreen(context))
+                                Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                          flex: 2,
+                                          child:
+                                              _buildMisListasSection(context)),
+                                      SizedBox(width: 24 * scale),
+                                      Expanded(
+                                          flex: 3,
+                                          child: _selectedLista != null
+                                              ? _buildDetalleListaSection(
+                                                  context)
+                                              : _buildEmptyDetailSection(
+                                                  context)),
+                                    ])
+                              else ...[
+                                _buildMisListasSection(context),
+                                SizedBox(height: 24 * scale),
+                                if (_selectedLista != null)
+                                  _buildDetalleListaSection(context),
+                              ],
+                            ] else
+                              _buildGuardadosSection(context),
+                            const SizedBox(height: 100),
+                          ]),
+                        ),
                       ),
               ),
             ),
@@ -1281,6 +1412,11 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
               ),
             )),
         const SizedBox(height: 10),
+        Text(
+          '${_filteredJugadores.length} jugador(es) en esta lista',
+          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+        ),
+        const SizedBox(height: 10),
         if (_isSearchingGlobalPlayers ||
             _globalSearchResults.isNotEmpty ||
             _globalSearchError != null) ...[
@@ -1380,6 +1516,24 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
         ],
         if (_isLoadingJugadores)
           const Center(child: CircularProgressIndicator())
+        else if (_filteredJugadores.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Text(
+              'Todavía no hay jugadores en esta lista. Agregalos desde la búsqueda o desde Guardados.',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: const Color(0xFF64748B),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          )
         else
           ..._filteredJugadores.map((j) => _buildJugadorCard(context, j)),
       ]),
@@ -1389,34 +1543,102 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
   Widget _buildJugadorCard(BuildContext context, Map<String, dynamic> item) {
     final j = item['jugador_data'];
     final name = '${j?['name'] ?? ''} ${j?['lastname'] ?? ''}'.trim();
+    final position = j?['posicion']?.toString().trim() ?? '';
+    final city = j?['city']?.toString().trim() ?? '';
+    final note = item['nota']?.toString().trim() ?? '';
+    final rating = (item['calificacion'] as int?) ?? 1;
+    final userId = item['jugador_id']?.toString().trim() ?? '';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey[300]!),
-          borderRadius: BorderRadius.circular(8)),
-      child: Column(children: [
-        Row(children: [
-          CircleAvatar(
-              backgroundImage: j?['photo_url'] != null
-                  ? NetworkImage(j!['photo_url'])
-                  : null,
-              child: j?['photo_url'] == null
-                  ? Text(name.isNotEmpty ? name[0] : 'J')
-                  : null),
-          const SizedBox(width: 10),
-          Expanded(
-              child: Text(name.isNotEmpty ? name : 'Jugador',
-                  style: const TextStyle(fontWeight: FontWeight.bold))),
-          TextButton(
-              onPressed: () => _editarNotaJugador(item),
-              child: const Text('Editar')),
-        ]),
-        if (item['nota'] != null)
-          Padding(
-              padding: const EdgeInsets.only(top: 5),
-              child: Text(item['nota'], style: const TextStyle(fontSize: 12))),
-      ]),
+        color: Colors.white,
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            CircleAvatar(
+                backgroundImage: j?['photo_url'] != null
+                    ? NetworkImage(j!['photo_url'])
+                    : null,
+                backgroundColor: const Color(0xFF0D3B66),
+                child: j?['photo_url'] == null
+                    ? Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : 'J',
+                        style: const TextStyle(color: Colors.white),
+                      )
+                    : null),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name.isNotEmpty ? name : 'Jugador',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  if (position.isNotEmpty || city.isNotEmpty)
+                    Text(
+                      [position, city].where((s) => s.isNotEmpty).join(' • '),
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            _buildTagPill(rating),
+          ]),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _editarNotaJugador(item),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('Editar'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0D3B66),
+                  side: const BorderSide(color: Color(0xFF0D3B66)),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: userId.isEmpty
+                    ? null
+                    : () => context.pushNamed(
+                          'perfil_profesional_solicitar_Contato',
+                          queryParameters: {'userId': userId},
+                        ),
+                icon: const Icon(Icons.person_outline, size: 18),
+                label: const Text('Ver perfil'),
+              ),
+            ],
+          ),
+          if (note.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Text(
+                  note,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1435,7 +1657,41 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
   Map? _selected;
   bool _searching = false;
   String? _errorMsg;
-  int _rating = 3;
+  int _rating = 1;
+
+  String _tagLabelFromRating(int rating) {
+    switch (rating) {
+      case 1:
+        return 'Nuevos';
+      case 2:
+        return 'En revisión';
+      case 3:
+        return 'Interesados';
+      case 4:
+        return 'Seguimiento';
+      case 5:
+        return 'Seleccionados';
+      default:
+        return 'Sin etiqueta';
+    }
+  }
+
+  Color _tagColorFromRating(int rating) {
+    switch (rating) {
+      case 1:
+        return const Color(0xFF2563EB);
+      case 2:
+        return const Color(0xFFF59E0B);
+      case 3:
+        return const Color(0xFF7C3AED);
+      case 4:
+        return const Color(0xFF0F766E);
+      case 5:
+        return const Color(0xFF15803D);
+      default:
+        return const Color(0xFF64748B);
+    }
+  }
 
   String _resolveSaveError(Object error) {
     final raw = error.toString().toLowerCase();
@@ -1638,20 +1894,40 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
             ]),
           ),
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-                5,
-                (index) => GestureDetector(
-                      onTap: () => setState(() => _rating = index + 1),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Icon(
-                            index < _rating ? Icons.star : Icons.star_border,
-                            color: const Color(0xFFFDC700),
-                            size: 28),
-                      ),
-                    )),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Etiqueta',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF334155),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: List.generate(5, (index) {
+              final current = index + 1;
+              final isSelected = _rating == current;
+              final color = _tagColorFromRating(current);
+              return ChoiceChip(
+                label: Text(_tagLabelFromRating(current)),
+                selected: isSelected,
+                selectedColor: color.withOpacity(0.16),
+                side: BorderSide(
+                  color: isSelected ? color : const Color(0xFFD0D7DE),
+                ),
+                labelStyle: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: isSelected ? color : const Color(0xFF475569),
+                ),
+                onSelected: (_) => setState(() => _rating = current),
+              );
+            }),
           ),
           const SizedBox(height: 8),
           TextField(

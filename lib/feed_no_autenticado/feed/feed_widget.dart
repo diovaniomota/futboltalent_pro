@@ -376,7 +376,7 @@ class _FeedWidgetState extends State<FeedWidget>
         SupaFlow.client
             .from('courses')
             .select(
-              'id, title, description, thumbnail_url, video_url, difficulty, duration_minutes, order_index, created_at',
+              'id, title, description, thumbnail_url, video_url, difficulty, duration_minutes, order_index, created_at, updated_at',
             )
             .eq('is_active', true)
             .order('order_index', ascending: true)
@@ -384,7 +384,7 @@ class _FeedWidgetState extends State<FeedWidget>
         SupaFlow.client
             .from('exercises')
             .select(
-              'id, title, description, thumbnail_url, video_url, difficulty, duration_minutes, order_index, created_at',
+              'id, title, description, thumbnail_url, video_url, difficulty, duration_minutes, order_index, created_at, updated_at',
             )
             .eq('is_active', true)
             .order('order_index', ascending: true)
@@ -502,9 +502,9 @@ class _FeedWidgetState extends State<FeedWidget>
     if (!FFAppState().canAccessFeature('desafios')) {
       showPlanRequiredDialog(
         context,
-        featureName: 'Desafios e cursos',
+        featureName: 'Desafíos y cursos',
         message:
-            'Este conteúdo do feed ativa desafios do Plano Pro. Com modo piloto ON, ele fica liberado automaticamente.',
+            'Este contenido del feed activa desafíos del Plan Pro. Si el modo piloto está activo, se desbloquea automáticamente.',
       );
       return;
     }
@@ -557,7 +557,7 @@ class _FeedWidgetState extends State<FeedWidget>
               const SizedBox(height: 8),
               if (options.isEmpty)
                 const Text(
-                  'Sem dados disponíveis para este filtro.',
+                  'No hay datos disponibles para este filtro.',
                   style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
                 )
               else
@@ -1255,9 +1255,9 @@ class _FeedWidgetState extends State<FeedWidget>
               onOpenChallenge: () => _openChallengeFromFeed(itemData),
               onLockedTap: () => showPlanRequiredDialog(
                 context,
-                featureName: 'Desafios e cursos',
+                featureName: 'Desafíos y cursos',
                 message:
-                    'Os desafios do feed fazem parte do Plano Pro. Com modo piloto ON, o bloqueio desaparece.',
+                    'Los desafíos del feed forman parte del Plan Pro. Si el modo piloto está activo, el bloqueo desaparece.',
               ),
               topOverlayOffset: 58,
               bottomOverlayOffset: hasBottomNav ? 108 : 24,
@@ -1404,7 +1404,7 @@ class _ChallengeFeedItem extends StatelessWidget {
 
   String get _title {
     final title = challengeData['title']?.toString().trim() ?? '';
-    return title.isNotEmpty ? title : 'Desafio disponível';
+    return title.isNotEmpty ? title : 'Desafío disponible';
   }
 
   String get _description {
@@ -1412,19 +1412,19 @@ class _ChallengeFeedItem extends StatelessWidget {
   }
 
   String get _typeLabel {
-    return challengeData['type'] == 'course' ? 'Curso' : 'Exercício';
+    return challengeData['type'] == 'course' ? 'Curso' : 'Ejercicio';
   }
 
   String get _statusLabel {
     switch (_status) {
       case 'completed':
-        return 'Concluído';
+        return 'Completado';
       case 'submitted':
-        return 'Tentativa enviada';
+        return 'Video enviado';
       case 'in_progress':
-        return 'Em andamento';
+        return 'En curso';
       default:
-        return 'Novo desafio';
+        return 'Nuevo';
     }
   }
 
@@ -1444,32 +1444,32 @@ class _ChallengeFeedItem extends StatelessWidget {
   String get _headline {
     final reward = GamificationService.challengeCompletedPoints;
     if (!hasAccess) {
-      return 'Esse desafio aparece no feed, mas a ativação completa fica liberada no Plano Pro.';
+      return 'Este desafío aparece en el feed, pero se habilita completo con el Plan Pro.';
     }
     switch (_status) {
       case 'completed':
-        return 'Desafio concluído. Seus $reward pontos já contam no progresso.';
+        return 'Desafío completado. Tus $reward puntos ya cuentan en tu progreso.';
       case 'submitted':
-        return 'Sua tentativa já foi enviada. Abra o desafio para revisar os próximos passos.';
+        return 'Tu intento ya fue enviado. Abrí el desafío para revisar los próximos pasos.';
       case 'in_progress':
-        return 'Você já ativou este desafio. Falta só avançar até os $reward pontos.';
+        return 'Ya lo empezaste. Solo te falta avanzar para sumar los $reward puntos.';
       default:
-        return 'Completá o desafio $_title. 🔥 +$reward XP ao completar.';
+        return 'Comenzá $_title y sumá $reward XP al completarlo.';
     }
   }
 
   String get _primaryActionLabel {
-    if (!isLoggedIn) return 'Criar perfil para ativar';
-    if (!hasAccess) return 'Desbloquear no Pro';
+    if (!isLoggedIn) return 'Crear perfil para activar';
+    if (!hasAccess) return 'Desbloquear en Pro';
     switch (_status) {
       case 'completed':
-        return 'Rever desafio';
+        return 'Ver desafío';
       case 'submitted':
-        return 'Ver tentativa';
+        return 'Ver envío';
       case 'in_progress':
-        return 'Continuar desafio';
+        return 'Continuar';
       default:
-        return 'Ativar desafio';
+        return 'Comenzar desafío';
     }
   }
 
@@ -1506,7 +1506,7 @@ class _ChallengeFeedItem extends StatelessWidget {
     Color backgroundColor = const Color(0x1FFFFFFF),
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
@@ -1521,7 +1521,7 @@ class _ChallengeFeedItem extends StatelessWidget {
             label,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -1530,9 +1530,24 @@ class _ChallengeFeedItem extends StatelessWidget {
     );
   }
 
+  String _cacheBustedImageUrl(String rawUrl) {
+    final url = rawUrl.trim();
+    if (url.isEmpty) return '';
+    final version = (challengeData['updated_at'] ??
+            challengeData['created_at'] ??
+            challengeData['id'])
+        ?.toString()
+        .trim();
+    if (version == null || version.isEmpty) return url;
+    final separator = url.contains('?') ? '&' : '?';
+    return '$url${separator}v=${Uri.encodeComponent(version)}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final imageUrl = challengeData['thumbnail_url']?.toString().trim() ?? '';
+    final imageUrl = _cacheBustedImageUrl(
+      challengeData['thumbnail_url']?.toString().trim() ?? '',
+    );
     final difficulty = challengeData['difficulty']?.toString().trim() ?? '';
     final durationMinutes =
         GamificationService.toInt(challengeData['duration_minutes']);
@@ -1616,7 +1631,7 @@ class _ChallengeFeedItem extends StatelessWidget {
                               ),
                               SizedBox(width: 6),
                               Text(
-                                'Desafio no feed',
+                                'Desafío en el feed',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,
@@ -1648,11 +1663,11 @@ class _ChallengeFeedItem extends StatelessWidget {
                         _buildInfoChip(
                           icon: Icons.stars_rounded,
                           label:
-                              '🔥 +${GamificationService.challengeCompletedPoints} XP ao completar',
+                              '+${GamificationService.challengeCompletedPoints} XP',
                         ),
                         _buildInfoChip(
                           icon: Icons.videocam_rounded,
-                          label: '🎥 +$participationReward XP ao subir vídeo',
+                          label: '+$participationReward XP por video',
                         ),
                         if (difficulty.isNotEmpty)
                           _buildInfoChip(
@@ -1681,11 +1696,11 @@ class _ChallengeFeedItem extends StatelessWidget {
                     const SizedBox(height: 12),
                     Text(
                       _headline,
-                      maxLines: 4,
+                      maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 17,
+                        fontSize: 16,
                         fontWeight: FontWeight.w600,
                         height: 1.3,
                       ),
@@ -1694,11 +1709,11 @@ class _ChallengeFeedItem extends StatelessWidget {
                       const SizedBox(height: 12),
                       Text(
                         _description,
-                        maxLines: 3,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.80),
-                          fontSize: 13,
+                          fontSize: 12,
                           height: 1.35,
                         ),
                       ),
@@ -1947,25 +1962,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
   }
 
   Widget _buildChallengeTypeLabel() {
-    if (!_isChallengeVideo) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-      ),
-      child: const Text(
-        'Tipo: Desafío',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          height: 1.0,
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
   Widget _buildAuthorMetadataOverlay(dynamic rawUserData) {
@@ -2041,13 +2038,13 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
           icon: Icons.groups_outlined,
           label: club,
         ),
-    ];
+    ].take(3).toList();
 
     if (chips.isEmpty) return const SizedBox.shrink();
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.36),
         borderRadius: BorderRadius.circular(12),
@@ -2570,6 +2567,13 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
     final userData = widget.videoData['user_data'];
     final userName = userData?['name'] ?? 'Usuario';
     final userPhoto = userData?['photo_url'];
+    final normalizedUserType =
+        FFAppState.normalizeUserType(FFAppState().userType);
+    final hasBottomNav =
+        normalizedUserType == 'jugador' || normalizedUserType == 'profesional';
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    final metadataBottom = (hasBottomNav ? 108.0 : 72.0) + safeBottom;
+    final actionsBottom = (hasBottomNav ? 150.0 : 116.0) + safeBottom;
 
     return GestureDetector(
       onTapUp: _onTap,
@@ -2598,7 +2602,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
             Positioned(
                 left: 16,
                 right: 96,
-                bottom: 72,
+                bottom: metadataBottom,
                 child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2632,7 +2636,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
             // Buttons
             Positioned(
                 right: 12,
-                bottom: 120,
+                bottom: actionsBottom,
                 child: Column(children: [
                   GestureDetector(
                     onTap: () {

@@ -43,6 +43,7 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
   final _feedEmptyCtrl = TextEditingController();
 
   List<Map<String, dynamic>> _overrides = [];
+  List<Map<String, dynamic>> _overrideUsers = [];
 
   @override
   void initState() {
@@ -104,8 +105,23 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
       debugPrint('AdminSettings load error: $e');
     }
 
-    await _loadOverrides();
+    await Future.wait([
+      _loadOverrides(),
+      _loadOverrideUsers(),
+    ]);
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _loadOverrideUsers() async {
+    try {
+      final response = await SupaFlow.client
+          .from('users')
+          .select('user_id, name, lastname, username, userType')
+          .order('name', ascending: true);
+      _overrideUsers = List<Map<String, dynamic>>.from(response as List);
+    } catch (_) {
+      _overrideUsers = [];
+    }
   }
 
   Future<void> _loadOverrides() async {
@@ -146,11 +162,11 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
       case 'videos':
         return 'Subir videos';
       case 'desafios':
-        return 'Desafios';
+        return 'Desafíos';
       case 'convocatorias':
         return 'Convocatorias';
       case 'convocatoria_send':
-        return 'Envio de convocatórias';
+        return 'Envío de convocatorias';
       case 'cursos':
         return 'Cursos';
       default:
@@ -163,18 +179,505 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
       case 'feed':
       case 'explorer':
       case 'videos':
-        return 'Incluído no plano Free.';
+        return 'Disponible en el plan Free.';
       case 'desafios':
-        return 'Conteúdo do plano Pro com paywall.';
+        return 'Contenido del plan Pro con paywall.';
       case 'convocatorias':
-        return 'Acesso aos resultados e detalhes da convocatória no Pro.';
+        return 'Acceso a resultados y detalle de convocatorias en Pro.';
       case 'convocatoria_send':
-        return 'Paywall para enviar ou convidar jogadores a convocatórias.';
+        return 'Controla quién puede postular o invitar jugadores a convocatorias.';
       case 'cursos':
-        return 'Conteúdo exclusivo do plano Pro com paywall.';
+        return 'Contenido exclusivo del plan Pro con paywall.';
       default:
-        return 'Controle global da funcionalidade.';
+        return 'Control global de esta funcionalidad.';
     }
+  }
+
+  String _normalizeOverrideRole(dynamic value) {
+    final normalized = value?.toString().trim().toLowerCase() ?? '';
+    switch (normalized) {
+      case 'admin':
+        return 'admin';
+      case 'club':
+      case 'clube':
+        return 'club';
+      case 'profesional':
+      case 'profissional':
+      case 'professional':
+      case 'scout':
+        return 'profesional';
+      case 'jugador':
+      case 'player':
+        return 'jugador';
+      default:
+        return 'otro';
+    }
+  }
+
+  String _overrideRoleLabel(String role) {
+    switch (role) {
+      case 'admin':
+        return 'Admin';
+      case 'club':
+        return 'Club';
+      case 'profesional':
+        return 'Profesional';
+      case 'jugador':
+        return 'Jugador';
+      default:
+        return 'Otro';
+    }
+  }
+
+  Color _overrideRoleBackground(BuildContext context, String role) {
+    final theme = FlutterFlowTheme.of(context);
+    switch (role) {
+      case 'admin':
+        return theme.warningBg;
+      case 'club':
+        return const Color(0xFFEDE9FE);
+      case 'profesional':
+        return const Color(0xFFE6F4FF);
+      case 'jugador':
+        return theme.successBg;
+      default:
+        return theme.accent4;
+    }
+  }
+
+  Color _overrideRoleForeground(BuildContext context, String role) {
+    final theme = FlutterFlowTheme.of(context);
+    switch (role) {
+      case 'admin':
+        return theme.warningMain;
+      case 'club':
+        return const Color(0xFF7C3AED);
+      case 'profesional':
+        return const Color(0xFF2563EB);
+      case 'jugador':
+        return theme.successMain;
+      default:
+        return theme.secondaryText;
+    }
+  }
+
+  String _overrideUserName(Map<String, dynamic>? user) {
+    if (user == null) return 'Seleccionar usuario';
+    final fullName = '${user['name'] ?? ''} ${user['lastname'] ?? ''}'.trim();
+    if (fullName.isNotEmpty) return fullName;
+    final username = user['username']?.toString().trim() ?? '';
+    if (username.isNotEmpty) return '@$username';
+    return 'Usuario';
+  }
+
+  String _overrideUserSecondary(Map<String, dynamic>? user) {
+    if (user == null) return 'Elegí un usuario por perfil.';
+    final username = user['username']?.toString().trim() ?? '';
+    final userId = user['user_id']?.toString().trim() ?? '';
+    final parts = <String>[
+      if (username.isNotEmpty) '@$username',
+      if (userId.isNotEmpty)
+        userId.length > 12 ? '${userId.substring(0, 12)}…' : userId,
+    ];
+    return parts.isEmpty ? 'Sin identificador visible' : parts.join(' · ');
+  }
+
+  String _overrideUserAvatarLetter(Map<String, dynamic>? user) {
+    final raw = _overrideUserName(user).trim();
+    for (final rune in raw.runes) {
+      final char = String.fromCharCode(rune);
+      if (RegExp(r'[A-Za-zÁÉÍÓÚÑáéíóúñ0-9]').hasMatch(char)) {
+        return char.toUpperCase();
+      }
+    }
+    return 'U';
+  }
+
+  List<String> get _overrideRoleOrder => const [
+        'admin',
+        'club',
+        'profesional',
+        'jugador',
+        'otro',
+      ];
+
+  Widget _buildOverrideRoleChip(BuildContext context, String role) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: _overrideRoleBackground(context, role),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        _overrideRoleLabel(role),
+        style: FlutterFlowTheme.of(context).bodySmall.override(
+              fontFamily: 'Inter',
+              color: _overrideRoleForeground(context, role),
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.0,
+            ),
+      ),
+    );
+  }
+
+  Widget _buildOverrideUserSelectorTile(
+    BuildContext context, {
+    required Map<String, dynamic>? user,
+    required VoidCallback onTap,
+  }) {
+    final role = _normalizeOverrideRole(user?['userType']);
+    final hasUser = user != null;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: FlutterFlowTheme.of(context).secondaryBackground,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: hasUser
+                ? FlutterFlowTheme.of(context).primary.withOpacity(0.18)
+                : FlutterFlowTheme.of(context).alternate,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: hasUser
+                    ? _overrideRoleBackground(context, role)
+                    : FlutterFlowTheme.of(context).alternate,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                hasUser ? Icons.person_outline : Icons.search,
+                color: hasUser
+                    ? _overrideRoleForeground(context, role)
+                    : FlutterFlowTheme.of(context).secondaryText,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _overrideUserName(user),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: FlutterFlowTheme.of(context).bodyLarge.override(
+                          fontFamily: 'Inter',
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.0,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _overrideUserSecondary(user),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: FlutterFlowTheme.of(context).bodySmall.override(
+                          fontFamily: 'Inter',
+                          color: FlutterFlowTheme.of(context).secondaryText,
+                          letterSpacing: 0.0,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (hasUser) _buildOverrideRoleChip(context, role),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: FlutterFlowTheme.of(context).secondaryText,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _pickOverrideUser(String? currentUserId) async {
+    final searchCtrl = TextEditingController();
+    String query = '';
+
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final theme = FlutterFlowTheme.of(ctx);
+          final normalizedQuery = query.trim().toLowerCase();
+          final filteredUsers = _overrideUsers.where((user) {
+            if (normalizedQuery.isEmpty) return true;
+            final haystack = [
+              user['name'],
+              user['lastname'],
+              user['username'],
+              user['user_id'],
+              _overrideRoleLabel(_normalizeOverrideRole(user['userType'])),
+            ].join(' ').toLowerCase();
+            return haystack.contains(normalizedQuery);
+          }).toList()
+            ..sort((a, b) {
+              final roleA = _overrideRoleOrder.indexOf(
+                _normalizeOverrideRole(a['userType']),
+              );
+              final roleB = _overrideRoleOrder.indexOf(
+                _normalizeOverrideRole(b['userType']),
+              );
+              if (roleA != roleB) return roleA.compareTo(roleB);
+              return _overrideUserName(a)
+                  .toLowerCase()
+                  .compareTo(_overrideUserName(b).toLowerCase());
+            });
+
+          final groupedUsers = <String, List<Map<String, dynamic>>>{};
+          for (final role in _overrideRoleOrder) {
+            groupedUsers[role] = [];
+          }
+          for (final user in filteredUsers) {
+            final role = _normalizeOverrideRole(user['userType']);
+            groupedUsers.putIfAbsent(role, () => []);
+            groupedUsers[role]!.add(user);
+          }
+
+          return Container(
+            height: MediaQuery.sizeOf(ctx).height * 0.82,
+            decoration: BoxDecoration(
+              color: theme.primaryBackground,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.alternate,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Seleccionar usuario',
+                                style:
+                                    FlutterFlowTheme.of(ctx).headlineSmall,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Separados por perfil para encontrarlo más rápido.',
+                                style: theme.bodySmall.override(
+                                  fontFamily: 'Inter',
+                                  color: theme.secondaryText,
+                                  letterSpacing: 0.0,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                    child: TextField(
+                      controller: searchCtrl,
+                      onChanged: (value) =>
+                          setSheetState(() => query = value),
+                      decoration: InputDecoration(
+                        hintText: 'Buscar por nombre, usuario o ID',
+                        prefixIcon: const Icon(Icons.search),
+                        filled: true,
+                        fillColor: theme.secondaryBackground,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: theme.alternate),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: theme.alternate),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: theme.primary),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: filteredUsers.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No encontramos usuarios para esa búsqueda.',
+                              style: theme.bodyMedium.override(
+                                fontFamily: 'Inter',
+                                color: theme.secondaryText,
+                                letterSpacing: 0.0,
+                              ),
+                            ),
+                          )
+                        : ListView(
+                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                            children: [
+                              for (final role in _overrideRoleOrder)
+                                if ((groupedUsers[role] ?? const []).isNotEmpty)
+                                  ...[
+                                    Padding(
+                                      padding:
+                                          const EdgeInsets.only(top: 8, bottom: 8),
+                                      child: Row(
+                                        children: [
+                                          _buildOverrideRoleChip(ctx, role),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '${groupedUsers[role]!.length}',
+                                            style: theme.bodySmall.override(
+                                              fontFamily: 'Inter',
+                                              color: theme.secondaryText,
+                                              letterSpacing: 0.0,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    ...groupedUsers[role]!.map(
+                                      (user) {
+                                        final isSelected =
+                                            (user['user_id']?.toString() ?? '') ==
+                                                currentUserId;
+                                        return Container(
+                                          margin:
+                                              const EdgeInsets.only(bottom: 10),
+                                          decoration: BoxDecoration(
+                                            color: theme.secondaryBackground,
+                                            borderRadius:
+                                                BorderRadius.circular(18),
+                                            border: Border.all(
+                                              color: isSelected
+                                                  ? theme.primary
+                                                  : theme.alternate,
+                                              width: isSelected ? 1.4 : 1,
+                                            ),
+                                          ),
+                                          child: ListTile(
+                                            onTap: () => Navigator.pop(
+                                              ctx,
+                                              user['user_id']?.toString(),
+                                            ),
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 4,
+                                            ),
+                                            leading: Container(
+                                              width: 42,
+                                              height: 42,
+                                              decoration: BoxDecoration(
+                                                color: _overrideRoleBackground(
+                                                  ctx,
+                                                  role,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: Text(
+                                                _overrideUserAvatarLetter(user),
+                                                style: theme.bodyLarge.override(
+                                                  fontFamily: 'Inter',
+                                                  color:
+                                                      _overrideRoleForeground(
+                                                    ctx,
+                                                    role,
+                                                  ),
+                                                  fontWeight: FontWeight.w700,
+                                                  letterSpacing: 0.0,
+                                                ),
+                                              ),
+                                            ),
+                                            title: Text(
+                                              _overrideUserName(user),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: theme.bodyLarge.override(
+                                                fontFamily: 'Inter',
+                                                fontWeight: FontWeight.w600,
+                                                letterSpacing: 0.0,
+                                              ),
+                                            ),
+                                            subtitle: Padding(
+                                              padding:
+                                                  const EdgeInsets.only(top: 4),
+                                              child: Text(
+                                                _overrideUserSecondary(user),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: theme.bodySmall.override(
+                                                  fontFamily: 'Inter',
+                                                  color: theme.secondaryText,
+                                                  letterSpacing: 0.0,
+                                                ),
+                                              ),
+                                            ),
+                                            trailing: isSelected
+                                                ? Icon(
+                                                    Icons.check_circle,
+                                                    color: theme.primary,
+                                                  )
+                                                : Icon(
+                                                    Icons.chevron_right_rounded,
+                                                    color: theme.secondaryText,
+                                                  ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                            ],
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    searchCtrl.dispose();
+    return result;
+  }
+
+  Map<String, dynamic>? _findOverrideUser(String userId) {
+    for (final user in _overrideUsers) {
+      if ((user['user_id']?.toString() ?? '') == userId) return user;
+    }
+    return null;
   }
 
   Future<void> _saveSetting(String key, Map<String, dynamic> value) async {
@@ -217,12 +720,10 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
   }
 
   Future<void> _openOverrideDialog({Map<String, dynamic>? existing}) async {
-    final userIdCtrl =
-        TextEditingController(text: existing?['user_id']?.toString() ?? '');
-    final featureCtrl =
-        TextEditingController(text: existing?['feature_key']?.toString() ?? '');
     final notesCtrl =
         TextEditingController(text: existing?['notes']?.toString() ?? '');
+    String? selectedUserId = existing?['user_id']?.toString();
+    String? selectedFeatureKey = existing?['feature_key']?.toString();
     bool enabled = existing?['is_enabled'] == true;
 
     final result = await showDialog<bool>(
@@ -234,15 +735,47 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
-                  controller: userIdCtrl,
-                  decoration:
-                      const InputDecoration(labelText: 'User ID (auth uid)'),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Usuario',
+                    style: FlutterFlowTheme.of(ctx).bodyMedium.override(
+                          fontFamily: 'Inter',
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.0,
+                        ),
+                  ),
                 ),
                 const SizedBox(height: 8),
-                TextField(
-                  controller: featureCtrl,
-                  decoration: const InputDecoration(labelText: 'Feature key'),
+                _buildOverrideUserSelectorTile(
+                  ctx,
+                  user: _findOverrideUser(selectedUserId ?? ''),
+                  onTap: () async {
+                    final pickedUserId =
+                        await _pickOverrideUser(selectedUserId);
+                    if (pickedUserId != null && pickedUserId.isNotEmpty) {
+                      setDialogState(() => selectedUserId = pickedUserId);
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: _featureOrder.contains(selectedFeatureKey)
+                      ? selectedFeatureKey
+                      : null,
+                  isExpanded: true,
+                  decoration:
+                      const InputDecoration(labelText: 'Funcionalidad'),
+                  items: _featureOrder
+                      .map(
+                        (featureKey) => DropdownMenuItem<String>(
+                          value: featureKey,
+                          child: Text(_featureLabel(featureKey)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) =>
+                      setDialogState(() => selectedFeatureKey = value),
                 ),
                 const SizedBox(height: 8),
                 TextField(
@@ -275,8 +808,8 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
 
     if (result != true) return;
 
-    final userId = userIdCtrl.text.trim();
-    final featureKey = featureCtrl.text.trim().toLowerCase();
+    final userId = selectedUserId?.trim() ?? '';
+    final featureKey = selectedFeatureKey?.trim().toLowerCase() ?? '';
     if (userId.isEmpty || featureKey.isEmpty) return;
 
     try {
@@ -294,8 +827,6 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
     } catch (e) {
       debugPrint('Admin override save error: $e');
     } finally {
-      userIdCtrl.dispose();
-      featureCtrl.dispose();
       notesCtrl.dispose();
     }
   }
@@ -323,7 +854,7 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
       appBar: AppBar(
         backgroundColor: FlutterFlowTheme.of(context).primary,
         title: Text(
-          'Configurações',
+          'Configuración',
           style: FlutterFlowTheme.of(context).headlineMedium.override(
                 fontFamily: 'Poppins',
                 color: Colors.white,
@@ -354,9 +885,9 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Text(
-                        'Plano Free: subir videos, Explorer e Feed. '
-                        'Plano Pro: desafios, convocatórias e cursos. '
-                        'Quando o modo piloto está ON, todos os paywalls ficam desativados.',
+                        'Plan Free: subir videos, Explorer y Feed. '
+                        'Plan Pro: desafíos, convocatorias y cursos. '
+                        'Cuando el modo piloto está activado, todos los paywalls quedan deshabilitados.',
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -366,15 +897,28 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                         setState(() => _pilotEnabled = value);
                         await _persistPilot();
                       },
-                      title: const Text('ON = sem restrições / sem paywalls'),
+                      title:
+                          const Text('ON = sin restricciones / sin paywalls'),
                       subtitle: const Text(
-                        'Libera funcionalidades Pro e envio de convocatórias para todos os usuários.',
+                        'Libera funciones Pro y envío de convocatorias para todos los usuarios.',
                       ),
                       contentPadding: EdgeInsets.zero,
                     ),
                     const SizedBox(height: 16),
                     Text('Feature flags',
                         style: FlutterFlowTheme.of(context).headlineSmall),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: FlutterFlowTheme.of(context).secondaryBackground,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'Cada switch controla la disponibilidad global de una sección. Si está apagado, la función se oculta o queda bloqueada incluso para usuarios con plan. Usá overrides solo para excepciones puntuales por usuario.',
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     ..._featureOrder.map(
                       (key) => SwitchListTile(
@@ -402,26 +946,26 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                     TextField(
                       controller: _blockedMessageCtrl,
                       decoration:
-                          const InputDecoration(labelText: 'Mensagem bloqueio'),
+                          const InputDecoration(labelText: 'Mensaje de bloqueo'),
                       maxLines: 2,
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _uploadMessageCtrl,
                       decoration: const InputDecoration(
-                          labelText: 'Mensagem upload desafio'),
+                          labelText: 'Mensaje al subir intento'),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _uploadSuccessCtrl,
                       decoration: const InputDecoration(
-                          labelText: 'Mensagem sucesso upload'),
+                          labelText: 'Mensaje de éxito'),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _feedEmptyCtrl,
                       decoration:
-                          const InputDecoration(labelText: 'Feed vazio'),
+                        const InputDecoration(labelText: 'Feed vacío'),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -432,32 +976,124 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 12,
+                      runSpacing: 8,
                       children: [
-                        Text('Overrides por usuário',
+                        Text('Overrides por usuario',
                             style: FlutterFlowTheme.of(context).headlineSmall),
                         TextButton.icon(
                           onPressed: () => _openOverrideDialog(),
                           icon: const Icon(Icons.add),
-                          label: const Text('Nuevo'),
+                          label: const Text('+ Nuevo override'),
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
                     if (_overrides.isEmpty)
-                      const Text('Nenhum override cadastrado.')
+                      const Text('No hay overrides cargados.')
                     else
                       Column(
                         children: _overrides.map((row) {
                           final feature = row['feature_key'] ?? '';
                           final userId = row['user_id'] ?? '';
+                          final user = _findOverrideUser(userId.toString());
                           final enabled = row['is_enabled'] == true;
+                          final role =
+                              _normalizeOverrideRole(user?['userType']);
                           return Card(
                             child: ListTile(
-                              title:
-                                  Text('$feature · ${enabled ? "ON" : "OFF"}'),
-                              subtitle: Text('User: $userId'),
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _featureLabel(feature.toString()),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: enabled
+                                          ? FlutterFlowTheme.of(context)
+                                              .successBg
+                                          : FlutterFlowTheme.of(context)
+                                              .warningBg,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      enabled ? 'ON' : 'OFF',
+                                      style: FlutterFlowTheme.of(context)
+                                          .bodySmall
+                                          .override(
+                                            fontFamily: 'Inter',
+                                            color: enabled
+                                                ? FlutterFlowTheme.of(context)
+                                                    .successMain
+                                                : FlutterFlowTheme.of(context)
+                                                    .warningMain,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 0.0,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      _buildOverrideRoleChip(context, role),
+                                      Text(
+                                        _overrideUserName(user),
+                                        style: FlutterFlowTheme.of(context)
+                                            .bodyMedium
+                                            .override(
+                                              fontFamily: 'Inter',
+                                              fontWeight: FontWeight.w600,
+                                              letterSpacing: 0.0,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _overrideUserSecondary(user),
+                                    style: FlutterFlowTheme.of(context)
+                                        .bodySmall
+                                        .override(
+                                          fontFamily: 'Inter',
+                                          color: FlutterFlowTheme.of(context)
+                                              .secondaryText,
+                                          letterSpacing: 0.0,
+                                        ),
+                                  ),
+                                  if ((row['notes']?.toString().trim() ?? '')
+                                      .isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: Text(
+                                        row['notes'].toString().trim(),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                ],
+                              ),
                               trailing: PopupMenuButton<String>(
                                 onSelected: (value) {
                                   if (value == 'edit') {

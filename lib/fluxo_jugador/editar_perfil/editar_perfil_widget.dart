@@ -1,10 +1,10 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:mime/mime.dart';
 import 'editar_perfil_model.dart';
 export 'editar_perfil_model.dart';
 
@@ -61,13 +61,14 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   bool _hasScoutRecord = false;
 
   // Opção selecionada (club ou sin club)
-  bool _juegaEnClub = false;
   String? _selectedPlayerStatus;
   DateTime? _selectedBirthday;
   final List<TextEditingController> _historyClubControllers = [];
-  final List<TextEditingController> _historyPeriodControllers = [];
   final List<TextEditingController> _historyPositionControllers = [];
   final List<TextEditingController> _historyNoteControllers = [];
+  final List<String?> _historyStartYears = [];
+  final List<String?> _historyEndYears = [];
+  final List<bool> _historyCurrentFlags = [];
 
   static const List<String> _playerStatusOptions = [
     'Buscando club',
@@ -75,6 +76,14 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     'En prueba',
     'En inferiores',
   ];
+
+  List<String> get _historyYearOptions {
+    final currentYear = DateTime.now().year;
+    return List<String>.generate(
+      currentYear - 1970 + 1,
+      (index) => (currentYear - index).toString(),
+    );
+  }
 
   // Image picker
   final ImagePicker _picker = ImagePicker();
@@ -120,9 +129,6 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     _dniController?.dispose();
     _collaborationsController?.dispose();
     for (final controller in _historyClubControllers) {
-      controller.dispose();
-    }
-    for (final controller in _historyPeriodControllers) {
       controller.dispose();
     }
     for (final controller in _historyPositionControllers) {
@@ -206,6 +212,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       }
 
       _userData = merged;
+      final normalizedHistory =
+          _parseHistoryItems(merged['historial_clubes'] ?? merged['clubs']);
+      final currentHistoryClub =
+          currentClubFromProfileHistory(normalizedHistory) ??
+              merged['club']?.toString().trim() ??
+              '';
       _nomeController =
           TextEditingController(text: merged['name']?.toString() ?? '');
       _usernameController =
@@ -225,8 +237,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 [merged['dominant_foot'], merged['pie_dominante']]) ??
             '',
       );
-      _clubController =
-          TextEditingController(text: merged['club']?.toString() ?? '');
+      _clubController = TextEditingController(text: currentHistoryClub);
       _experienceController =
           TextEditingController(text: _stringValue(merged['experience']));
       _heightController =
@@ -248,14 +259,11 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       _collaborationsController = TextEditingController(
         text: _parseCollaborations(merged['colaboraciones']).join(', '),
       );
-      _juegaEnClub = merged['juega_en_club'] == true ||
-          (merged['club']?.toString().trim().isNotEmpty ?? false);
       _selectedPlayerStatus = _normalizePlayerStatus(merged['player_status']);
       _selectedBirthday = _parseDate(merged['birthday']);
       _photoUrl = merged['photo_url']?.toString();
       _coverUrl = merged['cover_url']?.toString();
-      _setHistoryControllers(
-          _parseHistoryItems(merged['historial_clubes'] ?? merged['clubs']));
+      _setHistoryControllers(normalizedHistory);
     } catch (e) {
       debugPrint('Error al cargar usuario: $e');
       _errorMessage = 'Error al cargar datos';
@@ -490,7 +498,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       final bytes = await imageFile.readAsBytes();
 
       // Descobrir MIME type
-      final mimeType = lookupMimeType(imageFile.path) ?? 'image/jpeg';
+      final mimeType = _contentTypeFromPath(imageFile.path);
 
       // Upload para Supabase Storage no bucket "Fotos"
       await SupaFlow.client.storage.from('Fotos').uploadBinary(
@@ -620,6 +628,36 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     try {
       setState(() => _isSaving = true);
       final uid = currentUserUid;
+      final historyItems = _collectHistoryItems();
+      final currentClubName =
+          currentClubFromProfileHistory(historyItems)?.trim() ?? '';
+      final hasCurrentHistory = historyItems.any((item) => item['is_current'] == true);
+
+      for (final item in historyItems) {
+        final name = item['name']?.toString().trim() ?? '';
+        final startYear = parseHistoryYear(item['start_year']);
+        final endYear = parseHistoryYear(item['end_year']);
+        final isCurrent = item['is_current'] == true;
+
+        if (name.isNotEmpty && startYear == null) {
+          throw Exception(
+            'Cada etapa del historial debe tener un año de inicio válido.',
+          );
+        }
+
+        if (!isCurrent && name.isNotEmpty && endYear == null) {
+          throw Exception(
+            'Cada etapa finalizada debe tener un año de fin válido.',
+          );
+        }
+
+        if (startYear != null && endYear != null && endYear < startYear) {
+          throw Exception(
+            'El año de fin no puede ser menor que el año de inicio.',
+          );
+        }
+      }
+
       final country = _countryController?.text.trim() ?? '';
       final city = _cityController?.text.trim() ?? '';
 
@@ -630,24 +668,28 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         'country': country,
         'pais': country,
         'birthday': _selectedBirthday?.toIso8601String(),
+        'birth_date': _selectedBirthday?.toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
       };
 
       if (_currentUserType == 'profesional') {
         userPayload.addAll({
           'bio': _bioController?.text.trim() ?? '',
           'descripcion': _bioController?.text.trim() ?? '',
-          'colaboraciones':
-              _parseCollaborations(_collaborationsController?.text ?? ''),
+          'colaboraciones': _collaborationsController?.text.trim().isEmpty == true
+              ? null
+              : _collaborationsController?.text.trim(),
         });
       } else {
         userPayload.addAll({
           'posicion': _posicaoController?.text.trim() ?? '',
           'categoria': _categoryController?.text.trim() ?? '',
           'pie_dominante': _pieDominanteController?.text.trim() ?? '',
-          'lugar': _lugarController?.text.trim() ?? '',
-          'juega_en_club': _juegaEnClub,
+          'juega_en_club': hasCurrentHistory,
           'player_status': _selectedPlayerStatus,
-          'historial_clubes': _collectHistoryItems(),
+          'historial_clubes': historyItems,
+          'club_actual': currentClubName.isEmpty ? null : currentClubName,
+          'lugar': currentClubName.isEmpty ? null : currentClubName,
         });
       }
 
@@ -681,7 +723,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       } else {
         final playerPayload = <String, dynamic>{
           'dominant_foot': _pieDominanteController?.text.trim() ?? '',
-          'club': _clubController?.text.trim() ?? '',
+          'club': currentClubName,
           'experience': _tryParseInt(_experienceController?.text),
           'altura': _tryParseDouble(_heightController?.text),
           'peso': _tryParseDouble(_weightController?.text),
@@ -701,6 +743,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           _hasPlayerRecord = true;
         }
       }
+
+      _clubController?.text = currentClubName;
+      await _loadUserData();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -808,6 +853,14 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     return null;
   }
 
+  String _contentTypeFromPath(String path) {
+    final normalized = path.toLowerCase();
+    if (normalized.endsWith('.png')) return 'image/png';
+    if (normalized.endsWith('.webp')) return 'image/webp';
+    if (normalized.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
+  }
+
   DateTime? _parseDate(dynamic rawValue) {
     final raw = rawValue?.toString().trim() ?? '';
     if (raw.isEmpty) return null;
@@ -852,27 +905,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         .toList();
   }
 
-  List<Map<String, String>> _parseHistoryItems(dynamic rawValue) {
-    if (rawValue is! List) return [];
-
-    return rawValue
-        .whereType<Map>()
-        .map((item) => {
-              'name': _firstNonEmptyValue([item['name'], item['nombre']]) ?? '',
-              'period':
-                  _firstNonEmptyValue([item['period'], item['periodo']]) ?? '',
-              'position': _firstNonEmptyValue([item['position'], item['posicion']]) ?? '',
-              'note': _firstNonEmptyValue([item['note'], item['nota']]) ?? '',
-            })
-        .where((item) => item['name']!.isNotEmpty || item['period']!.isNotEmpty)
-        .toList();
+  List<Map<String, dynamic>> _parseHistoryItems(dynamic rawValue) {
+    return normalizeProfileHistory(rawValue);
   }
 
   void _disposeHistoryControllers() {
     for (final controller in _historyClubControllers) {
-      controller.dispose();
-    }
-    for (final controller in _historyPeriodControllers) {
       controller.dispose();
     }
     for (final controller in _historyPositionControllers) {
@@ -882,19 +920,18 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       controller.dispose();
     }
     _historyClubControllers.clear();
-    _historyPeriodControllers.clear();
     _historyPositionControllers.clear();
     _historyNoteControllers.clear();
+    _historyStartYears.clear();
+    _historyEndYears.clear();
+    _historyCurrentFlags.clear();
   }
 
-  void _setHistoryControllers(List<Map<String, String>> items) {
+  void _setHistoryControllers(List<Map<String, dynamic>> items) {
     _disposeHistoryControllers();
     for (final item in items) {
       _historyClubControllers.add(
         TextEditingController(text: item['name'] ?? ''),
-      );
-      _historyPeriodControllers.add(
-        TextEditingController(text: item['period'] ?? ''),
       );
       _historyPositionControllers.add(
         TextEditingController(text: item['position'] ?? ''),
@@ -902,22 +939,43 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       _historyNoteControllers.add(
         TextEditingController(text: item['note'] ?? ''),
       );
+      _historyStartYears.add(
+        parseHistoryYear(item['start_year'])?.toString(),
+      );
+      _historyEndYears.add(
+        parseHistoryYear(item['end_year'])?.toString(),
+      );
+      _historyCurrentFlags.add(item['is_current'] == true);
     }
   }
 
-  List<Map<String, String>> _collectHistoryItems() {
-    final items = <Map<String, String>>[];
+  List<Map<String, dynamic>> _collectHistoryItems() {
+    final items = <Map<String, dynamic>>[];
     for (var i = 0; i < _historyClubControllers.length; i++) {
       final name = _historyClubControllers[i].text.trim();
-      final period = _historyPeriodControllers[i].text.trim();
       final position = _historyPositionControllers[i].text.trim();
       final note = _historyNoteControllers[i].text.trim();
-      if (name.isEmpty && period.isEmpty) continue;
+      final startYear = _historyStartYears.length > i ? _historyStartYears[i] : null;
+      final endYear = _historyEndYears.length > i ? _historyEndYears[i] : null;
+      final isCurrent =
+          _historyCurrentFlags.length > i && _historyCurrentFlags[i] == true;
+      if (name.isEmpty &&
+          (startYear == null || startYear.isEmpty) &&
+          (endYear == null || endYear.isEmpty)) {
+        continue;
+      }
       items.add({
         'name': name,
-        'period': period,
         'position': position,
         'note': note,
+        'start_year': parseHistoryYear(startYear),
+        'end_year': isCurrent ? null : parseHistoryYear(endYear),
+        'is_current': isCurrent,
+        'period': formatProfileHistoryPeriod({
+          'start_year': parseHistoryYear(startYear),
+          'end_year': isCurrent ? null : parseHistoryYear(endYear),
+          'is_current': isCurrent,
+        }),
       });
     }
     return items;
@@ -944,9 +1002,11 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   void _addHistoryItem() {
     setState(() {
       _historyClubControllers.add(TextEditingController());
-      _historyPeriodControllers.add(TextEditingController());
       _historyPositionControllers.add(TextEditingController());
       _historyNoteControllers.add(TextEditingController());
+      _historyStartYears.add(null);
+      _historyEndYears.add(null);
+      _historyCurrentFlags.add(false);
     });
   }
 
@@ -954,9 +1014,11 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     if (index < 0 || index >= _historyClubControllers.length) return;
     setState(() {
       _historyClubControllers.removeAt(index).dispose();
-      _historyPeriodControllers.removeAt(index).dispose();
       _historyPositionControllers.removeAt(index).dispose();
       _historyNoteControllers.removeAt(index).dispose();
+      _historyStartYears.removeAt(index);
+      _historyEndYears.removeAt(index);
+      _historyCurrentFlags.removeAt(index);
     });
   }
 
@@ -1033,7 +1095,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             ),
           ),
           DropdownButtonFormField<String>(
-            value: value,
+            initialValue: value,
             onChanged: onChanged,
             isExpanded: true,
             decoration: _buildInputDecoration(
@@ -1070,73 +1132,6 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     );
   }
 
-  Widget _buildRadioOption({
-    required String text,
-    required bool isSelected,
-    required VoidCallback onPressed,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12.0),
-      child: GestureDetector(
-        onTap: onPressed,
-        child: Container(
-          width: double.infinity,
-          height: 56.0,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8.0),
-            border: Border.all(
-              color: isSelected
-                  ? const Color(0xFF0D3B66)
-                  : const Color(0xFFE2E8F0),
-              width: isSelected ? 1.5 : 1.0,
-            ),
-          ),
-          child: Row(
-            children: [
-              const SizedBox(width: 16),
-              Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isSelected
-                        ? const Color(0xFF0D3B66)
-                        : const Color(0xFFCBD5E0),
-                    width: 2,
-                  ),
-                  color: Colors.white,
-                ),
-                child: isSelected
-                    ? Center(
-                        child: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Color(0xFF0D3B66),
-                          ),
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                text,
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF1A202C),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildSectionTitle(String title, {String? subtitle}) {
     return Padding(
       padding: const EdgeInsets.only(top: 28.0, bottom: 8.0),
@@ -1164,6 +1159,51 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildHistoryYearDropdown({
+    required String label,
+    required String? value,
+    required ValueChanged<String?> onChanged,
+    bool enabled = true,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w500,
+            fontSize: 14,
+            color: const Color(0xFF1A202C),
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          initialValue: value,
+          onChanged: enabled ? onChanged : null,
+          isExpanded: true,
+          decoration: _buildInputDecoration(
+            enabled ? 'Selecciona un año' : 'Presente',
+          ),
+          hint: Text(
+            enabled ? 'Selecciona un año' : 'Presente',
+            style: GoogleFonts.inter(
+              color: const Color(0xFF718096),
+              fontSize: 16,
+            ),
+          ),
+          items: _historyYearOptions
+              .map(
+                (year) => DropdownMenuItem<String>(
+                  value: year,
+                  child: Text(year),
+                ),
+              )
+              .toList(),
+        ),
+      ],
     );
   }
 
@@ -1229,11 +1269,55 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                   focusNode: null,
                   hintText: 'Academia Norte FC',
                 ),
-                _buildTextField(
-                  label: 'Período',
-                  controller: _historyPeriodControllers[index],
-                  focusNode: null,
-                  hintText: '2022 - actualidad',
+                const SizedBox(height: 16),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _buildHistoryYearDropdown(
+                        label: 'Año de inicio',
+                        value: _historyStartYears[index],
+                        onChanged: (value) {
+                          setState(() => _historyStartYears[index] = value);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildHistoryYearDropdown(
+                        label: 'Año de fin',
+                        value: _historyCurrentFlags[index]
+                            ? null
+                            : _historyEndYears[index],
+                        enabled: !_historyCurrentFlags[index],
+                        onChanged: (value) {
+                          setState(() => _historyEndYears[index] = value);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                CheckboxListTile(
+                  value: _historyCurrentFlags[index],
+                  onChanged: (value) {
+                    setState(() {
+                      final current = value == true;
+                      _historyCurrentFlags[index] = current;
+                      if (current) {
+                        _historyEndYears[index] = null;
+                      }
+                    });
+                  },
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(
+                    'Continúo jugando aquí',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF334155),
+                    ),
+                  ),
                 ),
                 _buildTextField(
                   label: 'Posición',
@@ -1357,42 +1441,10 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             focusNode: null,
             hintText: '6',
             keyboardType: TextInputType.number),
-        Padding(
-          padding: const EdgeInsets.only(top: 12.0),
-          child: Text(
-            'Situación deportiva actual',
-            style: GoogleFonts.inter(
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF1A202C),
-                fontSize: 15),
-          ),
-        ),
-        _buildRadioOption(
-            text: 'Juego en un club',
-            isSelected: _juegaEnClub,
-            onPressed: () {
-              setState(() => _juegaEnClub = true);
-            }),
-        _buildRadioOption(
-            text: 'Sin club',
-            isSelected: !_juegaEnClub,
-            onPressed: () {
-              setState(() => _juegaEnClub = false);
-            }),
-        _buildTextField(
-            label: 'Club actual',
-            controller: _clubController,
-            focusNode: null,
-            hintText: 'Puerto Sur Club'),
-        _buildTextField(
-            label: 'Lugar donde jugás',
-            controller: _lugarController,
-            focusNode: _lugarFocusNode,
-            hintText: 'Cancha del barrio, torneo local o academia'),
         _buildSectionTitle(
           'Historial deportivo',
           subtitle:
-              'Agregá tus clubes, academias o etapas formativas para reforzar tu recorrido.',
+              'Usá años válidos para cada etapa. Si seguís jugando ahí, marcá la opción de presente. El club actual se toma desde este historial.',
         ),
         _buildHistoryEditor(),
       ],

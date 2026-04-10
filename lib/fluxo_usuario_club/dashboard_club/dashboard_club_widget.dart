@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/club_identity_utils.dart' as club_utils;
 import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
 import '/flutter_flow/app_modals.dart';
@@ -53,6 +56,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   String? _clubName;
   int? _currentPlanId;
   bool _currentUserVerified = true;
+  Set<String> _clubRefs = <String>{};
 
   List<Map<String, dynamic>> _activeConvocatorias = [];
   List<Map<String, dynamic>> _recentPostulaciones = [];
@@ -84,6 +88,17 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   String? _tryoutFilterCategory;
   String? _tryoutFilterPosition;
   String? _tryoutFilterCountry;
+  List<String> _playerFilterCategoryOptions = [];
+  List<String> _playerFilterPositionOptions = [];
+  List<String> _playerFilterCountryOptions = [];
+  List<String> _playerFilterCityOptions = [];
+  List<String> _playerFilterLevelOptions = [];
+  List<String> _clubFilterCountryOptions = [];
+  List<String> _clubFilterCityOptions = [];
+  List<String> _clubFilterLeagueOptions = [];
+  List<String> _tryoutFilterCategoryOptions = [];
+  List<String> _tryoutFilterPositionOptions = [];
+  List<String> _tryoutFilterCountryOptions = [];
 
   @override
   void initState() {
@@ -130,20 +145,29 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     });
 
     try {
+      await _loadClubName();
       await Future.wait([
         _loadViewerCapabilities(),
-        _loadClubName(),
         _loadCountryNames(),
         _loadSavedPlayers(),
       ]);
+      await _loadSearchFilterOptions();
 
-      final convocatoriasResponse = await SupaFlow.client
-          .from('convocatorias')
-          .select()
-          .eq('club_id', currentUserUid)
-          .eq('is_active', true)
-          .order('created_at', ascending: false)
-          .limit(60);
+      final convocatoriasResponse = _clubRefs.length == 1
+          ? await SupaFlow.client
+              .from('convocatorias')
+              .select()
+              .eq('club_id', _clubRefs.first)
+              .eq('is_active', true)
+              .order('created_at', ascending: false)
+              .limit(60)
+          : await SupaFlow.client
+              .from('convocatorias')
+              .select()
+              .inFilter('club_id', _clubRefs.toList())
+              .eq('is_active', true)
+              .order('created_at', ascending: false)
+              .limit(60);
 
       _activeConvocatorias =
           List<Map<String, dynamic>>.from(convocatoriasResponse);
@@ -212,16 +236,13 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }
 
   Future<void> _loadClubName() async {
-    try {
-      final club = await SupaFlow.client
-          .from('clubs')
-          .select('nombre')
-          .eq('owner_id', currentUserUid)
-          .maybeSingle();
-      _clubName = club?['nombre']?.toString();
-    } catch (_) {
-      _clubName = null;
+    final authUid = currentUserUid;
+    _clubRefs = await club_utils.resolveClubRefsForUser(authUid);
+    if (_clubRefs.isEmpty && authUid.isNotEmpty) {
+      _clubRefs = {authUid};
     }
+    final club = await club_utils.resolveCurrentClubForUser(authUid);
+    _clubName = club?['nombre']?.toString();
   }
 
   Future<void> _loadCountryNames() async {
@@ -252,11 +273,17 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (currentUserUid.isEmpty) return;
 
     try {
-      final savedByClub = await SupaFlow.client
-          .from('jugadores_guardados')
-          .select('jugador_id')
-          .eq('club_id', currentUserUid)
-          .limit(800);
+      final savedByClub = _clubRefs.length == 1
+          ? await SupaFlow.client
+              .from('jugadores_guardados')
+              .select('jugador_id')
+              .eq('club_id', _clubRefs.first)
+              .limit(800)
+          : await SupaFlow.client
+              .from('jugadores_guardados')
+              .select('jugador_id')
+              .inFilter('club_id', _clubRefs.toList())
+              .limit(800);
       for (final row in (savedByClub as List)) {
         final id = row['jugador_id']?.toString() ?? '';
         if (id.isNotEmpty) _savedPlayerIds.add(id);
@@ -326,45 +353,34 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }
 
   void _onSearchChanged() {
-    final previousQuery = _searchQuery;
     final value = _searchController.text.trim();
     if (value == _searchQuery) return;
     _searchQuery = value;
 
-    final wasSearchMode = previousQuery.trim().length >= 2;
-    final willSearch = value.trim().length >= 2;
+    final shouldKeepSearching =
+        value.length >= 2 || _hasActiveFiltersForCurrentScope;
 
-    if (!willSearch) {
+    if (!shouldKeepSearching) {
       if (!mounted) return;
-      setState(() {
-        _homeScope = 'jugadores';
-        _resetSearchFilters();
-        _isSearchingPlayers = false;
-        _searchPlayers = [];
-        _searchClubs = [];
-        _searchTryouts = [];
-      });
+      setState(_clearSearchResults);
       return;
     }
 
-    if (!wasSearchMode && willSearch && mounted) {
-      setState(() {
-        _homeScope = 'jugadores';
-        _resetSearchFilters();
-      });
-    }
-
+    if (mounted) setState(() {});
     _searchHome(value);
   }
 
   void _setHomeScope(String scope) {
-    if (!_isSearchMode) return;
     if (_homeScope == scope) return;
     setState(() {
       _homeScope = scope;
       _resetSearchFilters();
     });
-    _searchHome(_searchQuery);
+    if (_searchQuery.trim().length >= 2 || _hasActiveFiltersForCurrentScope) {
+      _searchHome(_searchQuery);
+    } else {
+      setState(_clearSearchResults);
+    }
   }
 
   void _resetSearchFilters() {
@@ -397,14 +413,11 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
   Future<void> _searchPlayersForClub(String value) async {
     final query = value.trim();
-    if (query.length < 2) {
+    final allowFilterOnly = _hasPlayerFilters;
+    final hasTextQuery = query.length >= 2;
+    if (!hasTextQuery && !allowFilterOnly) {
       if (!mounted) return;
-      setState(() {
-        _isSearchingPlayers = false;
-        _searchPlayers = [];
-        _searchClubs = [];
-        _searchTryouts = [];
-      });
+      setState(_clearSearchResults);
       return;
     }
 
@@ -419,24 +432,42 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       try {
         final response = await SupaFlow.client
             .from('users')
-            .select(
-                'user_id, name, lastname, username, posicion, position, city, ciudad, club, birthday, birth_date, categoria, category, photo_url, userType, pais, country, country_name, country_id')
+            .select()
             .inFilter('userType',
                 ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
-            .or('name.ilike.%$query%,lastname.ilike.%$query%,username.ilike.%$query%,posicion.ilike.%$query%,position.ilike.%$query%,city.ilike.%$query%,ciudad.ilike.%$query%,club.ilike.%$query%,categoria.ilike.%$query%,category.ilike.%$query%,pais.ilike.%$query%,country.ilike.%$query%,country_name.ilike.%$query%')
-            .limit(80);
+            .limit(500);
         players = List<Map<String, dynamic>>.from(response);
       } catch (_) {
         final response = await SupaFlow.client
             .from('users')
-            .select(
-                'user_id, name, lastname, username, posicion, position, city, ciudad, club, birthday, birth_date, categoria, category, photo_url, usertype, pais, country, country_name, country_id')
+            .select()
             .inFilter('usertype',
                 ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
-            .or('name.ilike.%$query%,lastname.ilike.%$query%,username.ilike.%$query%,posicion.ilike.%$query%,position.ilike.%$query%,city.ilike.%$query%,ciudad.ilike.%$query%,club.ilike.%$query%,categoria.ilike.%$query%,category.ilike.%$query%,pais.ilike.%$query%,country.ilike.%$query%,country_name.ilike.%$query%')
-            .limit(80);
+            .limit(500);
         players = List<Map<String, dynamic>>.from(response);
       }
+      if (hasTextQuery) {
+        final normalizedQuery = query.toLowerCase();
+        players = players.where((player) {
+          final searchable = [
+            player['name'],
+            player['lastname'],
+            player['username'],
+            player['posicion'],
+            player['position'],
+            player['city'],
+            player['ciudad'],
+            player['club'],
+            player['categoria'],
+            player['category'],
+            player['pais'],
+            player['country'],
+            player['country_name'],
+          ].map((value) => value?.toString().toLowerCase() ?? '').join(' ');
+          return searchable.contains(normalizedQuery);
+        }).toList();
+      }
+      players = players.take(80).toList();
       final ids = players
           .map((p) => p['user_id']?.toString() ?? '')
           .where((id) => id.isNotEmpty)
@@ -492,14 +523,11 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
   Future<void> _searchClubsForHome(String value) async {
     final query = value.trim().toLowerCase();
-    if (query.length < 2) {
+    final allowFilterOnly = _hasClubFilters;
+    final hasTextQuery = query.length >= 2;
+    if (!hasTextQuery && !allowFilterOnly) {
       if (!mounted) return;
-      setState(() {
-        _isSearchingPlayers = false;
-        _searchPlayers = [];
-        _searchClubs = [];
-        _searchTryouts = [];
-      });
+      setState(_clearSearchResults);
       return;
     }
     if (mounted) {
@@ -513,26 +541,33 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           .order('created_at', ascending: false)
           .limit(140);
       final allClubs = List<Map<String, dynamic>>.from(response);
-      final clubs = allClubs.where((club) {
-        final name =
-            (club['nombre'] ?? club['name'] ?? club['club_name'] ?? 'Club')
-                .toString()
-                .toLowerCase();
-        final city =
-            (club['city'] ?? club['ubicacion'] ?? '').toString().toLowerCase();
-        final league =
-            (club['liga'] ?? club['league'] ?? club['league_name'] ?? '')
-                .toString()
-                .toLowerCase();
-        final country =
-            (club['pais'] ?? club['country'] ?? club['country_name'] ?? '')
-                .toString()
-                .toLowerCase();
-        return name.contains(query) ||
-            city.contains(query) ||
-            league.contains(query) ||
-            country.contains(query);
-      }).toList();
+      final clubs = hasTextQuery
+          ? allClubs.where((club) {
+              final name =
+                  (club['nombre'] ?? club['name'] ?? club['club_name'] ?? 'Club')
+                      .toString()
+                      .toLowerCase();
+              final city = (club['city'] ?? club['ubicacion'] ?? '')
+                  .toString()
+                  .toLowerCase();
+              final league = (club['liga'] ??
+                      club['league'] ??
+                      club['league_name'] ??
+                      '')
+                  .toString()
+                  .toLowerCase();
+              final country = (club['pais'] ??
+                      club['country'] ??
+                      club['country_name'] ??
+                      '')
+                  .toString()
+                  .toLowerCase();
+              return name.contains(query) ||
+                  city.contains(query) ||
+                  league.contains(query) ||
+                  country.contains(query);
+            }).toList()
+          : allClubs;
 
       if (!mounted) return;
       setState(() {
@@ -554,14 +589,11 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
   Future<void> _searchTryoutsForHome(String value) async {
     final query = value.trim().toLowerCase();
-    if (query.length < 2) {
+    final allowFilterOnly = _hasTryoutFilters;
+    final hasTextQuery = query.length >= 2;
+    if (!hasTextQuery && !allowFilterOnly) {
       if (!mounted) return;
-      setState(() {
-        _isSearchingPlayers = false;
-        _searchPlayers = [];
-        _searchClubs = [];
-        _searchTryouts = [];
-      });
+      setState(_clearSearchResults);
       return;
     }
     if (mounted) {
@@ -578,27 +610,29 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
       final allTryouts = List<Map<String, dynamic>>.from(response);
       await _decorateTryoutsWithClubData(allTryouts);
-      final tryouts = allTryouts.where((row) {
-        final title =
-            (row['titulo'] ?? row['title'] ?? '').toString().toLowerCase();
-        final desc = (row['descripcion'] ?? row['description'] ?? '')
-            .toString()
-            .toLowerCase();
-        final zone = (row['ubicacion'] ?? row['location'] ?? '')
-            .toString()
-            .toLowerCase();
-        final category = _resolveTryoutCategory(row).toLowerCase();
-        final position = _resolveTryoutPosition(row).toLowerCase();
-        final clubName = _resolveTryoutClubName(row).toLowerCase();
-        final country = _resolveTryoutCountry(row).toLowerCase();
-        return title.contains(query) ||
-            desc.contains(query) ||
-            zone.contains(query) ||
-            category.contains(query) ||
-            position.contains(query) ||
-            clubName.contains(query) ||
-            country.contains(query);
-      }).toList();
+      final tryouts = hasTextQuery
+          ? allTryouts.where((row) {
+              final title =
+                  (row['titulo'] ?? row['title'] ?? '').toString().toLowerCase();
+              final desc = (row['descripcion'] ?? row['description'] ?? '')
+                  .toString()
+                  .toLowerCase();
+              final zone = (row['ubicacion'] ?? row['location'] ?? '')
+                  .toString()
+                  .toLowerCase();
+              final category = _resolveTryoutCategory(row).toLowerCase();
+              final position = _resolveTryoutPosition(row).toLowerCase();
+              final clubName = _resolveTryoutClubName(row).toLowerCase();
+              final country = _resolveTryoutCountry(row).toLowerCase();
+              return title.contains(query) ||
+                  desc.contains(query) ||
+                  zone.contains(query) ||
+                  category.contains(query) ||
+                  position.contains(query) ||
+                  clubName.contains(query) ||
+                  country.contains(query);
+            }).toList()
+          : allTryouts;
 
       if (!mounted) return;
       setState(() {
@@ -703,6 +737,87 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
       conv['postulaciones_count'] = list.length;
       conv['saved_count'] = savedCount;
+    }
+  }
+
+  Future<void> _loadSearchFilterOptions() async {
+    try {
+      List<Map<String, dynamic>> players;
+      try {
+        final response = await SupaFlow.client
+            .from('users')
+            .select()
+            .inFilter(
+              'userType',
+              ['jugador', 'jogador', 'player', 'athlete', 'atleta'],
+            )
+            .limit(1200);
+        players = List<Map<String, dynamic>>.from(response);
+      } catch (_) {
+        final response = await SupaFlow.client
+            .from('users')
+            .select()
+            .inFilter(
+              'usertype',
+              ['jugador', 'jogador', 'player', 'athlete', 'atleta'],
+            )
+            .limit(1200);
+        players = List<Map<String, dynamic>>.from(response);
+      }
+
+      await _loadSearchPlayerProgress(players);
+
+      _playerFilterCategoryOptions =
+          _extractUniqueStrings(players.map(_playerCategory));
+      _playerFilterPositionOptions =
+          _extractUniqueStrings(players.map(_playerPosition));
+      _playerFilterCountryOptions =
+          _extractUniqueStrings(players.map(_playerCountry));
+      _playerFilterCityOptions = _extractUniqueStrings(players.map(_playerCity));
+      _playerFilterLevelOptions =
+          _extractUniqueStrings(players.map(_playerLevel));
+    } catch (_) {
+      _playerFilterCategoryOptions = [];
+      _playerFilterPositionOptions = [];
+      _playerFilterCountryOptions = [];
+      _playerFilterCityOptions = [];
+      _playerFilterLevelOptions = [];
+    }
+
+    try {
+      final response = await SupaFlow.client
+          .from('clubs')
+          .select()
+          .limit(1200);
+      final clubs = List<Map<String, dynamic>>.from(response);
+      _clubFilterCountryOptions = _extractUniqueStrings(clubs.map(_clubCountry));
+      _clubFilterCityOptions = _extractUniqueStrings(clubs.map(_clubCity));
+      _clubFilterLeagueOptions = _extractUniqueStrings(clubs.map(_clubLeague));
+    } catch (_) {
+      _clubFilterCountryOptions = [];
+      _clubFilterCityOptions = [];
+      _clubFilterLeagueOptions = [];
+    }
+
+    try {
+      final response = await SupaFlow.client
+          .from('convocatorias')
+          .select()
+          .eq('is_active', true)
+          .limit(1200);
+      final tryouts = List<Map<String, dynamic>>.from(response);
+      await _decorateTryoutsWithClubData(tryouts);
+
+      _tryoutFilterCategoryOptions =
+          _extractUniqueStrings(tryouts.map(_resolveTryoutCategory));
+      _tryoutFilterPositionOptions =
+          _extractUniqueStrings(tryouts.map(_resolveTryoutPosition));
+      _tryoutFilterCountryOptions =
+          _extractUniqueStrings(tryouts.map(_resolveTryoutCountry));
+    } catch (_) {
+      _tryoutFilterCategoryOptions = [];
+      _tryoutFilterPositionOptions = [];
+      _tryoutFilterCountryOptions = [];
     }
   }
 
@@ -886,6 +1001,134 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     }
   }
 
+  ({Color background, Color foreground, IconData icon})
+      _pipelineBadgeStyle(String status) {
+    switch (_normalizeStatus(status)) {
+      case 'preseleccionado':
+        return (
+          background: const Color(0xFFE0F2FE),
+          foreground: const Color(0xFF075985),
+          icon: Icons.star_rounded,
+        );
+      case 'invitar_prueba':
+      case 'convidar_teste':
+        return (
+          background: const Color(0xFFFEF3C7),
+          foreground: const Color(0xFF92400E),
+          icon: Icons.mail_outline_rounded,
+        );
+      case 'en_prueba':
+      case 'em_teste':
+        return (
+          background: const Color(0xFFEDE9FE),
+          foreground: const Color(0xFF6D28D9),
+          icon: Icons.sports_soccer_rounded,
+        );
+      case 'descartado':
+        return (
+          background: const Color(0xFFFEE2E2),
+          foreground: const Color(0xFFB91C1C),
+          icon: Icons.close_rounded,
+        );
+      case 'contratado':
+      case 'acompanhamento':
+      case 'acompanamiento':
+        return (
+          background: const Color(0xFFDCFCE7),
+          foreground: const Color(0xFF166534),
+          icon: Icons.verified_rounded,
+        );
+      case 'guardado':
+      default:
+        return (
+          background: const Color(0xFFE8F0FE),
+          foreground: const Color(0xFF0D3B66),
+          icon: Icons.bookmark_rounded,
+        );
+    }
+  }
+
+  Widget _buildPipelineBadge(String status) {
+    final palette = _pipelineBadgeStyle(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: palette.background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(palette.icon, size: 14, color: palette.foreground),
+          const SizedBox(width: 6),
+          Text(
+            _pipelineLabel(status),
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: palette.foreground,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentCardAction({
+    required String label,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    bool primary = false,
+  }) {
+    final labelWidget = Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: GoogleFonts.inter(
+        fontSize: 12.5,
+        fontWeight: FontWeight.w700,
+        color: primary ? Colors.white : const Color(0xFF0D3B66),
+      ),
+    );
+
+    if (primary) {
+      return SizedBox(
+        height: 42,
+        child: ElevatedButton.icon(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF0D3B66),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          icon: Icon(icon, size: 16),
+          label: FittedBox(fit: BoxFit.scaleDown, child: labelWidget),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 42,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF0D3B66),
+          side: const BorderSide(color: Color(0xFFD5DFEB)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        icon: Icon(icon, size: 16),
+        label: FittedBox(fit: BoxFit.scaleDown, child: labelWidget),
+      ),
+    );
+  }
+
   String _categoryFromBirthday(dynamic birthday) {
     if (birthday == null) return 'N/A';
 
@@ -926,14 +1169,15 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }
 
   List<String> _extractUniqueStrings(Iterable<dynamic> values) {
-    final set = <String>{};
+    final uniqueByKey = <String, String>{};
     for (final raw in values) {
-      final value = raw?.toString().trim() ?? '';
-      if (value.isNotEmpty && value.toLowerCase() != 'null') {
-        set.add(value);
-      }
+      final value =
+          raw?.toString().trim().replaceAll(RegExp(r'\s+'), ' ') ?? '';
+      if (value.isEmpty || value.toLowerCase() == 'null') continue;
+      uniqueByKey.putIfAbsent(value.toLowerCase(), () => value);
     }
-    final list = set.toList()..sort();
+    final list = uniqueByKey.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return list;
   }
 
@@ -1157,6 +1401,53 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
   bool get _isSearchMode => _searchQuery.trim().length >= 2;
 
+  bool get _hasPlayerFilters =>
+      _playerFilterCategory != null ||
+      _playerFilterPosition != null ||
+      _playerFilterCountry != null ||
+      _playerFilterCity != null ||
+      _playerFilterLevel != null;
+
+  bool get _hasClubFilters =>
+      _clubFilterCountry != null ||
+      _clubFilterCity != null ||
+      _clubFilterLeague != null;
+
+  bool get _hasTryoutFilters =>
+      _tryoutFilterCategory != null ||
+      _tryoutFilterPosition != null ||
+      _tryoutFilterCountry != null;
+
+  bool get _hasActiveFiltersForCurrentScope {
+    switch (_homeScope) {
+      case 'clubes':
+        return _hasClubFilters;
+      case 'tryouts':
+        return _hasTryoutFilters;
+      default:
+        return _hasPlayerFilters;
+    }
+  }
+
+  bool get _shouldShowSearchResults =>
+      _isSearchMode || _hasActiveFiltersForCurrentScope;
+
+  void _clearSearchResults() {
+    _isSearchingPlayers = false;
+    _searchPlayers = [];
+    _searchClubs = [];
+    _searchTryouts = [];
+  }
+
+  void _applySearchFilterChange(VoidCallback change) {
+    setState(change);
+    if (_isSearchMode || _hasActiveFiltersForCurrentScope) {
+      _searchHome(_searchQuery);
+    } else {
+      setState(_clearSearchResults);
+    }
+  }
+
   List<Map<String, dynamic>> get _filteredSearchPlayers {
     Iterable<Map<String, dynamic>> filtered = _searchPlayers;
 
@@ -1306,7 +1597,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           await SupaFlow.client
               .from('jugadores_guardados')
               .delete()
-              .eq('club_id', currentUserUid)
+              .inFilter('club_id', _clubRefs.toList())
               .eq('jugador_id', playerId);
         } catch (_) {}
         try {
@@ -1324,8 +1615,10 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         }
       } else {
         try {
+          final primaryClubId =
+              await club_utils.resolvePrimaryClubIdForUser(currentUserUid);
           await SupaFlow.client.from('jugadores_guardados').insert({
-            'club_id': currentUserUid,
+            'club_id': primaryClubId ?? currentUserUid,
             'jugador_id': playerId,
           });
         } catch (_) {
@@ -1849,7 +2142,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                                 ? SingleChildScrollView(
                                     child: _buildInlineStatus(
                                       icon: Icons.error_outline,
-                                      title: 'Erro',
+                                      title: 'Error',
                                       subtitle: error!,
                                       onRetry: () => load(setSheetState),
                                     ),
@@ -1858,7 +2151,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                                     ? SingleChildScrollView(
                                         child: _buildInlineStatus(
                                           icon: Icons.people_outline,
-                                          title: 'Sem resultados',
+                                          title: 'Sin resultados',
                                           subtitle:
                                               'No hay candidatos para esta convocatoria.',
                                         ),
@@ -2220,6 +2513,32 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               ),
                               _drawerItem(
                                 context,
+                                label: 'Ver perfil',
+                                icon: Icons.visibility_outlined,
+                                selected: false,
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  if (_clubRefs.isNotEmpty) {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => PerfilPublicoClubWidget(
+                                          clubRef: _clubRefs.first,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                              _drawerItem(
+                                context,
+                                label: 'Editar perfil',
+                                icon: Icons.edit_outlined,
+                                selected: false,
+                                onTap: () => context
+                                    .pushNamed(ConfiguracinWidget.routeName),
+                              ),
+                              _drawerItem(
+                                context,
                                 label: 'Club',
                                 icon: Icons.settings_outlined,
                                 selected: false,
@@ -2259,7 +2578,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     required String label,
     required IconData icon,
     required bool selected,
-    required Future<void> Function() onTap,
+    required FutureOr<void> Function() onTap,
   }) {
     return ListTile(
       leading: Icon(
@@ -2279,7 +2598,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       onTap: () async {
         Navigator.pop(context);
         if (!selected) {
-          await onTap();
+          await Future.sync(onTap);
         }
       },
     );
@@ -2339,7 +2658,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         Padding(
           padding: const EdgeInsets.only(left: 12, bottom: 14),
           child: Text(
-            'Gestão de talento de ${_clubName ?? 'tu club'} a partir de convocatórias e seguimento de candidatos.',
+            'Gestión de talento de ${_clubName ?? 'tu club'} a partir de convocatorias y seguimiento de candidatos.',
             style: GoogleFonts.inter(
               color: const Color(0xFF4A5568),
               fontSize: 13,
@@ -2355,7 +2674,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               ConvocatoriasClubWidget.routeName,
             ),
             icon: const Icon(Icons.add, size: 18),
-            label: const Text('Mis convocatórias'),
+            label: const Text('Mis convocatorias'),
           ),
         ),
         _buildActiveConvocatoriasSection(),
@@ -2363,10 +2682,10 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         _buildSectionHeader(title: 'Postulaciones recientes'),
         _buildRecentPostulacionesSection(),
         const SizedBox(height: 18),
-        _buildSectionHeader(title: 'Jogadores novos verificados'),
+        _buildSectionHeader(title: 'Jugadores verificados recientes'),
         _buildSuggestedPlayersSection(),
         const SizedBox(height: 18),
-        _buildSectionHeader(title: 'Seguimento de candidatos'),
+        _buildSectionHeader(title: 'Seguimiento de candidatos'),
         _buildPipelineSection(),
       ],
     );
@@ -2406,18 +2725,18 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           ),
         ),
         _buildSearchBar(),
-        if (_isSearchMode) ...[
-          const SizedBox(height: 10),
-          _buildHomeScopeTabs(),
-          const SizedBox(height: 16),
-          _buildSectionHeader(
-            title: _homeScope == 'jugadores'
-                ? 'Resultados de jugadores'
-                : _homeScope == 'clubes'
-                    ? 'Resultados de clubes'
-                    : 'Resultados de convocatorias',
-          ),
-          _buildSearchFilters(),
+        const SizedBox(height: 10),
+        _buildHomeScopeTabs(),
+        const SizedBox(height: 16),
+        _buildSectionHeader(
+          title: _homeScope == 'jugadores'
+              ? 'Resultados de jugadores'
+              : _homeScope == 'clubes'
+                  ? 'Resultados de clubes'
+                  : 'Resultados de convocatorias',
+        ),
+        _buildSearchFilters(),
+        if (_shouldShowSearchResults) ...[
           const SizedBox(height: 10),
           _buildSearchResultsCounter(),
           const SizedBox(height: 10),
@@ -2426,9 +2745,9 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           const SizedBox(height: 18),
           _buildInlineStatus(
             icon: Icons.search_rounded,
-            title: 'Empezá una búsqueda',
+            title: 'Empezá a explorar',
             subtitle:
-                'Escribí al menos 2 letras para ver resultados en Jugadores, Clubes o Convocatorias.',
+                'Podés escribir al menos 2 letras o aplicar filtros para ver resultados en Jugadores, Clubes o Convocatorias.',
           ),
         ],
       ],
@@ -2460,7 +2779,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                 backgroundColor: const Color(0xFF0D3B66),
               ),
               child: const Text(
-                'Tentar novamente',
+                'Intentar nuevamente',
                 style: TextStyle(color: Colors.white),
               ),
             ),
@@ -2623,7 +2942,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       if (clubs.isEmpty) {
         return _buildInlineStatus(
           icon: Icons.shield_outlined,
-          title: 'Sem resultados',
+          title: 'Sin resultados',
           subtitle: 'No se encontraron clubes para esta búsqueda.',
         );
       }
@@ -2637,7 +2956,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       if (tryouts.isEmpty) {
         return _buildInlineStatus(
           icon: Icons.campaign_outlined,
-          title: 'Sem resultados',
+          title: 'Sin resultados',
           subtitle: 'No se encontraron convocatorias para esta búsqueda.',
         );
       }
@@ -2650,7 +2969,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (players.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.search_off,
-        title: 'Sem resultados',
+        title: 'Sin resultados',
         subtitle: 'No se encontraron jugadores para esta búsqueda.',
       );
     }
@@ -2662,113 +2981,92 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
   Widget _buildSearchFilters() {
     if (_homeScope == 'clubes') {
-      final countries =
-          _extractUniqueStrings(_searchClubs.map((club) => _clubCountry(club)));
-      final cities =
-          _extractUniqueStrings(_searchClubs.map((club) => _clubCity(club)));
-      final leagues =
-          _extractUniqueStrings(_searchClubs.map((club) => _clubLeague(club)));
-
       return _buildFiltersWrap([
         _buildFilterPill(
           label: 'País',
           value: _clubFilterCountry,
-          options: countries,
-          onSelected: (value) => setState(() => _clubFilterCountry = value),
+          options: _clubFilterCountryOptions,
+          onSelected: (value) =>
+              _applySearchFilterChange(() => _clubFilterCountry = value),
         ),
         _buildFilterPill(
           label: 'Ciudad',
           value: _clubFilterCity,
-          options: cities,
-          onSelected: (value) => setState(() => _clubFilterCity = value),
+          options: _clubFilterCityOptions,
+          onSelected: (value) =>
+              _applySearchFilterChange(() => _clubFilterCity = value),
         ),
         _buildFilterPill(
           label: 'Liga',
           value: _clubFilterLeague,
-          options: leagues,
-          onSelected: (value) => setState(() => _clubFilterLeague = value),
+          options: _clubFilterLeagueOptions,
+          onSelected: (value) =>
+              _applySearchFilterChange(() => _clubFilterLeague = value),
         ),
       ]);
     }
 
     if (_homeScope == 'tryouts') {
-      final categories = _extractUniqueStrings(
-        _searchTryouts.map((tryout) => _resolveTryoutCategory(tryout)),
-      );
-      final positions = _extractUniqueStrings(
-        _searchTryouts.map((tryout) => _resolveTryoutPosition(tryout)),
-      );
-
       return _buildFiltersWrap([
         _buildFilterPill(
           label: 'Categoría',
           value: _tryoutFilterCategory,
-          options: categories,
-          onSelected: (value) => setState(() => _tryoutFilterCategory = value),
+          options: _tryoutFilterCategoryOptions,
+          onSelected: (value) =>
+              _applySearchFilterChange(() => _tryoutFilterCategory = value),
         ),
         _buildFilterPill(
           label: 'Posición',
           value: _tryoutFilterPosition,
-          options: positions,
-          onSelected: (value) => setState(() => _tryoutFilterPosition = value),
+          options: _tryoutFilterPositionOptions,
+          onSelected: (value) =>
+              _applySearchFilterChange(() => _tryoutFilterPosition = value),
         ),
         _buildFilterPill(
           label: 'País',
           value: _tryoutFilterCountry,
-          options: _extractUniqueStrings(
-            _searchTryouts.map((tryout) => _resolveTryoutCountry(tryout)),
-          ),
-          onSelected: (value) => setState(() => _tryoutFilterCountry = value),
+          options: _tryoutFilterCountryOptions,
+          onSelected: (value) =>
+              _applySearchFilterChange(() => _tryoutFilterCountry = value),
         ),
       ]);
     }
-
-    final categories = _extractUniqueStrings(
-      _searchPlayers.map((player) => _playerCategory(player)),
-    );
-    final positions = _extractUniqueStrings(
-      _searchPlayers.map((player) => _playerPosition(player)),
-    );
-    final countries = _extractUniqueStrings(
-      _searchPlayers.map((player) => _playerCountry(player)),
-    );
-    final cities = _extractUniqueStrings(
-      _searchPlayers.map((player) => _playerCity(player)),
-    );
-    final levels = _extractUniqueStrings(
-      _searchPlayers.map((player) => _playerLevel(player)),
-    );
 
     return _buildFiltersWrap([
       _buildFilterPill(
         label: 'Categoría',
         value: _playerFilterCategory,
-        options: categories,
-        onSelected: (value) => setState(() => _playerFilterCategory = value),
+        options: _playerFilterCategoryOptions,
+        onSelected: (value) =>
+            _applySearchFilterChange(() => _playerFilterCategory = value),
       ),
       _buildFilterPill(
         label: 'Posición',
         value: _playerFilterPosition,
-        options: positions,
-        onSelected: (value) => setState(() => _playerFilterPosition = value),
+        options: _playerFilterPositionOptions,
+        onSelected: (value) =>
+            _applySearchFilterChange(() => _playerFilterPosition = value),
       ),
       _buildFilterPill(
         label: 'País',
         value: _playerFilterCountry,
-        options: countries,
-        onSelected: (value) => setState(() => _playerFilterCountry = value),
+        options: _playerFilterCountryOptions,
+        onSelected: (value) =>
+            _applySearchFilterChange(() => _playerFilterCountry = value),
       ),
       _buildFilterPill(
         label: 'Ciudad',
         value: _playerFilterCity,
-        options: cities,
-        onSelected: (value) => setState(() => _playerFilterCity = value),
+        options: _playerFilterCityOptions,
+        onSelected: (value) =>
+            _applySearchFilterChange(() => _playerFilterCity = value),
       ),
       _buildFilterPill(
         label: 'Nivel',
         value: _playerFilterLevel,
-        options: levels,
-        onSelected: (value) => setState(() => _playerFilterLevel = value),
+        options: _playerFilterLevelOptions,
+        onSelected: (value) =>
+            _applySearchFilterChange(() => _playerFilterLevel = value),
       ),
     ]);
   }
@@ -3346,7 +3644,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (_activeConvocatorias.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.campaign_outlined,
-        title: 'Sem resultados',
+        title: 'Sin resultados',
         subtitle: 'Crea tu primera convocatoria en el módulo Convocatorias.',
       );
     }
@@ -3478,7 +3776,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (_recentPostulaciones.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.people_outline,
-        title: 'Sem resultados',
+        title: 'Sin resultados',
         subtitle: 'No hay postulaciones nuevas.',
       );
     }
@@ -3487,119 +3785,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
     return Column(
       children: items
-          .map(
-            (post) => Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () {
-                  final playerId = _postulacionPlayerId(post);
-                  if (playerId.isEmpty) {
-                    context.pushNamed(PostulacionesWidget.routeName);
-                    return;
-                  }
-                  context.pushNamed(
-                    'perfil_profesional_solicitar_Contato',
-                    queryParameters: {'userId': playerId},
-                  );
-                },
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: const Color(0xFFE8F0FE),
-                      backgroundImage: (post['player_data']?['photo_url']
-                                  ?.toString()
-                                  .isNotEmpty ??
-                              false)
-                          ? NetworkImage(post['player_data']['photo_url'])
-                          : null,
-                      child: (post['player_data']?['photo_url']
-                                  ?.toString()
-                                  .isNotEmpty ??
-                              false)
-                          ? null
-                          : const Icon(
-                              Icons.person_outline,
-                              color: Color(0xFF0D3B66),
-                            ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${post['player_data']?['name'] ?? ''} ${post['player_data']?['lastname'] ?? ''}'
-                                    .trim()
-                                    .isEmpty
-                                ? 'Jugador'
-                                : '${post['player_data']?['name'] ?? ''} ${post['player_data']?['lastname'] ?? ''}'
-                                    .trim(),
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF1A202C),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            post['convocatoria_titulo']?.toString() ??
-                                'Convocatoria',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: const Color(0xFF475569),
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _formatRelative(post['created_at']).isEmpty
-                                ? 'Ahora'
-                                : _formatRelative(post['created_at']),
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: const Color(0xFF94A3B8),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        _pipelineLabel(post['estado']?.toString() ?? ''),
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF0D3B66),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          )
+          .map((post) => _buildPostulacionCard(post, compact: true))
           .toList(),
     );
   }
@@ -3624,14 +3810,29 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     final hasVerificationInfo = _hasVerificationInfo(user);
 
     final thumb = videoData?['thumbnail_url']?.toString() ?? '';
+    final subtitleParts = <String>[
+      if (year != null) year.toString(),
+      if (category != 'N/A') category,
+      if (position.isNotEmpty && position != 'Sin posición') position,
+      if (city.isNotEmpty && city != 'Sin ubicación') city,
+    ];
+    final clubLabel = playerClub.trim();
+    final palette = _pipelineBadgeStyle(stage);
 
     return Container(
-      margin: EdgeInsets.only(bottom: compact ? 8 : 10),
-      padding: const EdgeInsets.all(12),
+      margin: EdgeInsets.only(bottom: compact ? 10 : 12),
+      padding: EdgeInsets.all(compact ? 14 : 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x120D3B66),
+            blurRadius: 16,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3639,108 +3840,182 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  width: 62,
-                  height: 62,
-                  color: const Color(0xFFE8F0FE),
-                  child: thumb.isNotEmpty
-                      ? Image.network(
-                          thumb,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(
-                            Icons.person,
-                            color: Color(0xFF0D3B66),
-                          ),
-                        )
-                      : (user?['photo_url']?.toString().isNotEmpty ?? false)
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      width: compact ? 64 : 72,
+                      height: compact ? 64 : 72,
+                      color: const Color(0xFFE8F0FE),
+                      child: thumb.isNotEmpty
                           ? Image.network(
-                              user!['photo_url'],
+                              thumb,
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) => const Icon(
                                 Icons.person,
                                 color: Color(0xFF0D3B66),
                               ),
                             )
-                          : const Icon(Icons.person, color: Color(0xFF0D3B66)),
-                ),
+                          : (user?['photo_url']?.toString().isNotEmpty ?? false)
+                              ? Image.network(
+                                  user!['photo_url'],
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.person,
+                                    color: Color(0xFF0D3B66),
+                                  ),
+                                )
+                              : const Icon(Icons.person,
+                                  color: Color(0xFF0D3B66)),
+                    ),
+                  ),
+                  if (hasVideo)
+                    Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.72),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.play_arrow_rounded,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: Text(
                             name.isNotEmpty ? name : 'Jugador',
                             style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              fontSize: compact ? 15 : 16,
+                              color: const Color(0xFF0F172A),
                             ),
                           ),
                         ),
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert),
-                          onSelected: (value) {
-                            _updatePipelineStatus(
-                              post['id']?.toString() ?? '',
-                              value,
-                              sourceTable: post['_source_table']?.toString(),
-                            );
-                          },
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(
-                              value: 'guardado',
-                              child: Text('Guardado'),
-                            ),
-                            PopupMenuItem(
-                              value: 'preseleccionado',
-                              child: Text('Pré-selecionado'),
-                            ),
-                            PopupMenuItem(
-                              value: 'invitar_prueba',
-                              child: Text('Convidar para teste'),
-                            ),
-                            PopupMenuItem(
-                              value: 'en_prueba',
-                              child: Text('Em teste'),
-                            ),
-                            PopupMenuItem(
-                              value: 'descartado',
-                              child: Text('Descartado'),
-                            ),
-                            PopupMenuItem(
-                              value: 'contratado',
-                              child: Text('Contratado/Acompanhamento'),
-                            ),
-                          ],
+                        const SizedBox(width: 8),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: PopupMenuButton<String>(
+                            splashRadius: 18,
+                            icon: const Icon(Icons.more_horiz_rounded),
+                            onSelected: (value) {
+                              _updatePipelineStatus(
+                                post['id']?.toString() ?? '',
+                                value,
+                                sourceTable: post['_source_table']?.toString(),
+                              );
+                            },
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(
+                                value: 'guardado',
+                                child: Text('Guardado'),
+                              ),
+                              PopupMenuItem(
+                                value: 'preseleccionado',
+                                child: Text('Preseleccionado'),
+                              ),
+                              PopupMenuItem(
+                                value: 'invitar_prueba',
+                                child: Text('Invitar a prueba'),
+                              ),
+                              PopupMenuItem(
+                                value: 'en_prueba',
+                                child: Text('En prueba'),
+                              ),
+                              PopupMenuItem(
+                                value: 'descartado',
+                                child: Text('Descartado'),
+                              ),
+                              PopupMenuItem(
+                                value: 'contratado',
+                                child: Text('Contratado/Seguimiento'),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                    Text(
-                      [
-                        if (year != null) year.toString(),
-                        category,
-                        position,
-                        if (playerClub.isNotEmpty) playerClub,
-                        city
-                      ].join(' • '),
-                      style: GoogleFonts.inter(
-                        color: const Color(0xFF718096),
-                        fontSize: 12,
+                    const SizedBox(height: 6),
+                    if (subtitleParts.isNotEmpty)
+                      Text(
+                        subtitleParts.join(' • '),
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFF64748B),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                          height: 1.3,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _buildPipelineBadge(stage),
+                        if (hasVerificationInfo && isVerified)
+                          _metaChip('Verificado'),
+                        if (hasVideo) _metaChip('Video'),
+                        if (clubLabel.isNotEmpty) _metaChip(clubLabel),
+                      ],
                     ),
-                    Text(
-                      convocatoriaTitle,
-                      style: GoogleFonts.inter(
-                        color: const Color(0xFF4A5568),
-                        fontSize: 11,
-                        fontStyle: FontStyle.italic,
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: palette.background.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: palette.background,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.campaign_outlined,
+                            size: 16,
+                            color: palette.foreground,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              convocatoriaTitle,
+                              style: GoogleFonts.inter(
+                                color: const Color(0xFF334155),
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -3748,24 +4023,13 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
+          const SizedBox(height: 12),
+          Row(
             children: [
-              if (hasVerificationInfo && isVerified) _metaChip('Verificado'),
-              if (hasVideo) _metaChip('Tiene vídeo'),
-              _metaChip('Pipeline: ${_pipelineLabel(stage)}'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              SizedBox(
-                width: compact ? 110 : 130,
-                child: OutlinedButton(
+              Expanded(
+                child: _buildRecentCardAction(
+                  label: 'Ver perfil',
+                  icon: Icons.person_outline_rounded,
                   onPressed: userId.isEmpty
                       ? null
                       : () {
@@ -3774,35 +4038,32 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                             queryParameters: {'userId': userId},
                           );
                         },
-                  child: const Text('Ver perfil'),
                 ),
               ),
-              SizedBox(
-                width: compact ? 110 : 130,
-                child: OutlinedButton(
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildRecentCardAction(
+                  label: 'Ver video',
+                  icon: Icons.play_circle_outline_rounded,
                   onPressed:
                       hasVideo ? () => _openPlayerVideo(videoData) : null,
-                  child: const Text('Ver vídeo'),
-                ),
-              ),
-              SizedBox(
-                width: compact ? 150 : 190,
-                child: ElevatedButton(
-                  onPressed: () => _updatePipelineStatus(
-                    post['id']?.toString() ?? '',
-                    'guardado',
-                    sourceTable: post['_source_table']?.toString(),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0D3B66),
-                  ),
-                  child: const Text(
-                    'Agregar al pipeline',
-                    style: TextStyle(color: Colors.white),
-                  ),
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: _buildRecentCardAction(
+              label: 'Agregar al pipeline',
+              icon: Icons.playlist_add_rounded,
+              primary: true,
+              onPressed: () => _updatePipelineStatus(
+                post['id']?.toString() ?? '',
+                'guardado',
+                sourceTable: post['_source_table']?.toString(),
+              ),
+            ),
           ),
         ],
       ),
@@ -3813,7 +4074,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (_suggestedPlayers.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.workspace_premium_outlined,
-        title: 'Sem resultados',
+        title: 'Sin resultados',
         subtitle: 'Todavía no hay jugadores Pro recientes para recomendar.',
       );
     }
@@ -3937,7 +4198,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (_activeConvocatorias.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.alt_route,
-        title: 'Sem resultados',
+        title: 'Sin resultados',
         subtitle:
             'El seguimiento aparecerá cuando existan convocatorias activas.',
       );
@@ -4160,7 +4421,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             const SizedBox(height: 10),
             OutlinedButton(
               onPressed: onRetry,
-              child: const Text('Tentar novamente'),
+              child: const Text('Intentar nuevamente'),
             ),
           ],
         ],
