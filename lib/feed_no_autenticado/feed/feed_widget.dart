@@ -1,5 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -189,24 +190,7 @@ class _FeedWidgetState extends State<FeedWidget>
   }
 
   String? _categoryFromBirthday(dynamic birthday) {
-    if (birthday == null) return null;
-    try {
-      final birth = DateTime.parse(birthday.toString());
-      final now = DateTime.now();
-      int age = now.year - birth.year;
-      if (now.month < birth.month ||
-          (now.month == birth.month && now.day < birth.day)) {
-        age--;
-      }
-
-      if (age <= 12) return 'U12';
-      if (age <= 14) return 'U14';
-      if (age <= 16) return 'U16';
-      if (age <= 19) return 'U19';
-      return 'Senior';
-    } catch (_) {
-      return null;
-    }
+    return playerCategoryFromBirthday(birthday);
   }
 
   String _normalizeFilterValue(String value) =>
@@ -215,25 +199,25 @@ class _FeedWidgetState extends State<FeedWidget>
   String _videoCategory(Map<String, dynamic> video) {
     final userData = video['user_data'];
     if (userData is! Map) return '';
-    return _firstNonEmpty([
+    return normalizePlayerCategory(_firstNonEmpty([
           userData['category'],
           userData['categoria'],
           _categoryFromBirthday(
             userData['birthday'] ?? userData['birth_date'],
           ),
         ]) ??
-        '';
+        '');
   }
 
   String _videoPosition(Map<String, dynamic> video) {
     final userData = video['user_data'];
     if (userData is! Map) return '';
-    return _firstNonEmpty([
+    return normalizePlayerPosition(_firstNonEmpty([
           userData['position'],
           userData['posicion'],
           userData['posição'],
         ]) ??
-        '';
+        '');
   }
 
   String _videoLocation(Map<String, dynamic> video) {
@@ -252,7 +236,10 @@ class _FeedWidgetState extends State<FeedWidget>
           userData['country_name'],
         ]) ??
         '';
-    return [city, country].where((part) => part.isNotEmpty).join(' · ');
+    return [
+      normalizeCityName(city),
+      normalizeCountryName(country),
+    ].where((part) => part.isNotEmpty).join(' · ');
   }
 
   List<String> _collectVideoFilterOptions(
@@ -1862,32 +1849,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
   }
 
   String? _categoryFromBirthday(dynamic birthday) {
-    if (birthday == null) return null;
-    try {
-      final birth = DateTime.parse(birthday.toString());
-      final now = DateTime.now();
-      int age = now.year - birth.year;
-      if (now.month < birth.month ||
-          (now.month == birth.month && now.day < birth.day)) {
-        age--;
-      }
-      if (age <= 12) return 'U12';
-      if (age <= 14) return 'U14';
-      if (age <= 16) return 'U16';
-      if (age <= 19) return 'U19';
-      return 'Senior';
-    } catch (_) {
-      return null;
-    }
-  }
-
-  String? _birthYearFromRaw(dynamic rawDate) {
-    if (rawDate == null) return null;
-    try {
-      return DateTime.parse(rawDate.toString()).year.toString();
-    } catch (_) {
-      return null;
-    }
+    return playerCategoryFromBirthday(birthday);
   }
 
   Widget _buildScoutOverlayChip({
@@ -1974,15 +1936,9 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
         ? Map<String, dynamic>.from(rawUserData)
         : <String, dynamic>{};
 
-    final category = _firstNonEmpty([
+    final category = normalizePlayerCategory(_firstNonEmpty([
           userData['category'],
           userData['categoria'],
-          _birthYearFromRaw(
-            userData['birthday'] ??
-                userData['birth_date'] ??
-                userData['fecha_nacimiento'] ??
-                userData['data_nascimento'],
-          ),
           _categoryFromBirthday(
             userData['birthday'] ??
                 userData['birth_date'] ??
@@ -1990,17 +1946,17 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                 userData['data_nascimento'],
           ),
         ]) ??
-        '';
+        '');
 
-    final position = _firstNonEmpty([
+    final position = normalizePlayerPosition(_firstNonEmpty([
           userData['position'],
           userData['posicion'],
           userData['posição'],
           userData['position_name'],
         ]) ??
-        '';
+        '');
 
-    final country = _firstNonEmpty([
+    final country = normalizeCountryName(_firstNonEmpty([
           userData['country'],
           userData['pais'],
           userData['país'],
@@ -2008,7 +1964,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
           userData['nationality'],
           userData['nacionalidad'],
         ]) ??
-        '';
+        '');
 
     final club = _firstNonEmpty([
           userData['club'],
@@ -2501,12 +2457,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
           child: GestureDetector(
             onTap: () {
               final uid = widget.videoData['user_id']?.toString() ?? '';
-              if (uid.isNotEmpty) {
-                context.pushNamed(
-                  'perfil_profesional_solicitar_Contato',
-                  queryParameters: {'userId': uid},
-                );
-              }
+              _openProfileForUser(uid);
             },
             child: Text(
               '@$userName',
@@ -2525,6 +2476,25 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
           _buildFollowButton(),
         ],
       ],
+    );
+  }
+
+  void _openProfileForUser(String uid) {
+    if (uid.isEmpty) return;
+    final currentId = widget.currentUserId;
+    if (currentId != null && currentId == uid) {
+      final normalizedType =
+          FFAppState.normalizeUserType(FFAppState().userType);
+      if (normalizedType == 'profesional') {
+        context.pushNamed('perfil_profesioanl');
+      } else {
+        context.pushNamed('perfil_jugador');
+      }
+      return;
+    }
+    context.pushNamed(
+      'perfil_profesional_solicitar_Contato',
+      queryParameters: {'userId': uid},
     );
   }
 
@@ -2641,11 +2611,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                   GestureDetector(
                     onTap: () {
                       final uid = widget.videoData['user_id']?.toString() ?? '';
-                      if (uid.isNotEmpty) {
-                        context.pushNamed(
-                            'perfil_profesional_solicitar_Contato',
-                            queryParameters: {'userId': uid});
-                      }
+                      _openProfileForUser(uid);
                     },
                     child: CircleAvatar(
                         backgroundImage:

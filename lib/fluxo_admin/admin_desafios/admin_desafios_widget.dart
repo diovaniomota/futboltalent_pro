@@ -30,6 +30,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
   bool _hasAttemptTable = true;
   String _typeFilter = 'todos';
   bool _onlyActive = false;
+  String? _categoryFilterId;
 
   List<Map<String, dynamic>> _challenges = [];
   List<Map<String, dynamic>> _filteredChallenges = [];
@@ -84,6 +85,27 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     );
   }
 
+  String _errorMessage(Object error) {
+    final raw = error.toString().trim();
+    if (raw.isEmpty) return 'Error desconocido';
+    const prefixes = [
+      'PostgrestException(message: ',
+      'StorageException(message: ',
+      'Exception: ',
+    ];
+    for (final prefix in prefixes) {
+      if (raw.startsWith(prefix)) {
+        final trimmed = raw.substring(prefix.length);
+        final endIndex = trimmed.indexOf(',');
+        if (endIndex > 0) {
+          return trimmed.substring(0, endIndex).trim();
+        }
+        return trimmed.replaceAll(')', '').trim();
+      }
+    }
+    return raw;
+  }
+
   String _assetDisplayName(String rawUrl) {
     final url = rawUrl.trim();
     if (url.isEmpty) return '';
@@ -129,8 +151,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: hasAsset
                       ? const Color(0xFFDCFCE7)
@@ -385,11 +406,14 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       final isActive = item['is_active'] == true;
       final title = (item['title'] ?? '').toString().toLowerCase();
       final description = (item['description'] ?? '').toString().toLowerCase();
+      final categoryId = (item['category_id'] ?? '').toString();
       final matchesType = _typeFilter == 'todos' || _typeFilter == type;
       final matchesActive = !_onlyActive || isActive;
+      final matchesCategory =
+          _categoryFilterId == null || _categoryFilterId == categoryId;
       final matchesQuery =
           query.isEmpty || title.contains(query) || description.contains(query);
-      return matchesType && matchesActive && matchesQuery;
+      return matchesType && matchesActive && matchesCategory && matchesQuery;
     }).toList();
   }
 
@@ -465,13 +489,25 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
   Future<void> _toggleActive(Map<String, dynamic> challenge) async {
     final type = challenge['type']?.toString() ?? 'exercise';
     final table = type == 'course' ? 'courses' : 'exercises';
-    final id = (challenge['id'] ?? '').toString();
+    final rawId = challenge['id'];
     final isActive = challenge['is_active'] == true;
+    if (rawId == null || rawId.toString().trim().isEmpty) {
+      _showSnack('No se encontró el identificador del desafío.',
+          color: Colors.red);
+      return;
+    }
     try {
-      await SupaFlow.client.from(table).update({
-        'is_active': !isActive,
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', id);
+      final updatedRows = await SupaFlow.client
+          .from(table)
+          .update({
+            'is_active': !isActive,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', rawId)
+          .select('id, is_active');
+      if (updatedRows.isEmpty) {
+        throw Exception('No se encontró el desafío para actualizar.');
+      }
       _showSnack(
         !isActive ? 'Desafío activado' : 'Desafío inactivado',
         color: const Color(0xFF0D3B66),
@@ -479,7 +515,10 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       await _loadData();
     } catch (e) {
       debugPrint('Toggle challenge active failed: $e');
-      _showSnack('No se pudo actualizar el desafío.', color: Colors.red);
+      _showSnack(
+        'No se pudo actualizar el desafío: ${_errorMessage(e)}',
+        color: Colors.red,
+      );
     }
   }
 
@@ -809,19 +848,17 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                         TextFormField(
                           controller: rewardTypeController,
                           enabled: !isSaving,
-                          decoration:
-                              const InputDecoration(
-                                labelText: 'Tipo de recompensa',
-                              ),
+                          decoration: const InputDecoration(
+                            labelText: 'Tipo de recompensa',
+                          ),
                         ),
                         const SizedBox(height: 10),
                         TextFormField(
                           controller: rewardNameController,
                           enabled: !isSaving,
-                          decoration:
-                              const InputDecoration(
-                                labelText: 'Nombre de recompensa',
-                              ),
+                          decoration: const InputDecoration(
+                            labelText: 'Nombre de recompensa',
+                          ),
                         ),
                       ] else ...[
                         Row(
@@ -1005,21 +1042,21 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                     alignment: Alignment.centerLeft,
                     child: OutlinedButton.icon(
                       onPressed: () async {
-                              try {
-                                final picker = ImagePicker();
-                                final picked = await picker.pickVideo(
-                                  source: ImageSource.gallery,
-                                  maxDuration: const Duration(minutes: 10),
-                                );
-                                if (picked == null) return;
-                                setDialogState(() => selectedVideoFile = picked);
-                              } catch (_) {
-                                _showSnack(
-                                  'No se pudo seleccionar el video.',
-                                  color: Colors.red,
-                                );
-                              }
-                            },
+                        try {
+                          final picker = ImagePicker();
+                          final picked = await picker.pickVideo(
+                            source: ImageSource.gallery,
+                            maxDuration: const Duration(minutes: 10),
+                          );
+                          if (picked == null) return;
+                          setDialogState(() => selectedVideoFile = picked);
+                        } catch (_) {
+                          _showSnack(
+                            'No se pudo seleccionar el video.',
+                            color: Colors.red,
+                          );
+                        }
+                      },
                       icon: const Icon(Icons.upload_file),
                       label: Text(
                         selectedVideoFile == null
@@ -1054,21 +1091,21 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                     alignment: Alignment.centerLeft,
                     child: OutlinedButton.icon(
                       onPressed: () async {
-                              try {
-                                final picker = ImagePicker();
-                                final picked = await picker.pickImage(
-                                  source: ImageSource.gallery,
-                                  imageQuality: 90,
-                                );
-                                if (picked == null) return;
-                                setDialogState(() => selectedCoverFile = picked);
-                              } catch (_) {
-                                _showSnack(
-                                  'No se pudo seleccionar la portada.',
-                                  color: Colors.red,
-                                );
-                              }
-                            },
+                        try {
+                          final picker = ImagePicker();
+                          final picked = await picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 90,
+                          );
+                          if (picked == null) return;
+                          setDialogState(() => selectedCoverFile = picked);
+                        } catch (_) {
+                          _showSnack(
+                            'No se pudo seleccionar la portada.',
+                            color: Colors.red,
+                          );
+                        }
+                      },
                       icon: const Icon(Icons.image_outlined),
                       label: Text(
                         selectedCoverFile == null
@@ -1096,7 +1133,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                       ),
                     ],
                     onChanged: (value) =>
-                            setDialogState(() => selectedCategoryId = value),
+                        setDialogState(() => selectedCategoryId = value),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
@@ -1138,16 +1175,16 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                   if (type == 'course') ...[
                     TextFormField(
                       controller: rewardTypeController,
-                        decoration: const InputDecoration(
-                          labelText: 'Tipo de recompensa',
-                        ),
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo de recompensa',
+                      ),
                     ),
                     const SizedBox(height: 10),
                     TextFormField(
                       controller: rewardNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre de recompensa',
-                        ),
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre de recompensa',
+                      ),
                     ),
                   ] else ...[
                     TextFormField(
@@ -1251,14 +1288,12 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       };
 
       if (type == 'course') {
-        payload['reward_type'] =
-            rewardTypeController.text.trim().isEmpty
-                ? null
-                : rewardTypeController.text.trim();
-        payload['reward_name'] =
-            rewardNameController.text.trim().isEmpty
-                ? null
-                : rewardNameController.text.trim();
+        payload['reward_type'] = rewardTypeController.text.trim().isEmpty
+            ? null
+            : rewardTypeController.text.trim();
+        payload['reward_name'] = rewardNameController.text.trim().isEmpty
+            ? null
+            : rewardNameController.text.trim();
       } else {
         payload['repetitions'] = maybeInt(repetitionsController.text);
         payload['sets'] = maybeInt(setsController.text);
@@ -1284,10 +1319,9 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       if (mounted) {
         setState(() {
           _challenges = _challenges.map((row) {
-            final sameId =
-                (row['id'] ?? '').toString() == (challenge['id'] ?? '').toString();
-            final sameType =
-                (row['type'] ?? '').toString() ==
+            final sameId = (row['id'] ?? '').toString() ==
+                (challenge['id'] ?? '').toString();
+            final sameType = (row['type'] ?? '').toString() ==
                 (challenge['type'] ?? '').toString();
             if (!sameId || !sameType) return row;
             return {
@@ -1310,7 +1344,10 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       );
     } catch (e) {
       debugPrint('Edit challenge failed: $e');
-      _showSnack('No se pudo actualizar el desafío.', color: Colors.red);
+      _showSnack(
+        'No se pudo actualizar el desafío: ${_errorMessage(e)}',
+        color: Colors.red,
+      );
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -1341,7 +1378,8 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
               child: const Text('Cancelar')),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Eliminar', style: TextStyle(color: Colors.red))),
+              child:
+                  const Text('Eliminar', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -1584,6 +1622,11 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
+            tooltip: 'Categorías',
+            onPressed: () => context.pushNamed(AdminCategoriesWidget.routeName),
+            icon: const Icon(Icons.category_outlined, color: Colors.white),
+          ),
+          IconButton(
             tooltip: 'Actualizar',
             onPressed: _loadData,
             icon: const Icon(Icons.refresh, color: Colors.white),
@@ -1671,6 +1714,33 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String?>(
+                        value: _categoryFilterId,
+                        decoration: const InputDecoration(
+                          labelText: 'Filtrar por categoría',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: [
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('Todas las categorías'),
+                          ),
+                          ..._categories.map(
+                            (category) => DropdownMenuItem<String?>(
+                              value: category['id']?.toString(),
+                              child: Text(category['name']?.toString() ?? ''),
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _categoryFilterId = value;
+                            _applyFilters();
+                          });
+                        },
                       ),
                       SwitchListTile(
                         value: _onlyActive,

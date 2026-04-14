@@ -1,6 +1,7 @@
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/fluxo_compartilhado/club_identity_utils.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
@@ -46,6 +47,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
   int _maxConvocatorias = 20;
   int _staffCount = 0;
   int _maxStaff = 10;
+  String _selectedProfileTab = 'convocatorias';
+  List<Map<String, dynamic>> _clubConvocatoriasPreview = [];
 
   @override
   void initState() {
@@ -186,14 +189,14 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     _nombreCortoController.text = _firstNonEmptyText([
       clubData?['nombre_corto'],
     ]);
-    _paisController.text = _firstNonEmptyText([
+    _paisController.text = normalizeCountryName(_firstNonEmptyText([
       clubData?['pais'],
       clubData?['country'],
-    ]);
-    _ligaController.text = _firstNonEmptyText([
+    ]));
+    _ligaController.text = normalizeLeagueName(_firstNonEmptyText([
       clubData?['liga'],
       clubData?['league'],
-    ]);
+    ]));
     _descripcionController.text = _firstNonEmptyText([
       clubData?['descripcion'],
       clubData?['bio'],
@@ -321,19 +324,23 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       final convocatoriasResponse = _clubRefs.length == 1
           ? await SupaFlow.client
               .from('convocatorias')
-              .select('id')
+              .select('id, titulo, categoria, posicion, ubicacion, created_at')
               .eq('club_id', _clubRefs.first)
               .eq('is_active', true)
+              .order('created_at', ascending: false)
           : await SupaFlow.client
               .from('convocatorias')
-              .select('id')
+              .select('id, titulo, categoria, posicion, ubicacion, created_at')
               .inFilter('club_id', _clubRefs.toList())
               .eq('is_active', true);
 
       // Limites vêm do registro do club (usa _clubData que já foi carregado)
       if (mounted) {
         setState(() {
-          _convocatoriasActivas = (convocatoriasResponse as List).length;
+          final convocatorias =
+              List<Map<String, dynamic>>.from(convocatoriasResponse as List);
+          _convocatoriasActivas = convocatorias.length;
+          _clubConvocatoriasPreview = convocatorias.take(6).toList();
           if (_clubData != null) {
             _maxConvocatorias = _clubData!['max_convocatorias'] ?? 20;
             _maxStaff = _clubData!['max_staff'] ?? 10;
@@ -350,11 +357,14 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     setState(() => _isSaving = true);
     try {
       final updatedAt = DateTime.now().toIso8601String();
+      final normalizedCountry = normalizeCountryName(_paisController.text.trim());
+      final normalizedLeague = normalizeLeagueName(_ligaController.text.trim());
       final payload = {
         'nombre': _nombreController.text.trim(),
         'nombre_corto': _nombreCortoController.text.trim(),
-        'pais': _paisController.text.trim(),
-        'liga': _ligaController.text.trim(),
+        'pais': normalizedCountry,
+        'country': normalizedCountry,
+        'liga': normalizedLeague,
         'descripcion': _descripcionController.text.trim(),
         'sitio_web': _sitioWebController.text.trim(),
         'updated_at': updatedAt,
@@ -654,7 +664,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                               decoration: BoxDecoration(
                                   color: const Color(0xFF0D3B66),
                                   borderRadius: BorderRadius.circular(20)),
-                              child: const Icon(Icons.settings,
+                              child: const Icon(Icons.shield_outlined,
                                   color: Colors.white)),
                           const SizedBox(width: 12),
                           const Text('Menú del club',
@@ -699,11 +709,17 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                               false,
                               () => context
                                   .pushNamed(ListaYNotaWidget.routeName)),
+                          _buildDrawerItem(
+                              context,
+                              Icons.visibility_outlined,
+                              'Perfil público',
+                              false,
+                              () async => _openCurrentClubPublicProfile(ctx)),
                           const Divider(),
                           _buildDrawerItem(
                               context,
-                              Icons.settings_outlined,
-                              'Club',
+                              Icons.shield_outlined,
+                              'Mi perfil',
                               true,
                               () => context
                                   .pushNamed(ConfiguracinWidget.routeName)),
@@ -762,159 +778,687 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     );
   }
 
+  String _clubDisplayName() => _firstNonEmptyText([
+        _nombreController.text.trim(),
+        _clubData?['nombre'],
+        _clubData?['name'],
+        _clubData?['club_name'],
+      ], fallback: 'Mi Club');
+
+  String _clubDescriptionText() => _firstNonEmptyText([
+        _descripcionController.text.trim(),
+        _clubData?['descripcion'],
+        _clubData?['description'],
+        _currentUserData?['bio'],
+      ], fallback: 'Completá la descripción para presentar tu club.');
+
+  String _clubWebsiteText() => _firstNonEmptyText([
+        _sitioWebController.text.trim(),
+        _clubData?['sitio_web'],
+        _clubData?['website'],
+      ]);
+
+  String _clubLeagueText() => normalizeLeagueName(_firstNonEmptyText([
+        _ligaController.text.trim(),
+        _clubData?['liga'],
+        _clubData?['league'],
+      ]));
+
+  String _clubCountryText() => normalizeCountryName(_firstNonEmptyText([
+        _paisController.text.trim(),
+        _clubData?['pais'],
+        _clubData?['country'],
+      ]));
+
+  String? _clubCoverUrl() {
+    final cover = _firstNonEmptyText([
+      _clubData?['cover_url'],
+      _clubData?['banner_url'],
+      _currentUserData?['cover_url'],
+    ]);
+    return cover.isEmpty ? null : cover;
+  }
+
+  String? _clubLogoUrl() {
+    final logo = _firstNonEmptyText([
+      _logoUrl,
+      _clubData?['logo_url'],
+      _clubData?['photo_url'],
+      _clubData?['avatar_url'],
+    ]);
+    return logo.isEmpty ? null : logo;
+  }
+
+  bool _isVerifiedClubProfile() {
+    final values = [
+      _clubData?['is_verified'],
+      _currentUserData?['is_verified'],
+    ];
+    for (final value in values) {
+      if (value is bool) return value;
+      final text = value?.toString().trim().toLowerCase() ?? '';
+      if (text == 'true') return true;
+    }
+
+    final status = _firstNonEmptyText([
+      _clubData?['verification_status'],
+      _currentUserData?['verification_status'],
+    ]).toLowerCase();
+    return status == 'verified' ||
+        status == 'verificado' ||
+        status == 'approved' ||
+        status == 'aprobado';
+  }
+
+  Widget _buildProfileTopBar(BuildContext context) {
+    return Row(
+      children: [
+        IconButton(
+          onPressed: () => _showClubMenu(context),
+          icon: const Icon(Icons.menu_rounded, color: Colors.white),
+        ),
+        Expanded(
+          child: Text(
+            'Perfil',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        IconButton(
+          onPressed: () {
+            setState(() => _isEditingClubProfile = !_isEditingClubProfile);
+          },
+          icon: Icon(
+            _isEditingClubProfile
+                ? Icons.close_rounded
+                : Icons.settings_outlined,
+            color: Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProfileMetricCard({
+    required String value,
+    required String label,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF151B28),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF20293A)),
+        ),
+        child: Column(
+          children: [
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                height: 1.2,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF94A3B8),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileActionButton({
+    required String label,
+    required VoidCallback onPressed,
+    bool primary = false,
+  }) {
+    final style = primary
+        ? ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF1473E6),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          )
+        : ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF2A3240),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          );
+
+    return Expanded(
+      child: SizedBox(
+        height: 48,
+        child: ElevatedButton(
+          onPressed: onPressed,
+          style: style,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileTabs() {
+    final tabs = const [
+      ('convocatorias', 'Convocatorias'),
+      ('cursos', 'Cursos'),
+      ('fichajes', 'Fichajes'),
+      ('sobre', 'Sobre Nosotros'),
+    ];
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: tabs.map((entry) {
+          final selected = _selectedProfileTab == entry.$1;
+          return GestureDetector(
+            onTap: () => setState(() => _selectedProfileTab = entry.$1),
+            child: Container(
+              margin: const EdgeInsets.only(right: 22),
+              padding: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: selected
+                        ? const Color(0xFF1473E6)
+                        : Colors.transparent,
+                    width: 2.5,
+                  ),
+                ),
+              ),
+              child: Text(
+                entry.$2,
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : const Color(0xFF8B96A8),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildDarkClubPanel({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: padding ?? const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0C111B),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF1B2331)),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildOwnConvocatoriaTile(Map<String, dynamic> convocatoria) {
+    final title = _firstNonEmptyText([
+      convocatoria['titulo'],
+      convocatoria['title'],
+    ], fallback: 'Convocatoria');
+    final subtitle = [
+      convocatoria['categoria']?.toString() ?? '',
+      convocatoria['posicion']?.toString() ?? '',
+      convocatoria['ubicacion']?.toString() ?? '',
+    ].where((item) => item.trim().isNotEmpty).join(' • ');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF1F2937)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF3D8F2E),
+                  Color(0xFF1C4D1A),
+                ],
+              ),
+            ),
+            child: const Icon(
+              Icons.sports_soccer_rounded,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOwnProfileTabContent() {
+    switch (_selectedProfileTab) {
+      case 'cursos':
+        return _buildDarkClubPanel(
+          child: Text(
+            'Todavía no hay cursos publicados para este club.',
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              height: 1.45,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+        );
+      case 'fichajes':
+        return _buildDarkClubPanel(
+          child: _staffMembers.isEmpty
+              ? Text(
+                  'No hay staff cargado por ahora.',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                )
+              : Column(
+                  children: _staffMembers.take(4).map((member) {
+                    final user = member['users'];
+                    final name = _firstNonEmptyText([
+                      user?['name'],
+                      member['cargo'],
+                    ], fallback: 'Miembro');
+                    final role = _firstNonEmptyText([
+                      member['cargo'],
+                      'Staff',
+                    ]);
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(
+                        backgroundColor: const Color(0xFF1E293B),
+                        child: Text(
+                          name.isNotEmpty ? name.substring(0, 1) : '?',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      title: Text(
+                        name,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      subtitle: Text(
+                        role,
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFF94A3B8),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+        );
+      case 'sobre':
+        return _buildDarkClubPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _clubDescriptionText(),
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: const Color(0xFFE2E8F0),
+                ),
+              ),
+              if (_clubWebsiteText().isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text(
+                  _clubWebsiteText(),
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF60A5FA),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              Text(
+                [
+                  _clubCountryText(),
+                  _clubLeagueText(),
+                ].where((item) => item.isNotEmpty).join(' • '),
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+            ],
+          ),
+        );
+      default:
+        if (_clubConvocatoriasPreview.isEmpty) {
+          return _buildDarkClubPanel(
+            child: Text(
+              'Aún no tenés convocatorias activas.',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: const Color(0xFF94A3B8),
+              ),
+            ),
+          );
+        }
+        return Column(
+          children: _clubConvocatoriasPreview
+              .map(_buildOwnConvocatoriaTile)
+              .toList(),
+        );
+    }
+  }
+
   // ============ UI BUILDER ============
   @override
   Widget build(BuildContext context) {
     final scale = _scaleFactor(context);
-    final padding = _responsive(context, mobile: 16, tablet: 24, desktop: 32);
-    final maxContentWidth = _responsive(context,
-        mobile: double.infinity, tablet: 800, desktop: 900);
+    final horizontalPadding =
+        _responsive(context, mobile: 16, tablet: 24, desktop: 32);
+    final maxContentWidth = _responsive(
+      context,
+      mobile: double.infinity,
+      tablet: 760,
+      desktop: 840,
+    );
+    final coverUrl = _clubCoverUrl();
+    final logoUrl = _clubLogoUrl();
+    final verified = _isVerifiedClubProfile();
+    final clubName = _clubDisplayName();
+    final description = _clubDescriptionText();
+    final planLabel = (_clubData?['subscription_plan'] ?? 'free')
+        .toString()
+        .trim()
+        .toUpperCase();
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         key: scaffoldKey,
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFF050913),
         body: SafeArea(
-          top: true,
           child: _isLoading
               ? const Center(
-                  child: CircularProgressIndicator(color: Color(0xFF0D3B66)))
-              : Container(
-                  width: double.infinity,
-                  height: double.infinity,
-                  color: Colors.white,
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.all(padding),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                            maxWidth: maxContentWidth == double.infinity
-                                ? double.infinity
-                                : maxContentWidth),
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                  child: CircularProgressIndicator(color: Color(0xFF1473E6)),
+                )
+              : SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    8,
+                    horizontalPadding,
+                    32,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: maxContentWidth == double.infinity
+                            ? double.infinity
+                            : maxContentWidth,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildProfileTopBar(context),
+                          const SizedBox(height: 16),
+                          Stack(
+                            clipBehavior: Clip.none,
                             children: [
-                              _buildHeader(context),
-                              SizedBox(height: 24 * scale),
-                              _buildClubProfileSummarySection(context),
-                              SizedBox(height: 24 * scale),
-                              if (_isEditingClubProfile) ...[
-                                _buildClubInfoSection(context),
-                                SizedBox(height: 24 * scale),
-                              ],
-                              if (_isLargeScreen(context))
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(child: _buildStaffSection(context)),
-                                    SizedBox(width: 24 * scale),
-                                    Expanded(
-                                        child:
-                                            _buildAccountStatusSection(context)),
-                                  ],
-                                )
-                              else ...[
-                                _buildStaffSection(context),
-                                SizedBox(height: 24 * scale),
-                                _buildAccountStatusSection(context),
-                              ],
-                              SizedBox(height: 24 * scale),
-                              _isMediumScreen(context)
-                                  ? Wrap(
-                                      spacing: 12 * scale,
-                                      runSpacing: 12 * scale,
-                                      children: [
-                                        if (_clubData != null)
-                                          SizedBox(
-                                            width: 220 * scale,
-                                            child: SizedBox(
-                                              height: 50 * scale,
-                                              child: _buildPublicProfileButton(
-                                                context,
-                                                scale,
-                                              ),
-                                            ),
+                              Container(
+                                height: 208,
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(22),
+                                  color: const Color(0xFF0E1624),
+                                  image: coverUrl != null
+                                      ? DecorationImage(
+                                          image: NetworkImage(coverUrl),
+                                          fit: BoxFit.cover,
+                                        )
+                                      : null,
+                                ),
+                                child: coverUrl == null
+                                    ? Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(22),
+                                          gradient: const LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              Color(0xFF294B78),
+                                              Color(0xFF0D1726),
+                                            ],
                                           ),
-                                        if (!_isEditingClubProfile)
-                                          SizedBox(
-                                            width: 220 * scale,
-                                            child: SizedBox(
-                                              height: 50 * scale,
-                                              child: _buildEditClubButton(
-                                                context,
-                                                scale,
-                                              ),
-                                            ),
-                                          ),
-                                        if (_isEditingClubProfile) ...[
-                                          SizedBox(
-                                            width: 190 * scale,
-                                            child: SizedBox(
-                                              height: 50 * scale,
-                                              child:
-                                                  _buildCancelEditClubButton(
-                                                context,
-                                                scale,
-                                              ),
-                                            ),
-                                          ),
-                                          SizedBox(
-                                            width: 220 * scale,
-                                            child: SizedBox(
-                                              height: 50 * scale,
-                                              child: _buildSaveClubButton(
-                                                context,
-                                                scale,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    )
-                                  : Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        if (_clubData != null)
-                                          SizedBox(
-                                            height: 50 * scale,
-                                            child: _buildPublicProfileButton(
-                                              context,
-                                              scale,
-                                            ),
-                                          ),
-                                        if (_clubData != null)
-                                          SizedBox(height: 12 * scale),
-                                        if (!_isEditingClubProfile)
-                                          SizedBox(
-                                            height: 50 * scale,
-                                            child: _buildEditClubButton(
-                                              context,
-                                              scale,
-                                            ),
-                                          ),
-                                        if (_isEditingClubProfile) ...[
-                                          SizedBox(
-                                            height: 50 * scale,
-                                            child: _buildCancelEditClubButton(
-                                              context,
-                                              scale,
-                                            ),
-                                          ),
-                                          SizedBox(height: 12 * scale),
-                                          SizedBox(
-                                            height: 50 * scale,
-                                            child: _buildSaveClubButton(
-                                              context,
-                                              scale,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: -52,
+                                child: Center(
+                                  child: Container(
+                                    width: 108,
+                                    height: 108,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: const Color(0xFF173E4E),
+                                      border: Border.all(
+                                        color: const Color(0xFF0A111E),
+                                        width: 5,
+                                      ),
+                                      image: logoUrl != null
+                                          ? DecorationImage(
+                                              image: NetworkImage(logoUrl),
+                                              fit: BoxFit.cover,
+                                            )
+                                          : null,
                                     ),
-                              SizedBox(height: 32 * scale),
-                            ]),
+                                    child: logoUrl == null
+                                        ? const Icon(
+                                            Icons.shield_rounded,
+                                            color: Colors.white,
+                                            size: 46,
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 70),
+                          Center(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    clubName,
+                                    maxLines: 2,
+                                    textAlign: TextAlign.center,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 22 * scale,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                if (verified) ...[
+                                  const SizedBox(width: 8),
+                                  const Icon(
+                                    Icons.verified_rounded,
+                                    size: 22,
+                                    color: Color(0xFF1D9BF0),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Center(
+                            child: Text(
+                              verified ? 'Club Verificado' : 'Perfil del club',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 540),
+                              child: Text(
+                                description,
+                                textAlign: TextAlign.center,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  height: 1.45,
+                                  color: const Color(0xFFCBD5E1),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          Row(
+                            children: [
+                              _buildProfileMetricCard(
+                                value: '$_convocatoriasActivas',
+                                label: 'Convocatorias',
+                              ),
+                              const SizedBox(width: 12),
+                              _buildProfileMetricCard(
+                                value: '$_staffCount',
+                                label: 'Staff',
+                              ),
+                              const SizedBox(width: 12),
+                              _buildProfileMetricCard(
+                                value: planLabel,
+                                label: 'Plan',
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+                          Row(
+                            children: [
+                              _buildProfileActionButton(
+                                label: _isEditingClubProfile
+                                    ? 'Cancelar'
+                                    : 'Editar Perfil',
+                                primary: true,
+                                onPressed: () {
+                                  setState(() {
+                                    if (_isEditingClubProfile) {
+                                      _populateClubControllers(_clubData);
+                                    }
+                                    _isEditingClubProfile = !_isEditingClubProfile;
+                                  });
+                                },
+                              ),
+                              const SizedBox(width: 12),
+                              _buildProfileActionButton(
+                                label: _isEditingClubProfile
+                                    ? 'Guardar'
+                                    : 'Gestionar',
+                                onPressed: _isEditingClubProfile
+                                    ? () {
+                                        _saveChanges();
+                                      }
+                                    : () => _showClubMenu(context),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          _buildProfileTabs(),
+                          const SizedBox(height: 18),
+                          _buildOwnProfileTabContent(),
+                          if (_isEditingClubProfile) ...[
+                            const SizedBox(height: 20),
+                            _buildClubInfoSection(context),
+                          ],
+                        ],
                       ),
                     ),
                   ),
@@ -931,13 +1475,13 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
           onTap: () => _showClubMenu(context),
           child: Icon(Icons.menu, color: Colors.black, size: 24 * scale)),
       SizedBox(height: 16 * scale),
-      Text('Club',
+      Text('Mi perfil',
           style: GoogleFonts.inter(
               fontSize: 24 * scale,
               fontWeight: FontWeight.bold,
               color: Colors.black)),
       SizedBox(height: 8 * scale),
-      Text('Gestiona la información de tu club',
+      Text('Gestiona el perfil de tu club',
           style:
               GoogleFonts.inter(fontSize: 14 * scale, color: Colors.grey[700])),
     ]);
@@ -971,11 +1515,12 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         : (_clubData?['nombre']?.toString().trim().isNotEmpty ?? false)
             ? _clubData!['nombre'].toString().trim()
             : 'Mi Club';
-    final shortName = _nombreCortoController.text.trim();
-    final country = _paisController.text.trim();
-    final league = _ligaController.text.trim();
+    final country = normalizeCountryName(_paisController.text.trim());
+    final league = normalizeLeagueName(_ligaController.text.trim());
     final description = _descripcionController.text.trim();
     final site = _sitioWebController.text.trim();
+    final planLabel =
+        'Plan ${(_clubData?['subscription_plan'] ?? 'free').toString().trim().toLowerCase()}';
 
     Widget infoTile({
       required IconData icon,
@@ -983,25 +1528,29 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       required String value,
     }) {
       return Container(
-        padding: EdgeInsets.all(12 * scale),
+        padding: EdgeInsets.symmetric(
+          horizontal: 14 * scale,
+          vertical: 13 * scale,
+        ),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          color: const Color(0xFFFBFCFE),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE7ECF2)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 34 * scale,
-              height: 34 * scale,
+              width: 40 * scale,
+              height: 40 * scale,
               decoration: BoxDecoration(
-                color: const Color(0xFFE8F0FE),
-                borderRadius: BorderRadius.circular(10),
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, size: 18 * scale, color: const Color(0xFF0D3B66)),
+              child:
+                  Icon(icon, size: 18 * scale, color: const Color(0xFF5B6B82)),
             ),
-            SizedBox(width: 10 * scale),
+            SizedBox(width: 12 * scale),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1009,16 +1558,18 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                   Text(
                     label,
                     style: GoogleFonts.inter(
-                      fontSize: 12 * scale,
+                      fontSize: 13 * scale,
                       color: const Color(0xFF64748B),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  SizedBox(height: 3 * scale),
+                  SizedBox(height: 4 * scale),
                   Text(
                     value.isEmpty ? 'Sin completar' : value,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
-                      fontSize: 13 * scale,
+                      fontSize: 15 * scale,
                       color: const Color(0xFF0F172A),
                       fontWeight:
                           value.isEmpty ? FontWeight.w500 : FontWeight.w700,
@@ -1035,14 +1586,14 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     return Container(
       padding: EdgeInsets.all(16 * scale),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE6EBF1)),
         color: Colors.white,
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0D0D3B66),
-            blurRadius: 16,
-            offset: Offset(0, 8),
+            color: Color(0x120F172A),
+            blurRadius: 24,
+            offset: Offset(0, 10),
           ),
         ],
       ),
@@ -1056,8 +1607,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                 width: 74 * scale,
                 height: 74 * scale,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE8F0FE),
-                  borderRadius: BorderRadius.circular(18),
+                  color: const Color(0xFF173E73),
+                  borderRadius: BorderRadius.circular(20),
                   image: _logoUrl != null
                       ? DecorationImage(
                           image: NetworkImage(_logoUrl!),
@@ -1067,8 +1618,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                 ),
                 child: _logoUrl == null
                     ? Icon(
-                        Icons.shield_outlined,
-                        color: const Color(0xFF0D3B66),
+                        Icons.shield_rounded,
+                        color: Colors.white,
                         size: 34 * scale,
                       )
                     : null,
@@ -1089,35 +1640,20 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                     SizedBox(height: 4 * scale),
                     Text(
                       clubName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
-                        fontSize: 22 * scale,
+                        fontSize: 20 * scale,
                         color: const Color(0xFF0F172A),
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    if (shortName.isNotEmpty) ...[
-                      SizedBox(height: 4 * scale),
-                      Text(
-                        shortName,
-                        style: GoogleFonts.inter(
-                          fontSize: 13 * scale,
-                          color: const Color(0xFF475569),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    SizedBox(height: 8 * scale),
+                    SizedBox(height: 10 * scale),
                     Wrap(
                       spacing: 8 * scale,
                       runSpacing: 8 * scale,
                       children: [
-                        if (country.isNotEmpty)
-                          _buildInfoChip(country, scale),
-                        if (league.isNotEmpty) _buildInfoChip(league, scale),
-                        _buildInfoChip(
-                          'Plan ${(_clubData?['subscription_plan'] ?? 'free').toString()}',
-                          scale,
-                        ),
+                        _buildInfoChip(planLabel, scale),
                       ],
                     ),
                   ],
@@ -1161,7 +1697,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         vertical: 6 * scale,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFE6EBF1)),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -1175,23 +1712,27 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     );
   }
 
+  void _openCurrentClubPublicProfile(BuildContext context) {
+    final clubRef = (_clubData?['id']?.toString().trim().isNotEmpty ?? false)
+        ? _clubData!['id'].toString().trim()
+        : (_clubData?['owner_id']?.toString().trim().isNotEmpty ?? false)
+            ? _clubData!['owner_id'].toString().trim()
+            : _currentUserId ?? '';
+    if (clubRef.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PerfilPublicoClubWidget(
+          clubRef: clubRef,
+          initialClubData: _clubData,
+        ),
+      ),
+    );
+  }
+
   Widget _buildPublicProfileButton(BuildContext context, double scale) {
     return OutlinedButton(
-      onPressed: () {
-        final clubRef = (_clubData!['id']?.toString().trim().isNotEmpty ?? false)
-            ? _clubData!['id'].toString().trim()
-            : (_clubData!['owner_id']?.toString().trim().isNotEmpty ?? false)
-                ? _clubData!['owner_id'].toString().trim()
-                : _currentUserId!;
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => PerfilPublicoClubWidget(
-              clubRef: clubRef,
-              initialClubData: _clubData,
-            ),
-          ),
-        );
-      },
+      onPressed: () => _openCurrentClubPublicProfile(context),
       style: OutlinedButton.styleFrom(
         side: const BorderSide(color: Color(0xFF0D3B66)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1201,7 +1742,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         ),
       ),
       child: _buildPrimaryActionLabel(
-        'Ver perfil público',
+        'Perfil público',
         context,
         color: const Color(0xFF0D3B66),
       ),
@@ -1224,7 +1765,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       },
       icon: const Icon(Icons.edit_outlined),
       label: _buildPrimaryActionLabel(
-        'Editar datos del club',
+        'Editar perfil',
         context,
       ),
     );
@@ -1294,7 +1835,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         Row(children: [
           const Icon(Icons.edit_outlined),
           const SizedBox(width: 8),
-          Text('Editar datos del club',
+          Text('Editar perfil',
               style:
                   TextStyle(fontSize: 16 * scale, fontWeight: FontWeight.w500))
         ]),
@@ -1367,35 +1908,112 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     return Container(
       padding: EdgeInsets.all(16 * scale),
       decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[300]!)),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE6EBF1)),
+          color: Colors.white,
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A0F172A),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ]),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Gestión del Staff',
-            style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
+        Text(
+          'Gestión del Staff',
+          style: GoogleFonts.inter(
+            fontSize: 16 * scale,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF0F172A),
+          ),
+        ),
+        SizedBox(height: 10 * scale),
         if (_staffMembers.isEmpty)
-          const Text('No hay staff', style: TextStyle(color: Colors.grey)),
-        ..._staffMembers.map((s) {
+          Text(
+            'No hay staff',
+            style: GoogleFonts.inter(
+              fontSize: 14 * scale,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+        ..._staffMembers.take(3).map((s) {
           final userData = s['users'];
           final name = userData?['name'] ?? 'Miembro';
-          return ListTile(
-            leading: CircleAvatar(
-              backgroundColor: const Color(0xFFE0E0E0),
-              child: Text(
-                name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+          return Padding(
+            padding: EdgeInsets.only(bottom: 10 * scale),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 18 * scale,
+                  backgroundColor: const Color(0xFFE2E8F0),
+                  child: Text(
+                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF334155),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 10 * scale),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 13 * scale,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                      SizedBox(height: 2 * scale),
+                      Text(
+                        s['cargo'] ?? 'Staff',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 12 * scale,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => _showEditStaffDialog(s),
+                  icon: const Icon(Icons.more_vert_rounded),
+                  color: const Color(0xFF64748B),
+                ),
+              ],
             ),
-            title: Text(name),
-            subtitle: Text(s['cargo'] ?? 'Staff'),
-            trailing: TextButton(
-                child: const Text('Editar'),
-                onPressed: () => _showEditStaffDialog(s)),
           );
         }),
-        const SizedBox(height: 10),
+        SizedBox(height: 8 * scale),
         OutlinedButton(
-            onPressed: _showInviteDialog, child: const Text('Invitar Miembro'))
+          onPressed: _showInviteDialog,
+          style: OutlinedButton.styleFrom(
+            padding: EdgeInsets.symmetric(
+              horizontal: 14 * scale,
+              vertical: 12 * scale,
+            ),
+            side: const BorderSide(color: Color(0xFFE1E8F0)),
+            backgroundColor: const Color(0xFFF8FBFF),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          child: Text(
+            'Invitar Miembro',
+            style: GoogleFonts.inter(
+              fontSize: 14 * scale,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF4AA3DF),
+            ),
+          ),
+        )
       ]),
     );
   }
@@ -1405,12 +2023,26 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     return Container(
         padding: EdgeInsets.all(16 * scale),
         decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[300]!)),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFE6EBF1)),
+            color: Colors.white,
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0A0F172A),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ]),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Estado de la Cuenta',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
+          Text(
+            'Estado de la Cuenta',
+            style: GoogleFonts.inter(
+              fontSize: 16 * scale,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF0F172A),
+            ),
+          ),
+          SizedBox(height: 10 * scale),
           _buildStatusRow(
               context, 'Plan', _clubData?['subscription_plan'] ?? 'Básico'),
           _buildStatusRow(context, 'Convocatorias',
@@ -1423,12 +2055,25 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
 
   Widget _buildStatusRow(BuildContext context, String label, String value) {
     return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label),
-              Text(value, style: const TextStyle(fontWeight: FontWeight.bold))
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+              Text(
+                value,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: const Color(0xFF0F172A),
+                  fontWeight: FontWeight.w700,
+                ),
+              )
             ]));
   }
 }

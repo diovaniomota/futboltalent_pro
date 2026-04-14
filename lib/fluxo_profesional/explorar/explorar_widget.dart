@@ -1,6 +1,7 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -78,6 +79,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
   String _searchQuery = '';
   bool _isJugadorSearchMode = false;
+  bool _isJugadorFiltersExpanded = false;
   _JugadorSearchTab _jugadorSearchTab = _JugadorSearchTab.convocatorias;
 
   List<Map<String, dynamic>> _users = [];
@@ -142,6 +144,68 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   List<String> _realConvocatoriaCountries = [];
   List<String> _realConvocatoriaCities = [];
   List<String> _realConvocatoriaLocations = [];
+
+  Widget _buildFeatureUnavailableState({
+    required String title,
+    required String message,
+  }) {
+    return SafeArea(
+      bottom: false,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 74,
+                height: 74,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.search_off_rounded,
+                  size: 34,
+                  color: Color(0xFF475569),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: const Color(0xFF475569),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 18),
+              ElevatedButton(
+                onPressed: () => context.goNamed(FeedWidget.routeName),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D3B66),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Ir al feed'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -215,20 +279,35 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             .limit(3000);
       }
       final listP = List<Map<String, dynamic>>.from(pRes as List);
-      _realPlayerPositions = _extractUniqueStrings(listP.map((u) => u['posicion']));
-      _realPlayerCategories = _extractUniqueStrings(listP.map((u) => _categoryFromBirthday(u['birthday'])));
-      _realPlayerCountries = _extractUniqueStrings(listP.map(_resolveCountryFromUser));
-      _realPlayerCities = _extractUniqueStrings(listP.map(_resolveCity));
+      _realPlayerPositions = buildNormalizedOptions(
+          listP.map(_resolvePlayerPosition), normalizePlayerPosition);
+      _realPlayerCategories = buildNormalizedOptions(
+        listP.map((u) => _resolvePlayerCategory(u)),
+        normalizePlayerCategory,
+      );
+      _realPlayerCountries = buildNormalizedOptions(
+        listP.map(_resolveCountryFromUser),
+        normalizeCountryName,
+      );
+      _realPlayerCities =
+          buildNormalizedOptions(listP.map(_resolveCity), normalizeCityName);
       _realPlayerLevels = _extractUniqueStrings(listP.map(_resolvePlayerLevel));
     } catch (_) {}
     try {
-      final cRes =
-          await SupaFlow.client.from('clubs').select().limit(1500);
+      final cRes = await SupaFlow.client.from('clubs').select().limit(1500);
       final listC = List<Map<String, dynamic>>.from(cRes as List);
-      _realClubCountries = _extractUniqueStrings(listC.map(_resolveCountryFromClub));
-      _realClubStates = _extractUniqueStrings(listC.map(_resolveState));
-      _realClubCities = _extractUniqueStrings(listC.map(_resolveCity));
-      _realClubLeagues = _extractUniqueStrings(listC.map(_resolveClubLeague));
+      _realClubCountries = buildNormalizedOptions(
+        listC.map(_resolveCountryFromClub),
+        normalizeCountryName,
+      );
+      _realClubStates =
+          buildNormalizedOptions(listC.map(_resolveState), normalizeStateName);
+      _realClubCities =
+          buildNormalizedOptions(listC.map(_resolveCity), normalizeCityName);
+      _realClubLeagues = buildNormalizedOptions(
+        listC.map(_resolveClubLeague),
+        normalizeLeagueName,
+      );
     } catch (_) {}
     try {
       final convRes = await SupaFlow.client
@@ -237,14 +316,25 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           .eq('is_active', true)
           .limit(1500);
       final listConv = List<Map<String, dynamic>>.from(convRes as List);
-      _realConvocatoriaCategories = _extractUniqueStrings(listConv.map(_resolveConvocatoriaCategory));
-      _realConvocatoriaPositions = _extractUniqueStrings(listConv.map(_resolveConvocatoriaPosition));
-      _realConvocatoriaCountries =
-          _extractUniqueStrings(listConv.map(_resolveConvocatoriaCountry));
-      _realConvocatoriaCities =
-          _extractUniqueStrings(listConv.map(_resolveConvocatoriaCity));
-      _realConvocatoriaLocations = _extractUniqueStrings(
+      _realConvocatoriaCategories = buildNormalizedOptions(
+        listConv.map(_resolveConvocatoriaCategory),
+        normalizePlayerCategory,
+      );
+      _realConvocatoriaPositions = buildNormalizedOptions(
+        listConv.map(_resolveConvocatoriaPosition),
+        normalizePlayerPosition,
+      );
+      _realConvocatoriaCountries = buildNormalizedOptions(
+        listConv.map(_resolveConvocatoriaCountry),
+        normalizeCountryName,
+      );
+      _realConvocatoriaCities = buildNormalizedOptions(
+        listConv.map(_resolveConvocatoriaCity),
+        normalizeCityName,
+      );
+      _realConvocatoriaLocations = buildNormalizedOptions(
         listConv.map(_resolveConvocatoriaLocationLabel),
+        titleCaseLabel,
       );
     } catch (_) {}
   }
@@ -698,7 +788,277 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   void _onSearchChanged(String value) {
-    setState(() => _searchQuery = value.trim().toLowerCase());
+    setState(() => _searchQuery = value.trim());
+  }
+
+  String _normalizeSearchText(String value) {
+    var normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty) return '';
+
+    const replacements = <String, String>{
+      'á': 'a',
+      'à': 'a',
+      'â': 'a',
+      'ã': 'a',
+      'ä': 'a',
+      'å': 'a',
+      'é': 'e',
+      'è': 'e',
+      'ê': 'e',
+      'ë': 'e',
+      'í': 'i',
+      'ì': 'i',
+      'î': 'i',
+      'ï': 'i',
+      'ó': 'o',
+      'ò': 'o',
+      'ô': 'o',
+      'õ': 'o',
+      'ö': 'o',
+      'ú': 'u',
+      'ù': 'u',
+      'û': 'u',
+      'ü': 'u',
+      'ñ': 'n',
+      'ç': 'c',
+    };
+
+    replacements.forEach((source, target) {
+      normalized = normalized.replaceAll(source, target);
+    });
+
+    normalized = normalized.replaceAll(RegExp(r'[^a-z0-9\s]'), ' ');
+    normalized = normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return normalized;
+  }
+
+  List<String> _searchTerms(String query) {
+    final normalized = _normalizeSearchText(query);
+    if (normalized.isEmpty) return const [];
+    return normalized
+        .split(' ')
+        .map((term) => term.trim())
+        .where((term) => term.isNotEmpty)
+        .toList();
+  }
+
+  int _computeSearchScore({
+    required String normalizedQuery,
+    required List<String> terms,
+    required Iterable<dynamic> primaryFields,
+    Iterable<dynamic> relatedFields = const [],
+  }) {
+    final primary = primaryFields
+        .map((field) => _normalizeSearchText(field?.toString() ?? ''))
+        .where((field) => field.isNotEmpty)
+        .toList(growable: false);
+    final related = relatedFields
+        .map((field) => _normalizeSearchText(field?.toString() ?? ''))
+        .where((field) => field.isNotEmpty)
+        .toList(growable: false);
+
+    final allFields = <String>[...primary, ...related];
+    if (allFields.isEmpty) return 0;
+
+    final haystack = allFields.join(' ');
+    final matchesAllTerms =
+        terms.isNotEmpty && terms.every((term) => haystack.contains(term));
+    final matchesWholeQuery =
+        normalizedQuery.isNotEmpty && haystack.contains(normalizedQuery);
+    if (!matchesAllTerms && !matchesWholeQuery) return 0;
+
+    var score = 0;
+
+    if (primary.any((field) => field == normalizedQuery)) {
+      score += 180;
+    }
+    if (primary.any((field) => field.startsWith(normalizedQuery))) {
+      score += 120;
+    } else if (matchesWholeQuery) {
+      score += 80;
+    }
+
+    for (final term in terms) {
+      if (primary.any((field) => field == term)) {
+        score += 48;
+      } else if (primary.any((field) => field.startsWith(term))) {
+        score += 30;
+      } else if (primary.any((field) => field.contains(term))) {
+        score += 18;
+      } else if (related.any((field) => field.startsWith(term))) {
+        score += 12;
+      } else if (related.any((field) => field.contains(term))) {
+        score += 8;
+      }
+    }
+
+    return score;
+  }
+
+  List<Map<String, dynamic>> _applySearchRanking(
+    Iterable<Map<String, dynamic>> source, {
+    required Iterable<dynamic> Function(Map<String, dynamic> item)
+        primaryFields,
+    Iterable<dynamic> Function(Map<String, dynamic> item)? relatedFields,
+  }) {
+    final normalizedQuery = _normalizeSearchText(_searchQuery);
+    if (normalizedQuery.isEmpty) return source.toList();
+
+    final terms = _searchTerms(normalizedQuery);
+    final items = source.toList(growable: false);
+    final scoredItems = <({Map<String, dynamic> item, int score, int index})>[];
+
+    for (var index = 0; index < items.length; index++) {
+      final item = items[index];
+      final score = _computeSearchScore(
+        normalizedQuery: normalizedQuery,
+        terms: terms,
+        primaryFields: primaryFields(item),
+        relatedFields: relatedFields == null ? const [] : relatedFields(item),
+      );
+      if (score > 0) {
+        scoredItems.add((item: item, score: score, index: index));
+      }
+    }
+
+    scoredItems.sort((a, b) {
+      final scoreCompare = b.score.compareTo(a.score);
+      if (scoreCompare != 0) return scoreCompare;
+      return a.index.compareTo(b.index);
+    });
+
+    return scoredItems.map((entry) => entry.item).toList(growable: false);
+  }
+
+  Iterable<dynamic> _playerSearchPrimaryFields(Map<String, dynamic> player) {
+    final fullName =
+        '${player['name'] ?? ''} ${player['lastname'] ?? ''}'.trim();
+    return [
+      fullName,
+      player['name'],
+      player['lastname'],
+      player['username'],
+      _resolvePlayerPosition(player),
+      _resolvePlayerCategory(player),
+      player['club'],
+      _resolveCity(player),
+      _resolveState(player),
+      _resolveCountryFromUser(player),
+      _resolvePlayerLevel(player),
+    ];
+  }
+
+  Iterable<dynamic> _playerSearchRelatedFields(Map<String, dynamic> player) {
+    return [
+      player['bio'],
+      player['description'],
+      player['descripcion'],
+      player['team'],
+      player['equipo'],
+      player['academy'],
+      player['school'],
+      player['country'],
+      player['city'],
+      player['state'],
+      player['categoria'],
+      player['posicion'],
+      _birthYear(
+        player['birthday'] ??
+            player['birth_date'] ??
+            player['fecha_nacimiento'],
+      ),
+      GamificationService.toInt(player['total_xp']).toString(),
+    ];
+  }
+
+  Iterable<dynamic> _clubSearchPrimaryFields(Map<String, dynamic> club) {
+    return [
+      club['nombre'],
+      club['name'],
+      club['club_name'],
+      club['nombre_corto'],
+      club['short_name'],
+      club['username'],
+      _resolveClubLeague(club),
+      _resolveCity(club),
+      _resolveState(club),
+      _resolveCountryFromClub(club),
+    ];
+  }
+
+  Iterable<dynamic> _clubSearchRelatedFields(Map<String, dynamic> club) {
+    return [
+      club['descripcion'],
+      club['description'],
+      club['bio'],
+      club['sitio_web'],
+      club['website'],
+      club['web'],
+      club['city'],
+      club['state'],
+      club['country'],
+      club['league'],
+    ];
+  }
+
+  Iterable<dynamic> _convocatoriaSearchPrimaryFields(
+    Map<String, dynamic> convocatoria,
+  ) {
+    return [
+      convocatoria['titulo'],
+      convocatoria['title'],
+      _resolveConvocatoriaClubName(convocatoria),
+      _resolveConvocatoriaPosition(convocatoria),
+      _resolveConvocatoriaCategory(convocatoria),
+      _resolveConvocatoriaLocationLabel(convocatoria),
+      _resolveConvocatoriaCity(convocatoria),
+      _resolveConvocatoriaCountry(convocatoria),
+    ];
+  }
+
+  Iterable<dynamic> _convocatoriaSearchRelatedFields(
+    Map<String, dynamic> convocatoria,
+  ) {
+    return [
+      convocatoria['descripcion'],
+      convocatoria['description'],
+      convocatoria['details'],
+      convocatoria['requirements'],
+      convocatoria['ubicacion'],
+      convocatoria['location'],
+      _convocatoriaClosingLabel(convocatoria),
+      _convocatoriaApplicationsLabel(convocatoria),
+    ];
+  }
+
+  Iterable<dynamic> _scoutSearchPrimaryFields(Map<String, dynamic> scout) {
+    final fullName = '${scout['name'] ?? ''} ${scout['lastname'] ?? ''}'.trim();
+    return [
+      fullName,
+      scout['name'],
+      scout['lastname'],
+      scout['username'],
+      scout['club'],
+      scout['organization'],
+      scout['cargo'],
+      scout['role'],
+      _resolveCity(scout),
+      _resolveState(scout),
+      _resolveCountryFromUser(scout),
+    ];
+  }
+
+  Iterable<dynamic> _scoutSearchRelatedFields(Map<String, dynamic> scout) {
+    return [
+      scout['bio'],
+      scout['description'],
+      scout['descripcion'],
+      scout['country'],
+      scout['state'],
+      scout['city'],
+      scout['team'],
+      scout['equipo'],
+    ];
   }
 
   String? _firstNonEmpty(Iterable<dynamic> values) {
@@ -734,7 +1094,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       orElse: () => '',
     );
     if (directCountry.toString().trim().isNotEmpty) {
-      return directCountry.toString().trim();
+      return normalizeCountryName(directCountry);
     }
 
     final countryIdRaw = user['country_id'];
@@ -742,7 +1102,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         ? countryIdRaw
         : int.tryParse(countryIdRaw?.toString() ?? '');
     if (countryId == null) return '';
-    return _countryNameById[countryId] ?? '';
+    return normalizeCountryName(_countryNameById[countryId]);
   }
 
   String _resolveCountryFromClub(Map<String, dynamic> club) {
@@ -754,7 +1114,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       (item) => item?.toString().trim().isNotEmpty == true,
       orElse: () => '',
     );
-    return value.toString().trim();
+    return normalizeCountryName(value);
   }
 
   String _resolveClubLeague(Map<String, dynamic> club) {
@@ -766,7 +1126,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       (item) => item?.toString().trim().isNotEmpty == true,
       orElse: () => '',
     );
-    return value.toString().trim();
+    return normalizeLeagueName(value);
   }
 
   String _resolveState(Map<String, dynamic> row) {
@@ -782,7 +1142,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       (item) => item?.toString().trim().isNotEmpty == true,
       orElse: () => '',
     );
-    return value.toString().trim();
+    return normalizeStateName(value);
   }
 
   String _resolveCity(Map<String, dynamic> row) {
@@ -795,7 +1155,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       (item) => item?.toString().trim().isNotEmpty == true,
       orElse: () => '',
     );
-    return value.toString().trim();
+    return normalizeCityName(value);
   }
 
   String _resolveConvocatoriaCountry(Map<String, dynamic> convocatoria) {
@@ -850,7 +1210,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       convocatoria['localidad'],
       convocatoria['cidade'],
     ]);
-    if (direct != null && direct.isNotEmpty) return direct;
+    if (direct != null && direct.isNotEmpty) return titleCaseLabel(direct);
 
     final city = _resolveConvocatoriaCity(convocatoria);
     final country = _resolveConvocatoriaCountry(convocatoria);
@@ -863,11 +1223,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   String _resolveConvocatoriaCategory(Map<String, dynamic> convocatoria) {
-    return _firstNonEmpty([
+    return normalizePlayerCategory(_firstNonEmpty([
           convocatoria['categoria'],
           convocatoria['category'],
         ]) ??
-        '';
+        '');
   }
 
   String _resolveConvocatoriaClubName(Map<String, dynamic> convocatoria) {
@@ -896,12 +1256,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   String _resolveConvocatoriaPosition(Map<String, dynamic> convocatoria) {
-    return _firstNonEmpty([
+    return normalizePlayerPosition(_firstNonEmpty([
           convocatoria['posicion'],
           convocatoria['position'],
           convocatoria['posição'],
         ]) ??
-        '';
+        '');
   }
 
   int? _readIntValue(dynamic value) {
@@ -959,32 +1319,36 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     return '$applicationsCount candidatos aplicados';
   }
 
+  String _resolvePlayerPosition(Map<String, dynamic> player) {
+    return normalizePlayerPosition(
+      _firstNonEmpty([
+            player['posicion'],
+            player['position'],
+            player['posição'],
+            player['position_name'],
+          ]) ??
+          '',
+    );
+  }
+
+  String _resolvePlayerCategory(Map<String, dynamic> player) {
+    return normalizePlayerCategory(
+      _firstNonEmpty([
+            player['categoria'],
+            player['category'],
+          ]) ??
+          '',
+      birthday: player['birthday'] ??
+          player['birth_date'] ??
+          player['fecha_nacimiento'],
+    );
+  }
+
   String _resolvePlayerLevel(Map<String, dynamic> player) {
     final direct = player['level_name']?.toString().trim() ?? '';
     if (direct.isNotEmpty) return direct;
     final totalXp = GamificationService.toInt(player['total_xp']);
     return GamificationService.levelNameFromPoints(totalXp);
-  }
-
-  String? _categoryFromBirthday(dynamic birthday) {
-    if (birthday == null) return null;
-    try {
-      final birth = DateTime.parse(birthday.toString());
-      final now = DateTime.now();
-      int age = now.year - birth.year;
-      if (now.month < birth.month ||
-          (now.month == birth.month && now.day < birth.day)) {
-        age--;
-      }
-
-      if (age <= 12) return 'U12';
-      if (age <= 14) return 'U14';
-      if (age <= 16) return 'U16';
-      if (age <= 19) return 'U19';
-      return 'Senior';
-    } catch (_) {
-      return null;
-    }
   }
 
   int? _birthYear(dynamic birthday) {
@@ -999,20 +1363,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   List<Map<String, dynamic>> get _scoutFilteredPlayers {
     Iterable<Map<String, dynamic>> filtered = _players;
 
-    if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((u) {
-        final text =
-            '${u['name'] ?? ''} ${u['lastname'] ?? ''} ${u['posicion'] ?? ''} '
-                    '${_resolveCity(u)} ${_resolveCountryFromUser(u)} ${u['club'] ?? ''} ${_resolvePlayerLevel(u)}'
-                .toLowerCase();
-        return text.contains(_searchQuery);
-      });
-    }
-
     if (_scoutPosition != null) {
-      filtered = filtered.where((u) =>
-          (u['posicion']?.toString().trim().toLowerCase() ?? '') ==
-          _scoutPosition!.toLowerCase());
+      filtered = filtered.where(
+        (u) =>
+            _resolvePlayerPosition(u).toLowerCase() ==
+            _scoutPosition!.toLowerCase(),
+      );
     }
 
     if (_scoutPlayerCountry != null) {
@@ -1028,7 +1384,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     if (_scoutCategory != null) {
       filtered = filtered.where(
-        (u) => _categoryFromBirthday(u['birthday']) == _scoutCategory,
+        (u) => _resolvePlayerCategory(u) == _scoutCategory,
       );
     }
 
@@ -1040,20 +1396,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       );
     }
 
-    return filtered.toList();
+    return _applySearchRanking(
+      filtered,
+      primaryFields: _playerSearchPrimaryFields,
+      relatedFields: _playerSearchRelatedFields,
+    );
   }
 
   List<Map<String, dynamic>> get _scoutFilteredClubs {
     Iterable<Map<String, dynamic>> filtered = _clubs;
-
-    if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((club) {
-        final text = '${club['nombre'] ?? ''} ${club['nombre_corto'] ?? ''} '
-                '${_resolveCountryFromClub(club)} ${_resolveCity(club)} ${_resolveClubLeague(club)}'
-            .toLowerCase();
-        return text.contains(_searchQuery);
-      });
-    }
 
     if (_scoutClubCountry != null) {
       filtered = filtered.where((club) =>
@@ -1072,25 +1423,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           _scoutClubLeague!.toLowerCase());
     }
 
-    return filtered.toList();
+    return _applySearchRanking(
+      filtered,
+      primaryFields: _clubSearchPrimaryFields,
+      relatedFields: _clubSearchRelatedFields,
+    );
   }
 
   List<Map<String, dynamic>> get _scoutFilteredConvocatorias {
     Iterable<Map<String, dynamic>> filtered = _convocatorias;
-
-    if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((conv) {
-        final text = '${conv['titulo'] ?? ''} '
-                '${_resolveConvocatoriaPosition(conv)} '
-                '${_resolveConvocatoriaCategory(conv)} '
-                '${_resolveConvocatoriaCity(conv)} '
-                '${_resolveConvocatoriaCountry(conv)} '
-                '${conv['ubicacion'] ?? ''} '
-                '${_resolveConvocatoriaClubName(conv)}'
-            .toLowerCase();
-        return text.contains(_searchQuery);
-      });
-    }
 
     if (_scoutConvocatoriaPosition != null) {
       filtered = filtered.where((conv) =>
@@ -1116,26 +1457,22 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           _scoutConvocatoriaCategory!.toLowerCase());
     }
 
-    return filtered.toList();
+    return _applySearchRanking(
+      filtered,
+      primaryFields: _convocatoriaSearchPrimaryFields,
+      relatedFields: _convocatoriaSearchRelatedFields,
+    );
   }
 
   List<Map<String, dynamic>> get _jugadorFilteredPlayers {
     Iterable<Map<String, dynamic>> filtered = _players;
 
-    if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((u) {
-        final text =
-            '${u['name'] ?? ''} ${u['lastname'] ?? ''} ${u['posicion'] ?? ''} '
-                    '${_resolveCity(u)} ${_resolveCountryFromUser(u)} ${u['club'] ?? ''} ${_resolvePlayerLevel(u)}'
-                .toLowerCase();
-        return text.contains(_searchQuery);
-      });
-    }
-
     if (_jugadorPlayerPosition != null) {
-      filtered = filtered.where((u) =>
-          (u['posicion']?.toString().trim().toLowerCase() ?? '') ==
-          _jugadorPlayerPosition!.toLowerCase());
+      filtered = filtered.where(
+        (u) =>
+            _resolvePlayerPosition(u).toLowerCase() ==
+            _jugadorPlayerPosition!.toLowerCase(),
+      );
     }
 
     if (_jugadorPlayerCountry != null) {
@@ -1151,7 +1488,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     if (_jugadorPlayerCategory != null) {
       filtered = filtered.where(
-        (u) => _categoryFromBirthday(u['birthday']) == _jugadorPlayerCategory,
+        (u) => _resolvePlayerCategory(u) == _jugadorPlayerCategory,
       );
     }
 
@@ -1163,24 +1500,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       );
     }
 
-    return filtered.toList();
+    return _applySearchRanking(
+      filtered,
+      primaryFields: _playerSearchPrimaryFields,
+      relatedFields: _playerSearchRelatedFields,
+    );
   }
 
   List<Map<String, dynamic>> get _jugadorFilteredConvocatorias {
     Iterable<Map<String, dynamic>> filtered = _convocatorias;
-
-    if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((conv) {
-        final text = '${conv['titulo'] ?? ''} '
-                '${_resolveConvocatoriaPosition(conv)} '
-                '${_resolveConvocatoriaCategory(conv)} '
-                '${_resolveConvocatoriaCountry(conv)} '
-                '${_resolveConvocatoriaCity(conv)} '
-                '${_resolveConvocatoriaClubName(conv)}'
-            .toLowerCase();
-        return text.contains(_searchQuery);
-      });
-    }
 
     if (_jugadorConvocatoriaCategory != null) {
       filtered = filtered.where((conv) =>
@@ -1200,20 +1528,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           _jugadorConvocatoriaLocation!.toLowerCase());
     }
 
-    return filtered.toList();
+    return _applySearchRanking(
+      filtered,
+      primaryFields: _convocatoriaSearchPrimaryFields,
+      relatedFields: _convocatoriaSearchRelatedFields,
+    );
   }
 
   List<Map<String, dynamic>> get _jugadorFilteredClubs {
     Iterable<Map<String, dynamic>> filtered = _clubs;
-
-    if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((club) {
-        final text =
-            '${club['nombre'] ?? ''} ${club['nombre_corto'] ?? ''} ${_resolveCountryFromClub(club)} ${_resolveCity(club)} ${_resolveClubLeague(club)}'
-                .toLowerCase();
-        return text.contains(_searchQuery);
-      });
-    }
 
     if (_jugadorClubCountry != null) {
       filtered = filtered.where((club) =>
@@ -1238,7 +1561,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           _jugadorClubLeague!.toLowerCase());
     }
 
-    return filtered.toList();
+    return _applySearchRanking(
+      filtered,
+      primaryFields: _clubSearchPrimaryFields,
+      relatedFields: _clubSearchRelatedFields,
+    );
   }
 
   List<Map<String, dynamic>> get _jugadorFilteredScouts {
@@ -1248,15 +1575,6 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               'profesional';
       return isScout && _isVerified(user);
     });
-
-    if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((user) {
-        final text =
-            '${user['name'] ?? ''} ${user['lastname'] ?? ''} ${_resolveCity(user)} ${_resolveState(user)} ${_resolveCountryFromUser(user)} ${user['club'] ?? ''}'
-                .toLowerCase();
-        return text.contains(_searchQuery);
-      });
-    }
 
     if (_jugadorScoutCountry != null) {
       filtered = filtered.where((user) =>
@@ -1270,7 +1588,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           _jugadorScoutState!.toLowerCase());
     }
 
-    return filtered.toList();
+    return _applySearchRanking(
+      filtered,
+      primaryFields: _scoutSearchPrimaryFields,
+      relatedFields: _scoutSearchRelatedFields,
+    );
   }
 
   void _resetJugadorSearchFilters() {
@@ -1335,6 +1657,70 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             _jugadorClubLeague != null;
       case _JugadorSearchTab.scouts:
         return _jugadorScoutCountry != null || _jugadorScoutState != null;
+    }
+  }
+
+  List<MapEntry<String, String>> get _jugadorCurrentFilterEntries {
+    final entries = <MapEntry<String, String>>[];
+
+    void add(String label, String? value) {
+      final text = value?.trim() ?? '';
+      if (text.isEmpty) return;
+      entries.add(MapEntry(label, text));
+    }
+
+    switch (_jugadorSearchTab) {
+      case _JugadorSearchTab.jugadores:
+        add('Categoría', _jugadorPlayerCategory);
+        add('Posición', _jugadorPlayerPosition);
+        add('País', _jugadorPlayerCountry);
+        add('Ciudad', _jugadorPlayerCity);
+        add('Nivel', _jugadorPlayerLevel);
+        break;
+      case _JugadorSearchTab.convocatorias:
+        add('Categoría', _jugadorConvocatoriaCategory);
+        add('Posición', _jugadorConvocatoriaPosition);
+        add('Ubicación', _jugadorConvocatoriaLocation);
+        break;
+      case _JugadorSearchTab.clubes:
+        add('País', _jugadorClubCountry);
+        add('Provincia', _jugadorClubState);
+        add('Ciudad', _jugadorClubCity);
+        add('Liga', _jugadorClubLeague);
+        break;
+      case _JugadorSearchTab.scouts:
+        add('País', _jugadorScoutCountry);
+        add('Provincia', _jugadorScoutState);
+        break;
+    }
+
+    return entries;
+  }
+
+  void _clearJugadorCurrentTabFilters() {
+    switch (_jugadorSearchTab) {
+      case _JugadorSearchTab.jugadores:
+        _jugadorPlayerCategory = null;
+        _jugadorPlayerPosition = null;
+        _jugadorPlayerCountry = null;
+        _jugadorPlayerCity = null;
+        _jugadorPlayerLevel = null;
+        break;
+      case _JugadorSearchTab.convocatorias:
+        _jugadorConvocatoriaCategory = null;
+        _jugadorConvocatoriaPosition = null;
+        _jugadorConvocatoriaLocation = null;
+        break;
+      case _JugadorSearchTab.clubes:
+        _jugadorClubCountry = null;
+        _jugadorClubState = null;
+        _jugadorClubCity = null;
+        _jugadorClubLeague = null;
+        break;
+      case _JugadorSearchTab.scouts:
+        _jugadorScoutCountry = null;
+        _jugadorScoutState = null;
+        break;
     }
   }
 
@@ -1480,6 +1866,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       return;
     }
 
+    if (uid == currentUserUid) {
+      final viewerType = FFAppState.normalizeUserType(FFAppState().userType);
+      final routeName = viewerType == 'profesional'
+          ? PerfilProfesioanlWidget.routeName
+          : PerfilJugadorWidget.routeName;
+      context.pushNamed(routeName);
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PerfilProfesionalSolicitarContatoWidget(userId: uid),
@@ -1497,51 +1892,21 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   void _openVerifiedScoutsResults() {
-    final scouts = _users
-        .where((u) =>
-            (u['userType']?.toString().trim().toLowerCase() ?? '') ==
-                'profesional' &&
-            _isVerified(u))
-        .map((u) => {
-              ...u,
-              'country_name': _resolveCountryFromUser(u),
-              'state_name': _resolveState(u),
-              'city_name': _resolveCity(u),
-            })
-        .toList();
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _JugadorScoutsResultsPage(
-          scouts: scouts,
-        ),
-      ),
-    );
+    _openJugadorSearchMode(initialTab: _JugadorSearchTab.scouts);
   }
 
   void _openClubShortcuts() {
-    final clubs = _clubs
-        .map((club) => {
-              ...club,
-              'country_name': _resolveCountryFromClub(club),
-              'state_name': _resolveState(club),
-              'city_name': _resolveCity(club),
-            })
-        .toList();
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _JugadorClubsResultsPage(
-          clubs: clubs,
-        ),
-      ),
-    );
+    _openJugadorSearchMode(initialTab: _JugadorSearchTab.clubes);
   }
 
-  void _openJugadorSearchMode() {
+  void _openJugadorSearchMode({
+    _JugadorSearchTab initialTab = _JugadorSearchTab.convocatorias,
+  }) {
     if (!mounted) return;
     setState(() {
       _isJugadorSearchMode = true;
-      _jugadorSearchTab = _JugadorSearchTab.convocatorias;
+      _isJugadorFiltersExpanded = false;
+      _jugadorSearchTab = initialTab;
       _resetJugadorSearchFilters();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1554,6 +1919,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     if (!mounted) return;
     setState(() {
       _isJugadorSearchMode = false;
+      _isJugadorFiltersExpanded = false;
       _searchQuery = '';
       _jugadorSearchTab = _JugadorSearchTab.convocatorias;
       _resetJugadorSearchFilters();
@@ -1564,7 +1930,9 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final userType = context.watch<FFAppState>().userType;
+    final appState = context.watch<FFAppState>();
+    final userType = appState.userType;
+    final canUseExplorer = appState.canAccessFeature('explorer');
 
     if (userType == 'club') {
       return const DashboardClubWidget();
@@ -1585,17 +1953,23 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           body: Stack(
             children: [
               Positioned.fill(
-                child: _isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(
-                          color: Color(0xFF0D3B66),
-                        ),
+                child: !canUseExplorer
+                    ? _buildFeatureUnavailableState(
+                        title: 'Explorer no disponible',
+                        message:
+                            'Esta funcionalidad no está habilitada para tu cuenta en este momento.',
                       )
-                    : _errorMessage != null
-                        ? _buildErrorState()
-                        : (userType == 'profesional'
-                            ? _buildScoutExplorer()
-                            : _buildJugadorExplorer()),
+                    : _isLoading
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF0D3B66),
+                            ),
+                          )
+                        : _errorMessage != null
+                            ? _buildErrorState()
+                            : (userType == 'profesional'
+                                ? _buildScoutExplorer()
+                                : _buildJugadorExplorer()),
               ),
               if (userType == 'jugador')
                 Align(
@@ -1674,7 +2048,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
           children: [
             Text(
-              'Explorer · Jugador',
+              'Explorer',
               style: GoogleFonts.inter(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -1683,7 +2057,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Descubre desafíos, convocatorias, clubes y usuarios.',
+              'Buscá clubes, scouts y convocatorias desde un solo lugar.',
               style: GoogleFonts.inter(
                 color: const Color(0xFF4A5568),
                 fontSize: 13,
@@ -1691,8 +2065,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             ),
             const SizedBox(height: 18),
             _buildJugadorSearchEntry(),
-            const SizedBox(height: 18),
-            _buildQuickActionsJugador(),
+            const SizedBox(height: 14),
+            _buildQuickLinksJugador(),
             const SizedBox(height: 20),
             if (_nextChallenge != null) _buildNextChallengeCard(),
             if (_nextChallenge != null) const SizedBox(height: 20),
@@ -1723,11 +2097,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     final playerCountryOptions = _realPlayerCountries;
     final playerCityOptions = _realPlayerCities;
     final playerLevelOptions = _realPlayerLevels;
-    
+
     final clubCountryOptions = _realClubCountries;
     final clubCityOptions = _realClubCities;
     final clubLeagueOptions = _realClubLeagues;
-    
+
     final convocatoriaCountryOptions = _realConvocatoriaCountries;
     final convocatoriaCityOptions = _realConvocatoriaCities;
     final convocatoriaCategoryOptions = _realConvocatoriaCategories;
@@ -1790,10 +2164,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   children: [
                     _buildSearchBar(
                       hint: _scoutTab == _ScoutTab.convocatorias
-                          ? 'Buscar convocatoria, país, ciudad o categoría...'
+                          ? 'Buscar por convocatoria, club, posición, ciudad o categoría...'
                           : _scoutTab == _ScoutTab.clubes
-                              ? 'Buscar club, país, ciudad o liga...'
-                              : 'Buscar jugador, categoría, posición, país o ciudad...',
+                              ? 'Buscar por club, liga, ciudad, país o descripción...'
+                              : 'Buscar por jugador, club, nivel, categoría, posición o ciudad...',
                     ),
                     const SizedBox(height: 8),
                     if (isCompact)
@@ -1938,6 +2312,54 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     );
   }
 
+  Widget _buildPlayerCardActionButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    required Color backgroundColor,
+    required Color foregroundColor,
+    required Color borderColor,
+    bool isLoading = false,
+  }) {
+    final isDisabled = onPressed == null;
+
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: isDisabled ? null : onPressed,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: isDisabled ? const Color(0xFFF8FAFC) : backgroundColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDisabled ? const Color(0xFFE2E8F0) : borderColor,
+            ),
+          ),
+          child: Center(
+            child: isLoading
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: foregroundColor,
+                    ),
+                  )
+                : Icon(
+                    icon,
+                    size: 18,
+                    color:
+                        isDisabled ? const Color(0xFF94A3B8) : foregroundColor,
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
   String _challengeIdFromMap(Map<String, dynamic> challenge) {
     final candidates = [
       challenge['id'],
@@ -1995,97 +2417,105 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     );
   }
 
-  Widget _buildQuickActionsJugador() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isCompact = constraints.maxWidth < 360;
-        return GridView(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            mainAxisExtent: isCompact ? 96 : 92,
+  Widget _buildQuickLinksJugador() {
+    final links = <({IconData icon, String label, VoidCallback onTap})>[
+      (
+        icon: Icons.campaign_rounded,
+        label: 'Convocatorias',
+        onTap: () => context.pushNamed(ConvocatoriaJugador1Widget.routeName),
+      ),
+      (
+        icon: Icons.shield_rounded,
+        label: 'Clubes',
+        onTap: _openClubShortcuts,
+      ),
+      (
+        icon: Icons.manage_search_rounded,
+        label: 'Scouts',
+        onTap: _openVerifiedScoutsResults,
+      ),
+      (
+        icon: Icons.local_fire_department_rounded,
+        label: 'Desafíos',
+        onTap: () => context.pushNamed(CursosEjerciciosWidget.routeName),
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Accesos rápidos',
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF64748B),
+            letterSpacing: 0.2,
           ),
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          children: [
-            _quickActionCard(
-              icon: Icons.local_fire_department_rounded,
-              title: 'Desafíos',
-              onTap: () => context.pushNamed(CursosEjerciciosWidget.routeName),
-            ),
-            _quickActionCard(
-              icon: Icons.campaign_rounded,
-              title: 'Convocatorias',
-              onTap: () =>
-                  context.pushNamed(ConvocatoriaJugador1Widget.routeName),
-            ),
-            _quickActionCard(
-              icon: Icons.shield_rounded,
-              title: 'Clubes',
-              onTap: _openClubShortcuts,
-            ),
-            _quickActionCard(
-              icon: Icons.manage_search_rounded,
-              title: 'Scouts verificados',
-              onTap: _openVerifiedScoutsResults,
-            ),
-          ],
-        );
-      },
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: links
+              .map(
+                (link) => _quickLinkChip(
+                  icon: link.icon,
+                  label: link.label,
+                  onTap: link.onTap,
+                ),
+              )
+              .toList(),
+        ),
+      ],
     );
   }
 
-  Widget _quickActionCard({
+  Widget _quickLinkChip({
     required IconData icon,
-    required String title,
+    required String label,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Ink(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x120D3B66),
-              blurRadius: 16,
-              offset: Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  _explorerIconBadge(icon),
-                  const Spacer(),
-                  const Icon(
-                    Icons.arrow_forward_rounded,
-                    color: Color(0xFF94A3B8),
-                    size: 18,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F0FE),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                ],
-              ),
-              const Spacer(),
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF2D3748),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  height: 1.15,
+                  child: Icon(
+                    icon,
+                    size: 15,
+                    color: const Color(0xFF0D3B66),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF334155),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2293,27 +2723,29 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     final playerCountryOptions = _realPlayerCountries;
     final playerCityOptions = _realPlayerCities;
     final playerLevelOptions = _realPlayerLevels;
-    
+
     final convocatoriaCategoryOptions = _realConvocatoriaCategories;
     final convocatoriaPositionOptions = _realConvocatoriaPositions;
     final convocatoriaLocationOptions = _realConvocatoriaLocations;
-    
+
     final clubCountryOptions = _realClubCountries;
     final clubStateOptions = _realClubStates;
     final clubCityOptions = _realClubCities;
     final clubLeagueOptions = _realClubLeagues;
-    
+
     final verifiedScouts = _users.where((user) {
       final isScout =
           (user['userType']?.toString().trim().toLowerCase() ?? '') ==
               'profesional';
       return isScout && _isVerified(user);
     }).toList();
-    final scoutCountryOptions = _extractUniqueStrings(
+    final scoutCountryOptions = buildNormalizedOptions(
       verifiedScouts.map(_resolveCountryFromUser),
+      normalizeCountryName,
     );
-    final scoutStateOptions = _extractUniqueStrings(
+    final scoutStateOptions = buildNormalizedOptions(
       verifiedScouts.map(_resolveState),
+      normalizeStateName,
     );
     final currentResults = _jugadorCurrentResults;
     final hasActiveCriteria =
@@ -2349,7 +2781,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Buscá jugadores, convocatorias, clubes y scouts en un modo separado del contenido de descubrimiento.',
+              'Usá una sola búsqueda para encontrar jugadores, clubes, scouts y convocatorias sin abrir pantallas paralelas.',
               style: GoogleFonts.inter(
                 color: const Color(0xFF4A5568),
                 fontSize: 13,
@@ -2357,7 +2789,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             ),
             const SizedBox(height: 14),
             _buildSearchBar(
-              hint: 'Buscar oportunidades',
+              hint:
+                  'Buscar por nombre, club, ciudad, país, posición o convocatoria',
             ),
             const SizedBox(height: 14),
             _buildJugadorSearchTabBar(),
@@ -2417,7 +2850,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       return Padding(
         padding: const EdgeInsets.only(right: 8),
         child: InkWell(
-          onTap: () => setState(() => _jugadorSearchTab = tab),
+          onTap: () => setState(() {
+            _jugadorSearchTab = tab;
+            _isJugadorFiltersExpanded = false;
+          }),
           borderRadius: BorderRadius.circular(10),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
@@ -2604,39 +3040,149 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         break;
     }
 
+    final activeEntries = _jugadorCurrentFilterEntries;
+    final activeCount = activeEntries.length;
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildJugadorFilterWrap(filters),
+        InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => setState(
+            () => _isJugadorFiltersExpanded = !_isJugadorFiltersExpanded,
+          ),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFD6DEE8)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F0FE),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.tune_rounded,
+                    color: Color(0xFF0D3B66),
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Filtros',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                      Text(
+                        activeCount == 0
+                            ? 'Opcionales para afinar la búsqueda'
+                            : '$activeCount filtro(s) activos',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (activeCount > 0)
+                  Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F0FE),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '$activeCount',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0D3B66),
+                      ),
+                    ),
+                  ),
+                Icon(
+                  _isJugadorFiltersExpanded
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded,
+                  color: const Color(0xFF64748B),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (activeEntries.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: activeEntries
+                .map(
+                  (entry) => Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFF),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0xFFDCE6F4)),
+                    ),
+                    child: Text(
+                      '${entry.key}: ${entry.value}',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF355070),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 180),
+          firstChild: const SizedBox.shrink(),
+          secondChild: Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFF),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE1E8F5)),
+              ),
+              child: _buildJugadorFilterWrap(filters),
+            ),
+          ),
+          crossFadeState: _isJugadorFiltersExpanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+        ),
         if (_jugadorCurrentTabHasActiveFilters) ...[
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
               onPressed: () => setState(() {
-                switch (_jugadorSearchTab) {
-                  case _JugadorSearchTab.jugadores:
-                    _jugadorPlayerCategory = null;
-                    _jugadorPlayerPosition = null;
-                    _jugadorPlayerCountry = null;
-                    _jugadorPlayerCity = null;
-                    _jugadorPlayerLevel = null;
-                    break;
-                  case _JugadorSearchTab.convocatorias:
-                    _jugadorConvocatoriaCategory = null;
-                    _jugadorConvocatoriaPosition = null;
-                    _jugadorConvocatoriaLocation = null;
-                    break;
-                  case _JugadorSearchTab.clubes:
-                    _jugadorClubCountry = null;
-                    _jugadorClubState = null;
-                    _jugadorClubCity = null;
-                    _jugadorClubLeague = null;
-                    break;
-                  case _JugadorSearchTab.scouts:
-                    _jugadorScoutCountry = null;
-                    _jugadorScoutState = null;
-                    break;
-                }
+                _clearJugadorCurrentTabFilters();
+                _isJugadorFiltersExpanded = false;
               }),
               icon: const Icon(Icons.filter_alt_off_outlined, size: 16),
               label: const Text('Limpiar filtros'),
@@ -2685,13 +3231,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       children: players.map((player) {
         final fullName =
             '${player['name'] ?? ''} ${player['lastname'] ?? ''}'.trim();
-        final position = player['posicion']?.toString() ?? 'Sin posición';
+        final position = _resolvePlayerPosition(player);
         final city = _resolveCity(player);
         final country = _resolveCountryFromUser(player);
         final club = player['club']?.toString() ?? '';
         final uid = player['user_id']?.toString() ?? '';
         final hasVideo = _sortedPublicVideosForPlayer(uid).isNotEmpty;
-        final category = _categoryFromBirthday(player['birthday']) ?? 'Senior';
+        final category = _resolvePlayerCategory(player).isNotEmpty
+            ? _resolvePlayerCategory(player)
+            : 'Senior';
         final levelName = _resolvePlayerLevel(player);
 
         return Container(
@@ -2707,21 +3255,26 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundImage:
-                        (player['photo_url']?.toString().isNotEmpty ?? false)
-                            ? NetworkImage(player['photo_url'])
-                            : null,
-                    backgroundColor: const Color(0xFFE8F0FE),
-                    child: (player['photo_url']?.toString().isNotEmpty ?? false)
-                        ? null
-                        : Text(
-                            fullName.isNotEmpty
-                                ? fullName.substring(0, 1).toUpperCase()
-                                : 'J',
-                            style: const TextStyle(color: Color(0xFF0D3B66)),
-                          ),
+                  InkWell(
+                    onTap: () => _openPublicPlayerProfile(player),
+                    borderRadius: BorderRadius.circular(999),
+                    child: CircleAvatar(
+                      radius: 22,
+                      backgroundImage:
+                          (player['photo_url']?.toString().isNotEmpty ?? false)
+                              ? NetworkImage(player['photo_url'])
+                              : null,
+                      backgroundColor: const Color(0xFFE8F0FE),
+                      child: (player['photo_url']?.toString().isNotEmpty ??
+                              false)
+                          ? null
+                          : Text(
+                              fullName.isNotEmpty
+                                  ? fullName.substring(0, 1).toUpperCase()
+                                  : 'J',
+                              style: const TextStyle(color: Color(0xFF0D3B66)),
+                            ),
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -2842,27 +3395,66 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
   Widget _buildJugadorSearchEntry() {
     return InkWell(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(18),
       onTap: _openJugadorSearchMode,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: const Color(0xFFD6DEE8)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x120D3B66),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.search, color: Color(0xFFA0AEC0)),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Buscar oportunidades',
-                style: GoogleFonts.inter(
-                  color: const Color(0xFFA0AEC0),
-                  fontSize: 14,
-                ),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F0FE),
+                borderRadius: BorderRadius.circular(14),
               ),
+              child: const Icon(
+                Icons.manage_search_rounded,
+                color: Color(0xFF0D3B66),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Buscar oportunidades',
+                    style: GoogleFonts.inter(
+                      color: const Color(0xFF0F172A),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Clubes, scouts, jugadores y convocatorias',
+                    style: GoogleFonts.inter(
+                      color: const Color(0xFF64748B),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.arrow_forward_rounded,
+              color: Color(0xFF94A3B8),
+              size: 20,
             ),
           ],
         ),
@@ -3288,9 +3880,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             color: selected ? const Color(0xFF0D3B66) : Colors.white,
             borderRadius: BorderRadius.circular(22),
             border: Border.all(
-              color: selected
-                  ? const Color(0xFF0D3B66)
-                  : const Color(0xFFD6DEE8),
+              color:
+                  selected ? const Color(0xFF0D3B66) : const Color(0xFFD6DEE8),
             ),
             boxShadow: selected
                 ? const [
@@ -3380,14 +3971,14 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       children: players.map((player) {
         final fullName =
             '${player['name'] ?? ''} ${player['lastname'] ?? ''}'.trim();
-        final position = player['posicion']?.toString() ?? 'Sin posición';
+        final position = _resolvePlayerPosition(player);
         final city = player['city']?.toString() ?? 'Sin ubicación';
         final club = player['club']?.toString() ?? '';
         final uid = player['user_id']?.toString() ?? '';
         final isSaved = _isPlayerSaved(uid);
         final isSaving = _savingPlayerId == uid;
         final hasVideo = _sortedPublicVideosForPlayer(uid).isNotEmpty;
-        final category = _categoryFromBirthday(player['birthday']);
+        final category = _resolvePlayerCategory(player);
         final year = _birthYear(player['birthday']);
         final totalXp = GamificationService.toInt(player['total_xp']);
         final levelName = player['level_name']?.toString() ??
@@ -3407,21 +3998,26 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundImage:
-                        (player['photo_url']?.toString().isNotEmpty ?? false)
-                            ? NetworkImage(player['photo_url'])
-                            : null,
-                    backgroundColor: const Color(0xFFE8F0FE),
-                    child: (player['photo_url']?.toString().isNotEmpty ?? false)
-                        ? null
-                        : Text(
-                            fullName.isNotEmpty
-                                ? fullName.substring(0, 1).toUpperCase()
-                                : 'J',
-                            style: const TextStyle(color: Color(0xFF0D3B66)),
-                          ),
+                  InkWell(
+                    onTap: () => _openPublicPlayerProfile(player),
+                    borderRadius: BorderRadius.circular(999),
+                    child: CircleAvatar(
+                      radius: 22,
+                      backgroundImage:
+                          (player['photo_url']?.toString().isNotEmpty ?? false)
+                              ? NetworkImage(player['photo_url'])
+                              : null,
+                      backgroundColor: const Color(0xFFE8F0FE),
+                      child: (player['photo_url']?.toString().isNotEmpty ??
+                              false)
+                          ? null
+                          : Text(
+                              fullName.isNotEmpty
+                                  ? fullName.substring(0, 1).toUpperCase()
+                                  : 'J',
+                              style: const TextStyle(color: Color(0xFF0D3B66)),
+                            ),
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -3453,6 +4049,45 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         ),
                       ],
                     ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    children: [
+                      _buildPlayerCardActionButton(
+                        icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
+                        tooltip: isSaved ? 'Guardado' : 'Guardar',
+                        onPressed: isSaving
+                            ? null
+                            : () => _toggleSavePlayerForScout(player),
+                        backgroundColor:
+                            isSaved ? const Color(0xFF0F9D58) : Colors.white,
+                        foregroundColor:
+                            isSaved ? Colors.white : const Color(0xFF0D3B66),
+                        borderColor: isSaved
+                            ? const Color(0xFF0F9D58)
+                            : const Color(0xFFD6DEE8),
+                        isLoading: isSaving,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildPlayerCardActionButton(
+                        icon: Icons.smart_display_rounded,
+                        tooltip: hasVideo ? 'Ver video' : 'Sin video',
+                        onPressed:
+                            hasVideo ? () => _openPlayerVideos(player) : null,
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF0D3B66),
+                        borderColor: const Color(0xFFD6DEE8),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildPlayerCardActionButton(
+                        icon: Icons.person_search_rounded,
+                        tooltip: 'Ver perfil',
+                        onPressed: () => _openPublicPlayerProfile(player),
+                        backgroundColor: const Color(0xFF0D3B66),
+                        foregroundColor: Colors.white,
+                        borderColor: const Color(0xFF0D3B66),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -3486,111 +4121,6 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       'Ranking #$rankingPosition',
                       color: const Color(0xFF7C3AED),
                     ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: isSaving
-                          ? null
-                          : () => _toggleSavePlayerForScout(player),
-                      style: ElevatedButton.styleFrom(
-                        elevation: 0,
-                        minimumSize: const Size.fromHeight(42),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                        backgroundColor:
-                            isSaved ? const Color(0xFF0F9D58) : Colors.white,
-                        foregroundColor:
-                            isSaved ? Colors.white : const Color(0xFF0D3B66),
-                        side: BorderSide(
-                          color: isSaved
-                              ? const Color(0xFF0F9D58)
-                              : const Color(0xFFD6DEE8),
-                        ),
-                      ),
-                      icon: isSaving
-                          ? SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: isSaved
-                                    ? Colors.white
-                                    : const Color(0xFF0D3B66),
-                              ),
-                            )
-                          : Icon(
-                              isSaved ? Icons.bookmark : Icons.bookmark_border,
-                              size: 16,
-                            ),
-                      label: _compactButtonLabel(
-                        isSaved ? 'Guardado' : 'Guardar',
-                        color:
-                            isSaved ? Colors.white : const Color(0xFF0D3B66),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed:
-                          hasVideo ? () => _openPlayerVideos(player) : null,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF0D3B66),
-                        side: const BorderSide(color: Color(0xFFD6DEE8)),
-                        minimumSize: const Size.fromHeight(42),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        backgroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 10,
-                        ),
-                      ),
-                      icon: const Icon(Icons.smart_display_rounded, size: 16),
-                      label: _compactButtonLabel(
-                        'Ver video',
-                        color: hasVideo
-                            ? const Color(0xFF0D3B66)
-                            : const Color(0xFF9CA3AF),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        _openPublicPlayerProfile(player);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0D3B66),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        minimumSize: const Size.fromHeight(42),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 10,
-                        ),
-                      ),
-                      icon: const Icon(Icons.person_search_rounded,
-                          size: 16, color: Colors.white),
-                      label: _compactButtonLabel(
-                        'Ver perfil',
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ],
@@ -4038,635 +4568,6 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 }
 
-class _JugadorScoutsResultsPage extends StatefulWidget {
-  const _JugadorScoutsResultsPage({
-    required this.scouts,
-  });
-
-  final List<Map<String, dynamic>> scouts;
-
-  @override
-  State<_JugadorScoutsResultsPage> createState() =>
-      _JugadorScoutsResultsPageState();
-}
-
-class _JugadorScoutsResultsPageState extends State<_JugadorScoutsResultsPage> {
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
-  String? _selectedCountry;
-  String? _selectedState;
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  List<String> _uniqueValues(Iterable<dynamic> values) {
-    final set = <String>{};
-    for (final raw in values) {
-      final value = raw?.toString().trim() ?? '';
-      if (value.isNotEmpty) set.add(value);
-    }
-    final list = set.toList()..sort();
-    return list;
-  }
-
-  List<Map<String, dynamic>> get _filteredScouts {
-    Iterable<Map<String, dynamic>> items = widget.scouts;
-
-    if (_selectedCountry != null) {
-      items = items.where(
-        (item) =>
-            (item['country_name']?.toString().trim().toLowerCase() ?? '') ==
-            _selectedCountry!.toLowerCase(),
-      );
-    }
-
-    if (_selectedState != null) {
-      items = items.where(
-        (item) =>
-            (item['state_name']?.toString().trim().toLowerCase() ?? '') ==
-            _selectedState!.toLowerCase(),
-      );
-    }
-
-    if (_searchQuery.isNotEmpty) {
-      items = items.where((item) {
-        final text =
-            '${item['name'] ?? ''} ${item['lastname'] ?? ''} ${item['city_name'] ?? ''} ${item['country_name'] ?? ''} ${item['state_name'] ?? ''} ${item['club'] ?? ''}'
-                .toLowerCase();
-        return text.contains(_searchQuery);
-      });
-    }
-
-    return items.toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final countries =
-        _uniqueValues(widget.scouts.map((item) => item['country_name']));
-    final states = _uniqueValues(
-      widget.scouts.where((item) {
-        if (_selectedCountry == null) return true;
-        return (item['country_name']?.toString().trim().toLowerCase() ?? '') ==
-            _selectedCountry!.toLowerCase();
-      }).map((item) => item['state_name']),
-    );
-
-    final scouts = _filteredScouts;
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF0D3B66),
-        title: Text(
-          'Scouts verificados',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF0D3B66),
-          ),
-        ),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-          child: Column(
-            children: [
-              _ExplorerSearchField(
-                controller: _searchController,
-                hintText: 'Buscar scout...',
-                onChanged: (value) => setState(
-                  () => _searchQuery = value.trim().toLowerCase(),
-                ),
-                onClear: () => setState(() => _searchQuery = ''),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _ExplorerFilterDropdown(
-                      label: 'País',
-                      value: _selectedCountry,
-                      options: countries,
-                      onChanged: (value) => setState(() {
-                        _selectedCountry = value;
-                        _selectedState = null;
-                      }),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _ExplorerFilterDropdown(
-                      label: 'Provincia/Estado',
-                      value: _selectedState,
-                      options: states,
-                      onChanged: (value) =>
-                          setState(() => _selectedState = value),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: scouts.isEmpty
-                    ? _ExplorerEmptyState(
-                        icon: Icons.search_off,
-                        title: 'Sin resultados',
-                        subtitle:
-                            'No se encontraron scouts con los filtros aplicados.',
-                      )
-                    : ListView.separated(
-                        itemCount: scouts.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (_, index) {
-                          final scout = scouts[index];
-                          final uid = scout['user_id']?.toString() ?? '';
-                          final name =
-                              '${scout['name'] ?? ''} ${scout['lastname'] ?? ''}'
-                                  .trim();
-                          final city = scout['city_name']?.toString() ?? '';
-                          final country =
-                              scout['country_name']?.toString().trim() ?? '';
-                          final state = scout['state_name']?.toString() ?? '';
-                          final club = scout['club']?.toString() ?? '';
-
-                          return Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border:
-                                  Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 22,
-                                      backgroundColor: const Color(0xFFE8F0FE),
-                                      backgroundImage: scout['photo_url']
-                                                  ?.toString()
-                                                  .isNotEmpty ==
-                                              true
-                                          ? NetworkImage(
-                                              scout['photo_url'].toString(),
-                                            )
-                                          : null,
-                                      child: scout['photo_url']
-                                                  ?.toString()
-                                                  .isNotEmpty ==
-                                              true
-                                          ? null
-                                          : Text(
-                                              name.isNotEmpty
-                                                  ? name[0].toUpperCase()
-                                                  : 'S',
-                                              style: const TextStyle(
-                                                color: Color(0xFF0D3B66),
-                                              ),
-                                            ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            name.isNotEmpty ? name : 'Scout',
-                                            style: GoogleFonts.inter(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 15,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            [
-                                              if (club.isNotEmpty) club,
-                                              if (city.isNotEmpty) city,
-                                              if (state.isNotEmpty) state,
-                                              if (country.isNotEmpty) country,
-                                            ].join(' • '),
-                                            style: GoogleFonts.inter(
-                                              color: const Color(0xFF718096),
-                                              fontSize: 12,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    onPressed: uid.isEmpty
-                                        ? null
-                                        : () {
-                                            context.pushNamed(
-                                              'perfil_profesional_solicitar_Contato',
-                                              queryParameters: {'userId': uid},
-                                            );
-                                          },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF0D3B66),
-                                    ),
-                                    icon: const Icon(
-                                      Icons.person_outline,
-                                      size: 16,
-                                      color: Colors.white,
-                                    ),
-                                    label: const Text(
-                                      'Ver perfil',
-                                      style: TextStyle(color: Colors.white),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _JugadorClubsResultsPage extends StatefulWidget {
-  const _JugadorClubsResultsPage({
-    required this.clubs,
-  });
-
-  final List<Map<String, dynamic>> clubs;
-
-  @override
-  State<_JugadorClubsResultsPage> createState() =>
-      _JugadorClubsResultsPageState();
-}
-
-class _JugadorClubsResultsPageState extends State<_JugadorClubsResultsPage> {
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
-  String? _selectedCountry;
-  String? _selectedState;
-  String? _selectedCity;
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  List<String> _uniqueValues(Iterable<dynamic> values) {
-    final set = <String>{};
-    for (final raw in values) {
-      final value = raw?.toString().trim() ?? '';
-      if (value.isNotEmpty) set.add(value);
-    }
-    final list = set.toList()..sort();
-    return list;
-  }
-
-  List<Map<String, dynamic>> get _filteredClubs {
-    Iterable<Map<String, dynamic>> items = widget.clubs;
-
-    if (_selectedCountry != null) {
-      items = items.where(
-        (item) =>
-            (item['country_name']?.toString().trim().toLowerCase() ?? '') ==
-            _selectedCountry!.toLowerCase(),
-      );
-    }
-
-    if (_selectedState != null) {
-      items = items.where(
-        (item) =>
-            (item['state_name']?.toString().trim().toLowerCase() ?? '') ==
-            _selectedState!.toLowerCase(),
-      );
-    }
-
-    if (_selectedCity != null) {
-      items = items.where(
-        (item) =>
-            (item['city_name']?.toString().trim().toLowerCase() ?? '') ==
-            _selectedCity!.toLowerCase(),
-      );
-    }
-
-    if (_searchQuery.isNotEmpty) {
-      items = items.where((item) {
-        final text =
-            '${item['nombre'] ?? ''} ${item['nombre_corto'] ?? ''} ${item['country_name'] ?? ''} ${item['state_name'] ?? ''} ${item['city_name'] ?? ''} ${item['liga'] ?? ''}'
-                .toLowerCase();
-        return text.contains(_searchQuery);
-      });
-    }
-
-    return items.toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final countries =
-        _uniqueValues(widget.clubs.map((item) => item['country_name']));
-    final states = _uniqueValues(
-      widget.clubs.where((item) {
-        if (_selectedCountry == null) return true;
-        return (item['country_name']?.toString().trim().toLowerCase() ?? '') ==
-            _selectedCountry!.toLowerCase();
-      }).map((item) => item['state_name']),
-    );
-    final cities = _uniqueValues(
-      widget.clubs.where((item) {
-        if (_selectedCountry != null &&
-            (item['country_name']?.toString().trim().toLowerCase() ?? '') !=
-                _selectedCountry!.toLowerCase()) {
-          return false;
-        }
-        if (_selectedState == null) return true;
-        return (item['state_name']?.toString().trim().toLowerCase() ?? '') ==
-            _selectedState!.toLowerCase();
-      }).map((item) => item['city_name']),
-    );
-    final clubs = _filteredClubs;
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF0D3B66),
-        title: Text(
-          'Clubes',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF0D3B66),
-          ),
-        ),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-          child: Column(
-            children: [
-              _ExplorerSearchField(
-                controller: _searchController,
-                hintText: 'Buscar club...',
-                onChanged: (value) => setState(
-                  () => _searchQuery = value.trim().toLowerCase(),
-                ),
-                onClear: () => setState(() => _searchQuery = ''),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _ExplorerFilterDropdown(
-                      label: 'País',
-                      value: _selectedCountry,
-                      options: countries,
-                      onChanged: (value) => setState(() {
-                        _selectedCountry = value;
-                        _selectedState = null;
-                        _selectedCity = null;
-                      }),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _ExplorerFilterDropdown(
-                      label: 'Provincia/Estado',
-                      value: _selectedState,
-                      options: states,
-                      onChanged: (value) => setState(() {
-                        _selectedState = value;
-                        _selectedCity = null;
-                      }),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              _ExplorerFilterDropdown(
-                label: 'Ciudad',
-                value: _selectedCity,
-                options: cities,
-                onChanged: (value) => setState(() => _selectedCity = value),
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: clubs.isEmpty
-                    ? _ExplorerEmptyState(
-                        icon: Icons.search_off,
-                        title: 'Sin resultados',
-                        subtitle:
-                            'No se encontraron clubes con los filtros aplicados.',
-                      )
-                    : ListView.separated(
-                        itemCount: clubs.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (_, index) {
-                          final club = clubs[index];
-                          final name = club['nombre']?.toString() ?? 'Club';
-                          final short = club['nombre_corto']?.toString() ?? '';
-                          final league = club['liga']?.toString() ?? '';
-                          final country =
-                              club['country_name']?.toString().trim() ?? '';
-                          final state =
-                              club['state_name']?.toString().trim() ?? '';
-                          final city =
-                              club['city_name']?.toString().trim() ?? '';
-                          final description =
-                              club['descripcion']?.toString().trim() ?? '';
-
-                          return GestureDetector(
-                            onTap: () => _openPublicClubProfile(context, club),
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border:
-                                    Border.all(color: const Color(0xFFE2E8F0)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 22,
-                                        backgroundColor:
-                                            const Color(0xFFE8F0FE),
-                                        backgroundImage: club['logo_url']
-                                                    ?.toString()
-                                                    .isNotEmpty ==
-                                                true
-                                            ? NetworkImage(
-                                                club['logo_url'].toString(),
-                                              )
-                                            : null,
-                                        child: club['logo_url']
-                                                    ?.toString()
-                                                    .isNotEmpty ==
-                                                true
-                                            ? null
-                                            : const Icon(
-                                                Icons.shield_outlined,
-                                                color: Color(0xFF0D3B66),
-                                              ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              name,
-                                              style: GoogleFonts.inter(
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 15,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              [
-                                                if (short.isNotEmpty) short,
-                                                if (league.isNotEmpty) league,
-                                                if (city.isNotEmpty) city,
-                                                if (state.isNotEmpty) state,
-                                                if (country.isNotEmpty) country,
-                                              ].join(' • '),
-                                              style: GoogleFonts.inter(
-                                                color: const Color(0xFF718096),
-                                                fontSize: 12,
-                                              ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Icon(
-                                        Icons.chevron_right,
-                                        color: Color(0xFF94A3B8),
-                                      ),
-                                    ],
-                                  ),
-                                  if (description.isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      description,
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.inter(
-                                        color: const Color(0xFF4A5568),
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ExplorerSearchField extends StatelessWidget {
-  const _ExplorerSearchField({
-    required this.controller,
-    required this.hintText,
-    required this.onChanged,
-    required this.onClear,
-  });
-
-  final TextEditingController controller;
-  final String hintText;
-  final ValueChanged<String> onChanged;
-  final VoidCallback onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFD6DEE8)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x120D3B66),
-            blurRadius: 18,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        decoration: InputDecoration(
-          hintText: hintText,
-          border: InputBorder.none,
-          prefixIcon: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Container(
-              width: 18,
-              height: 18,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8F0FE),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.travel_explore_rounded,
-                color: Color(0xFF0D3B66),
-                size: 18,
-              ),
-            ),
-          ),
-          suffixIcon: controller.text.isNotEmpty
-              ? IconButton(
-                  onPressed: () {
-                    controller.clear();
-                    onClear();
-                  },
-                  icon:
-                      const Icon(Icons.close_rounded, color: Color(0xFFA0AEC0)),
-                )
-              : null,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 16,
-          ),
-        ),
-        style: GoogleFonts.inter(fontSize: 14),
-      ),
-    );
-  }
-}
-
 class _ExplorerFilterDropdown extends StatelessWidget {
   const _ExplorerFilterDropdown({
     required this.label,
@@ -4706,55 +4607,6 @@ class _ExplorerFilterDropdown extends StatelessWidget {
         ),
       ],
       onChanged: onChanged,
-    );
-  }
-}
-
-class _ExplorerEmptyState extends StatelessWidget {
-  const _ExplorerEmptyState({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: const Color(0xFFA0AEC0), size: 28),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-              color: const Color(0xFF2D3748),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: const Color(0xFF718096),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

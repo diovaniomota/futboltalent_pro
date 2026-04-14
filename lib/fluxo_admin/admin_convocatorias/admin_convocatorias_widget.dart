@@ -1,4 +1,5 @@
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
@@ -81,14 +82,16 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
   }
 
   String _clubValue(Map<String, dynamic> club) {
-    return _firstNonEmptyValue(club, ['value', 'id', 'owner_id', 'user_id', 'club_id']);
+    return _firstNonEmptyValue(
+        club, ['value', 'id', 'owner_id', 'user_id', 'club_id']);
   }
 
   Map<String, dynamic>? _findClubByValue(String? value) {
     final normalizedValue = value?.trim() ?? '';
     if (normalizedValue.isEmpty) return null;
     for (final club in _clubs) {
-      if (_clubValue(club) == normalizedValue || _clubMatchesRef(club, normalizedValue)) {
+      if (_clubValue(club) == normalizedValue ||
+          _clubMatchesRef(club, normalizedValue)) {
         return club;
       }
     }
@@ -122,7 +125,8 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
         continue;
       }
 
-      if (_clubBaseName(existing).isEmpty && _clubBaseName(candidate).isNotEmpty) {
+      if (_clubBaseName(existing).isEmpty &&
+          _clubBaseName(candidate).isNotEmpty) {
         existing['nombre'] = candidate['nombre'];
         existing['name'] = candidate['name'];
         existing['club_name'] = candidate['club_name'];
@@ -162,7 +166,8 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
 
     try {
       final clubsResponse = await SupaFlow.client.from('clubs').select();
-      for (final row in List<Map<String, dynamic>>.from(clubsResponse as List)) {
+      for (final row
+          in List<Map<String, dynamic>>.from(clubsResponse as List)) {
         final normalized = Map<String, dynamic>.from(row);
         normalized['value'] = _firstNonEmptyValue(normalized, [
           'id',
@@ -178,7 +183,8 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
 
     try {
       final usersResponse = await SupaFlow.client.from('users').select();
-      for (final row in List<Map<String, dynamic>>.from(usersResponse as List)) {
+      for (final row
+          in List<Map<String, dynamic>>.from(usersResponse as List)) {
         final normalized = Map<String, dynamic>.from(row);
         if (_normalizedUserType(normalized) != 'club') continue;
 
@@ -257,7 +263,8 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
               .from('aplicaciones_convocatoria')
               .select('convocatoria_id')
               .inFilter('convocatoria_id', ids);
-          for (final row in List<Map<String, dynamic>>.from(postResponse as List)) {
+          for (final row
+              in List<Map<String, dynamic>>.from(postResponse as List)) {
             final id = row['convocatoria_id']?.toString() ?? '';
             if (id.isEmpty) continue;
             counts[id] = (counts[id] ?? 0) + 1;
@@ -269,7 +276,8 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
               .from('postulaciones')
               .select('convocatoria_id')
               .inFilter('convocatoria_id', ids);
-          for (final row in List<Map<String, dynamic>>.from(postResponse as List)) {
+          for (final row
+              in List<Map<String, dynamic>>.from(postResponse as List)) {
             final id = row['convocatoria_id']?.toString() ?? '';
             if (id.isEmpty) continue;
             counts[id] = (counts[id] ?? 0) + 1;
@@ -296,9 +304,11 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
     final query = _searchController.text.toLowerCase().trim();
     _filtered = _convocatorias.where((conv) {
       if (query.isEmpty) return true;
-      final title = (conv['titulo'] ?? conv['title'] ?? '').toString().toLowerCase();
-      final category =
-          (conv['categoria'] ?? conv['category'] ?? '').toString().toLowerCase();
+      final title =
+          (conv['titulo'] ?? conv['title'] ?? '').toString().toLowerCase();
+      final category = (conv['categoria'] ?? conv['category'] ?? '')
+          .toString()
+          .toLowerCase();
       final position =
           (conv['posicion'] ?? conv['position'] ?? '').toString().toLowerCase();
       return title.contains(query) ||
@@ -321,15 +331,15 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
     final titleCtrl =
         TextEditingController(text: convocatoria?['titulo']?.toString() ?? '');
     final categoryCtrl = TextEditingController(
-        text: convocatoria?['categoria']?.toString() ?? '');
+        text: normalizePlayerCategory(convocatoria?['categoria']));
     final positionCtrl = TextEditingController(
-        text: convocatoria?['posicion']?.toString() ?? '');
+        text: normalizePlayerPosition(convocatoria?['posicion']));
     final countryCtrl = TextEditingController(
-        text: convocatoria?['pais']?.toString() ?? '');
+        text: normalizeCountryName(convocatoria?['pais']));
     final cityCtrl = TextEditingController(
-        text: convocatoria?['ciudad']?.toString() ??
+        text: normalizeCityName(convocatoria?['ciudad']?.toString() ??
             convocatoria?['ubicacion']?.toString() ??
-            '');
+            ''));
     final originalClubRef = convocatoria?['club_id']?.toString().trim();
     String? selectedClubId = _selectedClubValueForDialog(originalClubRef);
     DateTime? startDate = _parseDate(convocatoria?['fecha_inicio']);
@@ -375,9 +385,10 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: _clubs.any((club) => _clubValue(club) == selectedClubId)
-                      ? selectedClubId
-                      : null,
+                  value:
+                      _clubs.any((club) => _clubValue(club) == selectedClubId)
+                          ? selectedClubId
+                          : null,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Club'),
                   items: _clubs
@@ -397,8 +408,7 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
                 const SizedBox(height: 8),
                 SwitchListTile(
                   value: isActive,
-                  onChanged: (value) =>
-                      setDialogState(() => isActive = value),
+                  onChanged: (value) => setDialogState(() => isActive = value),
                   title: const Text('Activa'),
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -468,7 +478,8 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
     if (result != true) return;
 
     final selectedClub = _findClubByValue(selectedClubId);
-    final selectedClubRefs = selectedClub == null ? const <String>[] : _clubRefs(selectedClub);
+    final selectedClubRefs =
+        selectedClub == null ? const <String>[] : _clubRefs(selectedClub);
     final clubIdForSave = (originalClubRef?.isNotEmpty ?? false) &&
             selectedClubRefs.contains(originalClubRef)
         ? originalClubRef
@@ -486,11 +497,13 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
       'titulo': titleCtrl.text.trim().isEmpty
           ? 'Convocatoria'
           : titleCtrl.text.trim(),
-      'categoria': categoryCtrl.text.trim(),
-      'posicion': positionCtrl.text.trim(),
-      'pais': countryCtrl.text.trim(),
-      'ciudad': cityCtrl.text.trim(),
-      'ubicacion': cityCtrl.text.trim(),
+      'categoria': normalizePlayerCategory(categoryCtrl.text),
+      'posicion': normalizePlayerPosition(positionCtrl.text),
+      'pais': normalizeCountryName(countryCtrl.text),
+      'country': normalizeCountryName(countryCtrl.text),
+      'ciudad': normalizeCityName(cityCtrl.text),
+      'city': normalizeCityName(cityCtrl.text),
+      'ubicacion': normalizeCityName(cityCtrl.text),
       'club_id': clubIdForSave,
       if (selectedClubName.isNotEmpty) 'club_name': selectedClubName,
       if (selectedClubName.isNotEmpty) 'club_nombre': selectedClubName,
@@ -499,8 +512,7 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
       'updated_at': DateTime.now().toIso8601String(),
       if (startDate != null) 'fecha_inicio': startDate!.toIso8601String(),
       if (endDate != null) 'fecha_fin': endDate!.toIso8601String(),
-      if (convocatoria == null)
-        'created_at': DateTime.now().toIso8601String(),
+      if (convocatoria == null) 'created_at': DateTime.now().toIso8601String(),
     };
 
     try {
@@ -603,8 +615,7 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
                       itemBuilder: (context, index) {
                         final conv = _filtered[index];
                         final isActive = conv['is_active'] != false;
-                        final postulaciones =
-                            conv['postulaciones_count'] ?? 0;
+                        final postulaciones = conv['postulaciones_count'] ?? 0;
                         return Card(
                           margin: const EdgeInsets.only(bottom: 10),
                           child: ListTile(
@@ -613,7 +624,9 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
                               '${conv['categoria'] ?? ''} · ${conv['posicion'] ?? ''} · $postulaciones postulaciones',
                             ),
                             leading: Icon(
-                              isActive ? Icons.check_circle : Icons.pause_circle,
+                              isActive
+                                  ? Icons.check_circle
+                                  : Icons.pause_circle,
                               color: isActive ? Colors.green : Colors.grey,
                             ),
                             trailing: PopupMenuButton<String>(

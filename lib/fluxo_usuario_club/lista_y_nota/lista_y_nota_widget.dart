@@ -1,6 +1,8 @@
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/fluxo_compartilhado/club_identity_utils.dart';
+import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import 'package:flutter/material.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
@@ -48,6 +50,20 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     _model.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _openCurrentClubPublicProfile(BuildContext context) {
+    final clubRef =
+        _clubRefs.isNotEmpty ? _clubRefs.first : (_clubId ?? currentUserUid);
+    if (clubRef.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PerfilPublicoClubWidget(
+          clubRef: clubRef,
+        ),
+      ),
+    );
   }
 
   // ============ HELPER METHODS ============
@@ -267,7 +283,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   }
 
   void _filterJugadores() {
-    final query = _searchController.text.toLowerCase();
+    final query = normalizeLookupKey(_searchController.text);
     setState(() {
       if (query.isEmpty) {
         _filteredJugadores = List.from(_jugadoresEnLista);
@@ -275,10 +291,17 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
         _filteredJugadores = _jugadoresEnLista.where((item) {
           final jugador = item['jugador'] as Map<String, dynamic>?;
           if (jugador == null) return false;
-          final name = '${jugador['name'] ?? ''} ${jugador['lastname'] ?? ''}'
-              .toLowerCase();
-          final posicion = (jugador['posicion'] ?? '').toString().toLowerCase();
-          return name.contains(query) || posicion.contains(query);
+          final name = normalizeLookupKey(
+              '${jugador['name'] ?? ''} ${jugador['lastname'] ?? ''}');
+          final posicion = normalizeLookupKey(normalizePlayerPosition(
+            jugador['posicion'] ?? jugador['position'],
+          ));
+          final city = normalizeLookupKey(normalizeCityName(
+            jugador['city'] ?? jugador['ciudad'],
+          ));
+          return name.contains(query) ||
+              posicion.contains(query) ||
+              city.contains(query);
         }).toList();
       }
     });
@@ -438,6 +461,48 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     }
   }
 
+  Future<List<Map<String, dynamic>>> _searchPlayersGloballyForClubList(
+    String rawQuery, {
+    Set<String> excludedIds = const <String>{},
+  }) async {
+    final query = rawQuery.trim();
+    if (query.length < 2) return [];
+
+    try {
+      dynamic response;
+      try {
+        response = await SupaFlow.client
+            .from('users')
+            .select(
+                'user_id, name, lastname, username, posicion, city, birthday, country_id, photo_url, userType')
+            .inFilter('userType',
+                ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
+            .or('name.ilike.%$query%,lastname.ilike.%$query%,username.ilike.%$query%,posicion.ilike.%$query%,city.ilike.%$query%')
+            .limit(20);
+      } catch (_) {
+        response = await SupaFlow.client
+            .from('users')
+            .select(
+                'user_id, name, lastname, username, posicion, city, birthday, country_id, photo_url, usertype')
+            .inFilter('usertype',
+                ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
+            .or('name.ilike.%$query%,lastname.ilike.%$query%,username.ilike.%$query%,posicion.ilike.%$query%,city.ilike.%$query%')
+            .limit(20);
+      }
+
+      final deduped = <String, Map<String, dynamic>>{};
+      for (final player in List<Map<String, dynamic>>.from(response as List)) {
+        final uid = player['user_id']?.toString().trim() ?? '';
+        if (uid.isEmpty || excludedIds.contains(uid)) continue;
+        deduped.putIfAbsent(uid, () => player);
+      }
+      return deduped.values.take(12).toList();
+    } catch (e) {
+      debugPrint('Error global player search for club list: $e');
+      return [];
+    }
+  }
+
   // ============ MENU & MODALS ============
   void _showClubMenu(BuildContext ctx) {
     Navigator.of(ctx).push(PageRouteBuilder(
@@ -524,12 +589,17 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                             const Divider(),
                             _buildDrawerItem(
                                 context,
-                                Icons.settings_outlined,
-                                'Club',
+                                Icons.visibility_outlined,
+                                'Perfil público',
+                                false,
+                                () async => _openCurrentClubPublicProfile(ctx)),
+                            _buildDrawerItem(
+                                context,
+                                Icons.shield_outlined,
+                                'Mi perfil',
                                 false,
                                 () => context
                                     .pushNamed(ConfiguracinWidget.routeName)),
-                            const Divider(),
                             _buildDrawerItem(
                                 context, Icons.logout, 'Cerrar Sesión', false,
                                 () async {
@@ -634,6 +704,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                               SizedBox(height: 16 * scale),
                               _buildActionButtons(context),
                               SizedBox(height: 24 * scale),
+                              _buildQuickGuideCard(context),
+                              SizedBox(height: 20 * scale),
                               if (_isLargeScreen(context))
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -655,6 +727,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                                 SizedBox(height: 24 * scale),
                                 if (_selectedLista != null)
                                   _buildSelectedListaCard(context),
+                                if (_selectedLista == null)
+                                  _buildEmptyListaPlaceholder(context),
                               ],
                               SizedBox(height: 32 * scale),
                             ],
@@ -689,39 +763,178 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     );
   }
 
+  Widget _buildQuickGuideCard(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final hasSelectedList = _selectedLista != null;
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(16 * scale),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBFF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD7E3F3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34 * scale,
+                height: 34 * scale,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D3B66).withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.playlist_add_check_rounded,
+                  color: const Color(0xFF0D3B66),
+                  size: 18 * scale,
+                ),
+              ),
+              SizedBox(width: 10 * scale),
+              Expanded(
+                child: Text(
+                  hasSelectedList
+                      ? 'Lista activa: ${_selectedLista?['nombre'] ?? 'Lista'}'
+                      : 'Cómo usar tus listas',
+                  style: GoogleFonts.inter(
+                    fontSize: 15 * scale,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1F2937),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 12 * scale),
+          Text(
+            hasSelectedList
+                ? 'Ya podés agregar jugadores y editar tus notas en esta lista.'
+                : '1. Crea una lista. 2. Selecciónala. 3. Agrega jugadores con nota y calificación.',
+            style: GoogleFonts.inter(
+              fontSize: 13 * scale,
+              height: 1.35,
+              color: const Color(0xFF52606D),
+            ),
+          ),
+          SizedBox(height: 14 * scale),
+          Wrap(
+            spacing: 10 * scale,
+            runSpacing: 10 * scale,
+            children: [
+              _buildActionButton(
+                'Nueva lista',
+                () => _showCreateListaModal(),
+                null,
+                _responsive(context, mobile: 42, tablet: 44, desktop: 46),
+                _responsive(context, mobile: 13, tablet: 14, desktop: 15) *
+                    scale,
+                icon: Icons.playlist_add_rounded,
+              ),
+              _buildActionButton(
+                'Agregar jugador',
+                () => _showAddJugadorModal(),
+                null,
+                _responsive(context, mobile: 42, tablet: 44, desktop: 46),
+                _responsive(context, mobile: 13, tablet: 14, desktop: 15) *
+                    scale,
+                icon: Icons.person_add_alt_1_rounded,
+                enabled: hasSelectedList,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActionButtons(BuildContext context) {
     final scale = _scaleFactor(context);
-    final width = _responsive(context, mobile: 122, tablet: 140, desktop: 160);
     final height = _responsive(context, mobile: 40, tablet: 44, desktop: 48);
     final fontSize =
         _responsive(context, mobile: 13, tablet: 14, desktop: 15) * scale;
+    final compact = MediaQuery.of(context).size.width < 380;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 12 * scale,
+      runSpacing: 12 * scale,
       children: [
-        _buildActionButton('+ Nueva Lista', () => _showCreateListaModal(),
-            width, height, fontSize),
-        SizedBox(width: 12 * scale),
-        _buildActionButton('+ Nueva Nota', () => _showAddJugadorModal(), width,
-            height, fontSize),
+        _buildActionButton(
+          compact ? 'Nueva lista' : '+ Nueva lista',
+          () => _showCreateListaModal(),
+          null,
+          height,
+          fontSize,
+          icon: Icons.playlist_add_rounded,
+        ),
+        _buildActionButton(
+          compact ? 'Agregar jugador' : '+ Agregar jugador',
+          () => _showAddJugadorModal(),
+          null,
+          height,
+          fontSize,
+          icon: Icons.person_add_alt_1_rounded,
+          enabled: _selectedLista != null,
+        ),
       ],
     );
   }
 
-  Widget _buildActionButton(String text, VoidCallback onTap, double width,
-      double height, double fontSize) {
-    return GestureDetector(
-      onTap: onTap,
+  Widget _buildActionButton(
+    String text,
+    VoidCallback onTap,
+    double? width,
+    double height,
+    double fontSize, {
+    IconData? icon,
+    bool enabled = true,
+  }) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(8),
       child: Container(
         width: width,
+        constraints: width == null
+            ? const BoxConstraints(minWidth: 144, maxWidth: 220)
+            : null,
         height: height,
         decoration: BoxDecoration(
-            color: const Color(0xFF818181),
-            borderRadius: BorderRadius.circular(5)),
+          color: enabled ? const Color(0xFF0D3B66) : const Color(0xFFD1D5DB),
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Center(
-            child: Text(text,
-                style: GoogleFonts.inter(
-                    fontSize: fontSize, color: Colors.white))),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(
+                    icon,
+                    size: fontSize + 2,
+                    color: enabled ? Colors.white : const Color(0xFF6B7280),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Flexible(
+                  child: Text(
+                    text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: fontSize,
+                      color: enabled ? Colors.white : const Color(0xFF6B7280),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -742,6 +955,16 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
             style: GoogleFonts.inter(
                 fontSize: 14 * scale, color: Colors.grey[500]),
             textAlign: TextAlign.center),
+        SizedBox(height: 10 * scale),
+        Text(
+          'Después podrás agregar jugadores, editar notas y calificaciones.',
+          style: GoogleFonts.inter(
+            fontSize: 12 * scale,
+            color: Colors.grey[500],
+            height: 1.3,
+          ),
+          textAlign: TextAlign.center,
+        ),
       ]),
     );
   }
@@ -773,12 +996,23 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           Center(
               child: Padding(
                   padding: EdgeInsets.all(24 * scale),
-                  child: Text(
-                      _clubName != null && _clubName!.trim().isNotEmpty
-                          ? 'Todavía no hay listas creadas para $_clubName'
-                          : 'Todavía no hay listas creadas',
-                      style: GoogleFonts.inter(
-                          fontSize: 14 * scale, color: Colors.grey))))
+                  child: Column(
+                    children: [
+                      Text(
+                          _clubName != null && _clubName!.trim().isNotEmpty
+                              ? 'Todavía no hay listas creadas para $_clubName'
+                              : 'Todavía no hay listas creadas',
+                          style: GoogleFonts.inter(
+                              fontSize: 14 * scale, color: Colors.grey),
+                          textAlign: TextAlign.center),
+                      SizedBox(height: 12 * scale),
+                      OutlinedButton.icon(
+                        onPressed: _showCreateListaModal,
+                        icon: const Icon(Icons.playlist_add_rounded),
+                        label: const Text('Crear primera lista'),
+                      ),
+                    ],
+                  )))
         else
           ..._listas
               .take(_isLargeScreen(context) ? 5 : 3)
@@ -855,8 +1089,11 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   Widget _buildSelectedListaCard(BuildContext context) {
     final scale = _scaleFactor(context);
     final nombre = _selectedLista!['nombre'] ?? 'Sin nombre';
-    final descripcion = _selectedLista!['descripcion'] ?? '';
+    final descripcion = (_selectedLista!['descripcion'] ?? '').toString().trim();
     final count = _selectedLista!['jugadores_count'] ?? 0;
+    final summaryText = descripcion.isNotEmpty
+        ? '$descripcion • $count jugador(es)'
+        : '$count jugador(es) en esta lista';
 
     return Container(
       width: double.infinity,
@@ -870,23 +1107,51 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           Icon(Icons.group, color: Colors.black, size: 20 * scale),
           SizedBox(width: 8 * scale),
           Expanded(
-              child: Text(nombre,
+              child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(nombre,
                   style: GoogleFonts.inter(
                       fontSize: 16 * scale,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black)))
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black)),
+              SizedBox(height: 4 * scale),
+              Text('Gestiona jugadores, notas y calificaciones desde aquí.',
+                  style: GoogleFonts.inter(
+                      fontSize: 12 * scale, color: const Color(0xFF6B7280))),
+            ],
+          ))
         ]),
         SizedBox(height: 8 * scale),
-        Row(children: [
-          Expanded(
-              child: Text('$descripcion • $count jugadores',
-                  style: GoogleFonts.inter(
-                      fontSize: 12 * scale, color: const Color(0xFFB5BECA)))),
-          _buildActionIcon(Icons.edit, () => _showEditListaModal()),
-          SizedBox(width: 8 * scale),
-          _buildActionIcon(Icons.delete, () => _confirmDeleteLista(),
-              color: Colors.red),
-        ]),
+        Text(summaryText,
+            style: GoogleFonts.inter(
+                fontSize: 12 * scale, color: const Color(0xFF6B7280))),
+        SizedBox(height: 14 * scale),
+        Wrap(
+          spacing: 10 * scale,
+          runSpacing: 10 * scale,
+          children: [
+            _buildActionButton(
+              'Agregar jugador',
+              () => _showAddJugadorModal(),
+              null,
+              _responsive(context, mobile: 40, tablet: 42, desktop: 44),
+              13 * scale,
+              icon: Icons.person_add_alt_1_rounded,
+            ),
+            OutlinedButton.icon(
+              onPressed: _showEditListaModal,
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Editar lista'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _confirmDeleteLista,
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              label:
+                  const Text('Eliminar', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
         SizedBox(height: 16 * scale),
         Container(
           height: 40 * scale,
@@ -910,24 +1175,23 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           Center(
               child: Padding(
                   padding: EdgeInsets.all(24 * scale),
-                  child: Text('No hay jugadores',
-                      style: GoogleFonts.inter(
-                          fontSize: 14 * scale, color: Colors.grey))))
+                  child: Column(
+                    children: [
+                      Text('No hay jugadores en esta lista todavía',
+                          style: GoogleFonts.inter(
+                              fontSize: 14 * scale, color: Colors.grey)),
+                      SizedBox(height: 12 * scale),
+                      OutlinedButton.icon(
+                        onPressed: _showAddJugadorModal,
+                        icon: const Icon(Icons.person_add_alt_1_rounded),
+                        label: const Text('Agregar jugador a esta lista'),
+                      ),
+                    ],
+                  )))
         else
           ..._filteredJugadores.map((item) => _buildJugadorCard(context, item))
       ]),
     );
-  }
-
-  Widget _buildActionIcon(IconData icon, VoidCallback onTap, {Color? color}) {
-    return GestureDetector(
-        onTap: onTap,
-        child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.grey.shade300)),
-            child: Icon(icon, size: 16, color: color ?? Colors.grey)));
   }
 
   Widget _buildJugadorCard(BuildContext context, Map<String, dynamic> item) {
@@ -935,10 +1199,13 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     final jugador = item['jugador'] as Map<String, dynamic>?;
     final name =
         '${jugador?['name'] ?? ''} ${jugador?['lastname'] ?? ''}'.trim();
-    final position = jugador?['posicion'] ?? '';
+    final position = normalizePlayerPosition(
+      jugador?['posicion'] ?? jugador?['position'],
+    );
     final age = _calculateAge(jugador?['birthday']);
     final photo = jugador?['photo_url'];
     final rating = item['calificacion'] ?? 0;
+    final positionLabel = position.isNotEmpty ? position : 'Sin posición';
 
     return Container(
       margin: EdgeInsets.only(bottom: 12 * scale),
@@ -960,16 +1227,24 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                 Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(name,
-                          style: GoogleFonts.inter(
-                              fontSize: 14 * scale,
-                              fontWeight: FontWeight.w500)),
-                      _buildActionIcon(
-                          Icons.edit, () => _showEditJugadorModal(item))
+                      Expanded(
+                          child: Text(name,
+                              style: GoogleFonts.inter(
+                                  fontSize: 14 * scale,
+                                  fontWeight: FontWeight.w600))),
+                      TextButton.icon(
+                        onPressed: () => _showEditJugadorModal(item),
+                        icon: const Icon(Icons.edit_outlined, size: 16),
+                        label: const Text('Editar'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF0D3B66),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      )
                     ]),
-                Text('$position • $age años',
+                Text('$positionLabel • $age años',
                     style: GoogleFonts.inter(
                         fontSize: 12 * scale, color: Colors.grey)),
                 Row(
@@ -1104,48 +1379,123 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     final savedPlayers = await _fetchSavedPlayersForClub();
 
     final searchCtrl = TextEditingController();
+    final existingIds = _jugadoresEnLista
+        .map((item) => item['jugador_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
     List<Map<String, dynamic>> results = [];
     Map<String, dynamic>? selected;
     int rating = 0;
     final notaCtrl = TextEditingController();
-    String source = 'candidatos';
+    String source = 'todos';
+    bool isSearchingGlobal = false;
+    String? helperMessage;
 
-    List<Map<String, dynamic>> currentSourcePlayers() {
-      if (source == 'guardados') return savedPlayers;
-      if (source == 'todos') {
-        final map = <String, Map<String, dynamic>>{};
-        for (final row in [...candidatePlayers, ...savedPlayers]) {
-          final uid = row['user_id']?.toString() ?? '';
-          if (uid.isEmpty) continue;
-          map[uid] = row;
-        }
-        return map.values.toList();
+    List<Map<String, dynamic>> dedupePlayers(
+      Iterable<Map<String, dynamic>> rows,
+    ) {
+      final deduped = <String, Map<String, dynamic>>{};
+      for (final row in rows) {
+        final uid = row['user_id']?.toString().trim() ?? '';
+        if (uid.isEmpty || existingIds.contains(uid)) continue;
+        deduped.putIfAbsent(uid, () => row);
       }
-      return candidatePlayers;
+      return deduped.values.toList();
     }
 
-    void runSearch(StateSetter setStates, String value) {
-      final query = value.trim().toLowerCase();
+    List<Map<String, dynamic>> currentSourcePlayers() {
+      if (source == 'guardados') return dedupePlayers(savedPlayers);
+      if (source == 'candidatos') return dedupePlayers(candidatePlayers);
+      if (source == 'todos') {
+        return dedupePlayers([...candidatePlayers, ...savedPlayers]);
+      }
+      return dedupePlayers(candidatePlayers);
+    }
+
+    String sourceLabel() {
+      switch (source) {
+        case 'guardados':
+          return 'Guardados';
+        case 'candidatos':
+          return 'Candidatos';
+        default:
+          return 'Todos';
+      }
+    }
+
+    bool matchesPlayer(Map<String, dynamic> player, String query) {
+      final name = normalizeLookupKey(
+          '${player['name'] ?? ''} ${player['lastname'] ?? ''}');
+      final username = normalizeLookupKey(player['username']);
+      final position = normalizeLookupKey(normalizePlayerPosition(
+        player['posicion'] ?? player['position'],
+      ));
+      final city = normalizeLookupKey(normalizeCityName(
+        player['city'] ?? player['ciudad'],
+      ));
+      return name.contains(query) ||
+          username.contains(query) ||
+          position.contains(query) ||
+          city.contains(query);
+    }
+
+    results = currentSourcePlayers().take(8).toList();
+    helperMessage = results.isEmpty
+        ? 'Escribí al menos 2 letras para buscar en todos los jugadores.'
+        : null;
+
+    Future<void> runSearch(StateSetter setStates, String value) async {
+      final query = normalizeLookupKey(value);
       final base = currentSourcePlayers();
 
       if (query.length < 2) {
-        setStates(() => results = base.take(8).toList());
+        setStates(() {
+          results = base.take(8).toList();
+          isSearchingGlobal = false;
+          helperMessage = results.isEmpty
+              ? 'Escribí al menos 2 letras para buscar más jugadores.'
+              : null;
+        });
         return;
       }
 
-      final localResults = base.where((player) {
-        final name =
-            '${player['name'] ?? ''} ${player['lastname'] ?? ''}'.toLowerCase();
-        final username = (player['username'] ?? '').toString().toLowerCase();
-        final position = (player['posicion'] ?? '').toString().toLowerCase();
-        final city = (player['city'] ?? '').toString().toLowerCase();
-        return name.contains(query) ||
-            username.contains(query) ||
-            position.contains(query) ||
-            city.contains(query);
-      }).toList();
+      final localResults =
+          base.where((player) => matchesPlayer(player, query)).toList();
 
-      setStates(() => results = localResults.take(12).toList());
+      if (localResults.isNotEmpty) {
+        setStates(() {
+          results = localResults.take(12).toList();
+          isSearchingGlobal = false;
+          helperMessage = null;
+        });
+        return;
+      }
+
+      setStates(() {
+        isSearchingGlobal = true;
+        helperMessage = null;
+      });
+
+      final globalResults = await _searchPlayersGloballyForClubList(
+        value,
+        excludedIds: existingIds,
+      );
+      if (!mounted) return;
+
+      setStates(() {
+        isSearchingGlobal = false;
+        results = globalResults;
+        if (globalResults.isEmpty) {
+          helperMessage = source == 'todos'
+              ? 'No encontramos jugadores con ese nombre.'
+              : 'No encontramos jugadores con ese nombre en ${sourceLabel()}.';
+        } else if (source != 'todos') {
+          helperMessage =
+              'No apareció en ${sourceLabel()}. Mostrando resultados globales.';
+        } else {
+          helperMessage = null;
+        }
+      });
     }
 
     showModalBottomSheet(
@@ -1200,7 +1550,11 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                         fillColor: Colors.grey[100],
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8))),
-                    onChanged: (v) => runSearch(setStates, v)),
+                    onChanged: (v) async => runSearch(setStates, v)),
+                if (isSearchingGlobal) ...[
+                  const SizedBox(height: 10),
+                  const LinearProgressIndicator(minHeight: 2),
+                ],
                 if (results.isNotEmpty && selected == null)
                   ...results.map((j) => ListTile(
                         leading: CircleAvatar(
@@ -1211,13 +1565,14 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                         onTap: () => setStates(() {
                           selected = j;
                           results = [];
+                          helperMessage = null;
                         }),
                       )),
-                if (results.isEmpty && selected == null)
+                if (helperMessage != null && selected == null)
                   Padding(
                     padding: const EdgeInsets.only(top: 10),
                     child: Text(
-                      'Sin resultados para este origen de búsqueda.',
+                      helperMessage!,
                       style: TextStyle(color: Colors.grey[600], fontSize: 12),
                     ),
                   ),

@@ -2,6 +2,8 @@ import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/fluxo_compartilhado/club_application_utils.dart';
 import '/fluxo_compartilhado/club_identity_utils.dart';
+import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import 'package:flutter/material.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
@@ -49,6 +51,20 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
   void dispose() {
     _model.dispose();
     super.dispose();
+  }
+
+  void _openCurrentClubPublicProfile(BuildContext context) {
+    final clubRef =
+        _clubRefs.isNotEmpty ? _clubRefs.first : (_clubId ?? currentUserUid);
+    if (clubRef.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PerfilPublicoClubWidget(
+          clubRef: clubRef,
+        ),
+      ),
+    );
   }
 
   // ============ RESPONSIVE HELPERS ============
@@ -278,6 +294,18 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     if (name.isNotEmpty) initials += name[0].toUpperCase();
     if (lastname.isNotEmpty) initials += lastname[0].toUpperCase();
     return initials.isEmpty ? '?' : initials;
+  }
+
+  String _playerPosition(Map<String, dynamic>? jugador) {
+    return normalizePlayerPosition(
+      jugador?['posicion'] ?? jugador?['position'],
+    );
+  }
+
+  String _playerLocation(Map<String, dynamic>? jugador) {
+    final city = normalizeCityName(jugador?['city'] ?? jugador?['ciudad']);
+    if (city.isNotEmpty) return city;
+    return normalizeCountryName(jugador?['country'] ?? jugador?['pais']);
   }
 
   Future<void> _updatePostulacionStatus(
@@ -586,12 +614,18 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                               const Divider(),
                               _buildDrawerItemCallback(
                                   context,
-                                  Icons.settings_outlined,
-                                  'Club',
+                                  Icons.visibility_outlined,
+                                  'Perfil público',
+                                  false,
+                                  () async =>
+                                      _openCurrentClubPublicProfile(ctx)),
+                              _buildDrawerItemCallback(
+                                  context,
+                                  Icons.shield_outlined,
+                                  'Mi perfil',
                                   false,
                                   () async => context
                                       .pushNamed(ConfiguracinWidget.routeName)),
-                              const Divider(),
                               _buildDrawerItemCallback(
                                   context, Icons.logout, 'Cerrar Sesión', false,
                                   () async {
@@ -1095,8 +1129,8 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final name = jugador?['name'] ?? '';
     final lastname = jugador?['lastname'] ?? '';
     final fullName = '$name ${lastname.isNotEmpty ? lastname[0] + '.' : ''}'.trim();
-    final position = (jugador?['posicion'] ?? '').toString().trim();
-    final country = (jugador?['city'] ?? '').toString().trim();
+    final position = _playerPosition(jugador);
+    final location = _playerLocation(jugador);
     final age = _calculateAge(jugador?['birthday']);
     final estado = postulacion['estado']?.toString() ?? 'pendiente';
     final jugadorId = jugador?['user_id']?.toString() ?? '';
@@ -1114,7 +1148,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final metaParts = <String>[
       if (age > 0) '$age años',
       if (position.isNotEmpty) position,
-      if (country.isNotEmpty) country,
+      if (location.isNotEmpty) location,
     ];
     final photoUrl = jugador?['photo_url']?.toString().trim() ?? '';
     final borderRadius =
@@ -1323,7 +1357,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     String fullName,
     String position,
     int age,
-    String country,
+    String location,
     String estado,
     bool isRevisado,
     String jugadorId,
@@ -1355,7 +1389,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               ),
               SizedBox(height: 4 * scale),
               Text(
-                '$position • $age años • $country',
+                '$position • $age años • $location',
                 style: GoogleFonts.inter(
                   fontSize: detailFontSize,
                   color: Colors.grey[500],
@@ -1453,7 +1487,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     String fullName,
     String position,
     int age,
-    String country,
+    String location,
     String estado,
     bool isRevisado,
     String jugadorId,
@@ -1482,7 +1516,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
         ),
         SizedBox(height: 4 * scale),
         Text(
-          '$position • $age años • $country',
+          '$position • $age años • $location',
           style: GoogleFonts.inter(
             fontSize: detailFontSize,
             color: Colors.grey[500],
@@ -1655,8 +1689,8 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final name = jugador?['name'] ?? '';
     final lastname = jugador?['lastname'] ?? '';
     final fullName = '$name $lastname'.trim();
-    final position = jugador?['posicion'] ?? '';
-    final country = jugador?['city'] ?? '';
+    final position = _playerPosition(jugador);
+    final location = _playerLocation(jugador);
     final age = _calculateAge(jugador?['birthday']);
     final photoUrl = jugador?['photo_url'];
     final mensaje = postulacion['mensaje'] ?? '';
@@ -1773,7 +1807,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                                 ),
                               ),
                               Text(
-                                country,
+                                location,
                                 style: GoogleFonts.inter(
                                   fontSize: 14 * scale,
                                   color: Colors.grey,

@@ -2,6 +2,8 @@ import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/fluxo_compartilhado/club_application_utils.dart';
 import '/fluxo_compartilhado/club_identity_utils.dart';
+import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
 import 'package:flutter/material.dart';
@@ -98,6 +100,20 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
   void dispose() {
     _model.dispose();
     super.dispose();
+  }
+
+  void _openCurrentClubPublicProfile(BuildContext context) {
+    final clubRef =
+        _clubRefs.isNotEmpty ? _clubRefs.first : (_clubId ?? currentUserUid);
+    if (clubRef.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PerfilPublicoClubWidget(
+          clubRef: clubRef,
+        ),
+      ),
+    );
   }
 
   Future<void> _loadData() async {
@@ -376,12 +392,18 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               const Divider(),
                               _buildDrawerItemCallback(
                                   context,
-                                  Icons.settings_outlined,
-                                  'Club',
+                                  Icons.visibility_outlined,
+                                  'Perfil público',
+                                  false,
+                                  () async =>
+                                      _openCurrentClubPublicProfile(ctx)),
+                              _buildDrawerItemCallback(
+                                  context,
+                                  Icons.shield_outlined,
+                                  'Mi perfil',
                                   false,
                                   () async => context
                                       .pushNamed(ConfiguracinWidget.routeName)),
-                              const Divider(),
                               _buildDrawerItemCallback(
                                   context, Icons.logout, 'Cerrar Sesión', false,
                                   () async {
@@ -985,13 +1007,7 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
   List<Map<String, dynamic>> _selectedRequiredChallenges = [];
   bool get _isEditing => widget.existingData != null;
 
-  final List<String> _categorias = [
-    'Sub-13',
-    'Sub-15',
-    'Sub-17',
-    'Sub-20',
-    'Primera División'
-  ];
+  final List<String> _categorias = canonicalPlayerCategories;
   final List<String> _tipos = ['Abierta', 'Invitación', 'Privada'];
 
   @override
@@ -1000,13 +1016,16 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
     if (_isEditing) {
       final data = widget.existingData!;
       _tituloController.text = data['titulo'] ?? '';
-      _posicionController.text = data['posicion'] ?? '';
+      _posicionController.text =
+          normalizePlayerPosition(data['posicion'] ?? '');
       _descripcionController.text = data['descripcion'] ?? '';
       _edadMinController.text =
           (data['edad_minima'] ?? data['edad_min'])?.toString() ?? '';
       _edadMaxController.text =
           (data['edad_maxima'] ?? data['edad_max'])?.toString() ?? '';
-      _categoria = data['categoria'] ?? 'Sub-17';
+      _categoria = normalizePlayerCategory(data['categoria']) == ''
+          ? 'Sub-17'
+          : normalizePlayerCategory(data['categoria']);
       _tipo = data['tipo'] ?? 'Abierta';
       _selectedRequiredChallenges =
           _convocatoriaRequiredChallengesFrom(data['required_challenges']);
@@ -1128,6 +1147,25 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
     setState(() => _isSaving = true);
 
     try {
+      final clubData = await resolveCurrentClubForUser(currentUserUid);
+      final normalizedPosition =
+          normalizePlayerPosition(_posicionController.text);
+      final normalizedCategory = normalizePlayerCategory(_categoria);
+      final normalizedCountry = normalizeCountryName(firstNonEmptyClubValue([
+        clubData?['pais'],
+        clubData?['country'],
+        clubData?['country_name'],
+      ]));
+      final normalizedCity = normalizeCityName(firstNonEmptyClubValue([
+        clubData?['city'],
+        clubData?['ciudad'],
+        clubData?['ubicacion'],
+        clubData?['location'],
+      ]));
+      final normalizedLocation = [
+        normalizedCity,
+        normalizedCountry,
+      ].where((item) => item.isNotEmpty).join(', ');
       final requiredChallengesPayload = _selectedRequiredChallenges
           .map((item) => {
                 'id': item['id']?.toString().trim(),
@@ -1143,10 +1181,15 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
       final data = {
         'club_id': widget.clubId,
         'titulo': _tituloController.text.trim(),
-        'posicion': _posicionController.text.trim(),
+        'posicion': normalizedPosition,
         'descripcion': _descripcionController.text.trim(),
-        'categoria': _categoria,
+        'categoria': normalizedCategory,
         'tipo': _tipo,
+        'pais': normalizedCountry,
+        'country': normalizedCountry,
+        'ciudad': normalizedCity,
+        'city': normalizedCity,
+        'ubicacion': normalizedLocation,
         'edad_minima': int.tryParse(_edadMinController.text) ?? 0,
         'edad_maxima': int.tryParse(_edadMaxController.text) ?? 99,
         'fecha_cierre': _fechaCierre.toIso8601String(),
@@ -1266,8 +1309,18 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
                   _buildTextField('Título *', _tituloController,
                       'Ej: Sub-17 Mediocampistas'),
                   const SizedBox(height: 16),
-                  _buildTextField('Posición', _posicionController,
-                      'Ej: Mediocampista, Delantero'),
+                  _buildDropdown(
+                    'Posición',
+                    canonicalPlayerPositions.contains(
+                      _posicionController.text.trim(),
+                    )
+                        ? _posicionController.text.trim()
+                        : null,
+                    canonicalPlayerPositions,
+                    (value) => setState(
+                      () => _posicionController.text = value ?? '',
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   _buildTextField('Descripción', _descripcionController,
                       'Describe los requisitos de la convocatoria...',
@@ -1497,7 +1550,7 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
     );
   }
 
-  Widget _buildDropdown(String label, String value, List<String> items,
+  Widget _buildDropdown(String label, String? value, List<String> items,
       Function(String?) onChanged) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1752,7 +1805,8 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
             .from('users')
             .select()
             .inFilter('user_id', playerIds);
-        for (final row in List<Map<String, dynamic>>.from(usersResponse as List)) {
+        for (final row
+            in List<Map<String, dynamic>>.from(usersResponse as List)) {
           final id = row['user_id']?.toString().trim() ?? '';
           if (id.isNotEmpty) {
             usersById[id] = row;
@@ -1760,8 +1814,8 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
         }
       }
 
-      final requiredChallenges =
-          _convocatoriaRequiredChallengesFrom(convocatoria['required_challenges']);
+      final requiredChallenges = _convocatoriaRequiredChallengesFrom(
+          convocatoria['required_challenges']);
       final attemptByKey = <String, Map<String, dynamic>>{};
 
       Future<void> loadAttemptsForType(String type, List<String> ids) async {
@@ -1806,13 +1860,15 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
         try {
           final videosResponse = await SupaFlow.client
               .from('videos')
-              .select('id, user_id, title, thumbnail_url, video_url, created_at')
+              .select(
+                  'id, user_id, title, thumbnail_url, video_url, created_at')
               .eq('is_public', true)
               .inFilter('user_id', playerIds)
               .order('created_at', ascending: false)
               .limit(400);
 
-          for (final video in List<Map<String, dynamic>>.from(videosResponse as List)) {
+          for (final video
+              in List<Map<String, dynamic>>.from(videosResponse as List)) {
             final userId = video['user_id']?.toString().trim() ?? '';
             if (userId.isEmpty) continue;
             publicVideoByPlayer.putIfAbsent(userId, () => video);
@@ -1898,8 +1954,8 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
     final city = jugador?['city']?.toString().trim() ?? '';
     final age = _calculateAge(jugador?['birthday'] ?? jugador?['birth_date']);
     final status = candidate['estado']?.toString().trim() ?? 'pendiente';
-    final attemptVideos =
-        List<Map<String, dynamic>>.from(candidate['attempt_videos'] ?? const []);
+    final attemptVideos = List<Map<String, dynamic>>.from(
+        candidate['attempt_videos'] ?? const []);
     final latestPublicVideo =
         candidate['latest_public_video'] as Map<String, dynamic>?;
     final primaryVideoUrl = attemptVideos.isNotEmpty
@@ -2050,7 +2106,8 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
                     ),
                     const SizedBox(width: 12),
                     TextButton(
-                      onPressed: videoUrl.isEmpty ? null : () => _openVideo(videoUrl),
+                      onPressed:
+                          videoUrl.isEmpty ? null : () => _openVideo(videoUrl),
                       child: const Text('Ver video'),
                     ),
                   ],
@@ -2104,8 +2161,9 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
               SizedBox(
                 width: 160,
                 child: OutlinedButton(
-                  onPressed:
-                      playerId.isEmpty ? null : () => _openPlayerProfile(playerId),
+                  onPressed: playerId.isEmpty
+                      ? null
+                      : () => _openPlayerProfile(playerId),
                   child: const Text('Ver perfil'),
                 ),
               ),

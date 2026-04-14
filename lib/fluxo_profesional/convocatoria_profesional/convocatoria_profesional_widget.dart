@@ -253,26 +253,17 @@ class _ConvocatoriaProfesionalWidgetState
                           const SizedBox(height: 20),
                           _buildFilters(),
                           const SizedBox(height: 20),
-                          Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          Wrap(
+                              alignment: WrapAlignment.spaceBetween,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 12,
+                              runSpacing: 8,
                               children: [
                                 Text('Resultados',
                                     style: GoogleFonts.inter(
                                         fontSize: 20,
                                         fontWeight: FontWeight.bold,
                                         color: const Color(0xFF0D3B66))),
-                                if (_selectedCategoria != null ||
-                                    _selectedUbicacion != null ||
-                                    _selectedPosicion != null ||
-                                    _searchController.text.isNotEmpty)
-                                  GestureDetector(
-                                      onTap: _clearFilters,
-                                      child: Text('Limpiar filtros',
-                                          style: GoogleFonts.inter(
-                                              fontSize: 14,
-                                              color: const Color(0xFF0D3B66),
-                                              decoration:
-                                                  TextDecoration.underline)))
                               ]),
                           const SizedBox(height: 10),
                           Text(
@@ -340,31 +331,275 @@ class _ConvocatoriaProfesionalWidgetState
   }
 
   Widget _buildFilters() {
-    return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: [
-          _buildDropdown('Categoría', _selectedCategoria, _categorias, (v) {
-            setState(() => _selectedCategoria = v);
-            _applyFilters();
-          }),
-          const SizedBox(width: 15),
-          _buildDropdown('Ubicación', _selectedUbicacion, _ubicaciones, (v) {
-            setState(() => _selectedUbicacion = v);
-            _applyFilters();
-          }),
-          const SizedBox(width: 15),
-          _buildDropdown('Posición', _selectedPosicion, _posiciones, (v) {
-            setState(() => _selectedPosicion = v);
-            _applyFilters();
-          }),
-        ]));
+    final activeEntries = _activeFilterEntries;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: _openFiltersSheet,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FBFF),
+                    borderRadius: BorderRadius.circular(12),
+                    border:
+                        Border.all(color: const Color(0xFFD9E2EC), width: 1),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.tune_rounded,
+                        size: 20,
+                        color: Color(0xFF0D3B66),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          activeEntries.isEmpty
+                              ? 'Filtros'
+                              : 'Filtros (${activeEntries.length})',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF0D3B66),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        activeEntries.isEmpty ? 'Todos' : 'Editar filtros',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF6B7280),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 22,
+                        color: Color(0xFF0D3B66),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (activeEntries.isNotEmpty) ...[
+              const SizedBox(width: 10),
+              TextButton(
+                onPressed: _clearFilters,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF0D3B66),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+                child: Text(
+                  'Limpiar',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (activeEntries.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: activeEntries
+                .map(
+                  (entry) => Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F7FC),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${entry.key}: ${entry.value}',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF355070),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ],
+    );
+  }
+
+  List<MapEntry<String, String>> get _activeFilterEntries => [
+        if (_selectedCategoria != null && _selectedCategoria!.isNotEmpty)
+          MapEntry('Categoría', _selectedCategoria!),
+        if (_selectedUbicacion != null && _selectedUbicacion!.isNotEmpty)
+          MapEntry('Ubicación', _selectedUbicacion!),
+        if (_selectedPosicion != null && _selectedPosicion!.isNotEmpty)
+          MapEntry('Posición', _selectedPosicion!),
+      ];
+
+  Future<void> _openFiltersSheet() async {
+    String? tempCategoria = _selectedCategoria;
+    String? tempUbicacion = _selectedUbicacion;
+    String? tempPosicion = _selectedPosicion;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final bottomInset = MediaQuery.viewInsetsOf(sheetContext).bottom;
+        return StatefulBuilder(
+          builder: (context, modalSetState) {
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(0, 0, 0, bottomInset),
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(24)),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Filtros de búsqueda',
+                              style: GoogleFonts.inter(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF0D3B66),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Elegí los criterios para refinar las convocatorias.',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: const Color(0xFF6B7280),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _buildDropdown('Categoría', tempCategoria, _categorias,
+                          (value) {
+                        modalSetState(() => tempCategoria = value);
+                      }),
+                      const SizedBox(height: 12),
+                      _buildDropdown('Ubicación', tempUbicacion, _ubicaciones,
+                          (value) {
+                        modalSetState(() => tempUbicacion = value);
+                      }),
+                      const SizedBox(height: 12),
+                      _buildDropdown('Posición', tempPosicion, _posiciones,
+                          (value) {
+                        modalSetState(() => tempPosicion = value);
+                      }),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () {
+                                setState(() {
+                                  _selectedCategoria = null;
+                                  _selectedUbicacion = null;
+                                  _selectedPosicion = null;
+                                });
+                                _applyFilters();
+                                Navigator.of(sheetContext).pop();
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF0D3B66),
+                                side: const BorderSide(
+                                  color: Color(0xFFD9E2EC),
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: Text(
+                                'Limpiar',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                setState(() {
+                                  _selectedCategoria = tempCategoria;
+                                  _selectedUbicacion = tempUbicacion;
+                                  _selectedPosicion = tempPosicion;
+                                });
+                                _applyFilters();
+                                Navigator.of(sheetContext).pop();
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0D3B66),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: Text(
+                                'Aplicar filtros',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _buildDropdown(String hint, String? value, List<String> items,
       Function(String?) onChanged) {
     return Container(
-      width: 130,
-      height: 38,
+      height: 48,
       decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(10),
@@ -373,11 +608,20 @@ class _ConvocatoriaProfesionalWidgetState
       child: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
         value: value,
-        hint: Text(hint,
-            style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: const Color(0xFF444444))),
+        isDense: true,
+        itemHeight: 48,
+        alignment: AlignmentDirectional.centerStart,
+        hint: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(hint,
+              style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF444444),
+                  height: 1.1),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
+        ),
         icon: const Icon(Icons.keyboard_arrow_down_rounded,
             color: Color(0xFF444444), size: 24),
         isExpanded: true,
@@ -386,14 +630,49 @@ class _ConvocatoriaProfesionalWidgetState
         items: [
           DropdownMenuItem(
               value: null,
-              child: Text(hint,
-                  style: GoogleFonts.inter(
-                      fontSize: 14, color: const Color(0xFF444444)))),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(hint,
+                    style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: const Color(0xFF444444),
+                        height: 1.1),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              )),
           ...items.map((i) => DropdownMenuItem(
               value: i,
-              child: Text(i,
-                  style: GoogleFonts.inter(fontSize: 14),
-                  overflow: TextOverflow.ellipsis)))
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(i,
+                    style: GoogleFonts.inter(fontSize: 14, height: 1.1),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              )))
+        ],
+        selectedItemBuilder: (context) => [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(hint,
+                style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF444444),
+                    height: 1.1),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          ),
+          ...items.map((i) => Align(
+                alignment: Alignment.centerLeft,
+                child: Text(i,
+                    style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black,
+                        height: 1.1),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ))
         ],
         onChanged: onChanged,
       )),

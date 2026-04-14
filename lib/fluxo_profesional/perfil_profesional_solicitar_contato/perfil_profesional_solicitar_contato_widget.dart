@@ -2,6 +2,7 @@ import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/fluxo_compartilhado/profile_history_utils.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
@@ -172,12 +173,14 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           .eq('is_public', true)
           .order('created_at', ascending: false)
           .limit(60);
-      _playerVideos = List<Map<String, dynamic>>.from(response)
-          .where((video) => GuardianMvpService.isVideoVisibleToPublic(
-                video,
-                ownerData: _userData,
-              ))
-          .toList();
+      _playerVideos = _sortPublicVideos(
+        List<Map<String, dynamic>>.from(response).where(
+          (video) => GuardianMvpService.isVideoVisibleToPublic(
+            video,
+            ownerData: _userData,
+          ),
+        ),
+      );
     } catch (_) {
       try {
         final response = await SupaFlow.client
@@ -187,16 +190,41 @@ class _PerfilProfesionalSolicitarContatoWidgetState
             .eq('is_public', true)
             .order('created_at', ascending: false)
             .limit(60);
-        _playerVideos = List<Map<String, dynamic>>.from(response)
-            .where((video) => GuardianMvpService.isVideoVisibleToPublic(
-                  video,
-                  ownerData: _userData,
-                ))
-            .toList();
+        _playerVideos = _sortPublicVideos(
+          List<Map<String, dynamic>>.from(response).where(
+            (video) => GuardianMvpService.isVideoVisibleToPublic(
+              video,
+              ownerData: _userData,
+            ),
+          ),
+        );
       } catch (_) {
         _playerVideos = [];
       }
     }
+  }
+
+  void _openPlayerVideoFeed(int selectedIndex) {
+    if (_playerVideos.isEmpty || selectedIndex >= _playerVideos.length) return;
+
+    final selectedVideo = _playerVideos[selectedIndex];
+    final reorderedVideos = <Map<String, dynamic>>[
+      Map<String, dynamic>.from(selectedVideo),
+      ..._playerVideos
+          .where((video) =>
+              video['id']?.toString() != selectedVideo['id']?.toString())
+          .map((video) => Map<String, dynamic>.from(video)),
+    ];
+
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            _PublicPlayerVideoFeedScreen(videos: reorderedVideos),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+      ),
+    );
   }
 
   Future<void> _registerProfileView() async {
@@ -280,6 +308,33 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     return title.startsWith('desafío:') ||
         title.startsWith('desafio:') ||
         title.startsWith('challenge:');
+  }
+
+  bool _isFeaturedVideo(Map<String, dynamic> video) {
+    final raw = video['featured_in_explorer'] ??
+        video['is_featured'] ??
+        video['explorer_featured'] ??
+        video['highlighted'];
+    if (raw is bool) return raw;
+    final text = raw?.toString().trim().toLowerCase() ?? '';
+    return text == 'true' || text == '1' || text == 'yes' || text == 'sim';
+  }
+
+  List<Map<String, dynamic>> _sortPublicVideos(
+    Iterable<Map<String, dynamic>> videos,
+  ) {
+    final ordered =
+        videos.map((video) => Map<String, dynamic>.from(video)).toList();
+    ordered.sort((a, b) {
+      final featuredCompare =
+          (_isFeaturedVideo(b) ? 1 : 0) - (_isFeaturedVideo(a) ? 1 : 0);
+      if (featuredCompare != 0) return featuredCompare;
+
+      final createdAtA = a['created_at']?.toString() ?? '';
+      final createdAtB = b['created_at']?.toString() ?? '';
+      return createdAtB.compareTo(createdAtA);
+    });
+    return ordered;
   }
 
   String get _viewerType => FFAppState().userType;
@@ -652,13 +707,64 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     }
   }
 
+  Widget _buildResponsiveActionGroup({
+    required List<Widget> children,
+    double spacing = 10,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useColumn = constraints.maxWidth < 330;
+        if (useColumn) {
+          return Column(
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                SizedBox(width: double.infinity, child: children[i]),
+                if (i != children.length - 1) SizedBox(height: spacing),
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              Expanded(child: children[i]),
+              if (i != children.length - 1) SizedBox(width: spacing),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildActionLabel(
+    String label, {
+    double fontSize = 14,
+    FontWeight fontWeight = FontWeight.bold,
+    Color color = Colors.white,
+  }) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        label,
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.fade,
+        style: GoogleFonts.inter(
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final userType = context.watch<FFAppState>().userType;
     final screenWidth = MediaQuery.of(context).size.width;
     final horizontalPadding = screenWidth < 360 ? 12.0 : 16.0;
-    final actionButtonWidth =
-        ((screenWidth - (horizontalPadding * 2) - 10).clamp(220.0, 640.0)) / 2;
+    final actionButtonFontSize = screenWidth < 380 ? 13.0 : 14.0;
     if (_isLoading)
       return Container(
           color: Colors.white,
@@ -788,55 +894,59 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                         Padding(
                             padding: EdgeInsets.symmetric(
                                 horizontal: horizontalPadding),
-                            child: Wrap(
-                              spacing: 10,
-                              runSpacing: 10,
+                            child: _buildResponsiveActionGroup(
                               children: [
-                                SizedBox(
-                                  width: actionButtonWidth,
-                                  child: ElevatedButton(
-                                      onPressed: (_isContactPending ||
-                                              _isContactAccepted ||
-                                              _isLimitedMinorProfile)
-                                          ? null
-                                          : _request,
-                                      style: ElevatedButton.styleFrom(
-                                          backgroundColor:
-                                              _contactButtonColor(),
-                                          disabledBackgroundColor: Colors.grey,
-                                          shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8))),
-                                      child: _isProcessing && !_isFollowing
-                                          ? SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child: CircularProgressIndicator(
-                                                  color: Colors.white,
-                                                  strokeWidth: 2))
-                                          : Text(_contactButtonLabel(),
-                                              style: GoogleFonts.inter(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.white))),
+                                ElevatedButton(
+                                  onPressed: (_isContactPending ||
+                                          _isContactAccepted ||
+                                          _isLimitedMinorProfile)
+                                      ? null
+                                      : _request,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _contactButtonColor(),
+                                    disabledBackgroundColor: Colors.grey,
+                                    minimumSize: const Size.fromHeight(46),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: _isProcessing && !_isFollowing
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : _buildActionLabel(
+                                          _contactButtonLabel(),
+                                          fontSize: actionButtonFontSize,
+                                        ),
                                 ),
-                                SizedBox(
-                                  width: actionButtonWidth,
-                                  child: ElevatedButton(
-                                      onPressed: _follow,
-                                      style: ElevatedButton.styleFrom(
-                                          backgroundColor: _isFollowing
-                                              ? Colors.grey
-                                              : Color(0xFF0D3B66),
-                                          shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8))),
-                                      child: Text(
-                                          _isFollowing ? 'Siguiendo' : 'Seguir',
-                                          style: GoogleFonts.inter(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.white))),
+                                ElevatedButton(
+                                  onPressed: _follow,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _isFollowing
+                                        ? Colors.grey
+                                        : const Color(0xFF0D3B66),
+                                    minimumSize: const Size.fromHeight(46),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: _buildActionLabel(
+                                    _isFollowing ? 'Siguiendo' : 'Seguir',
+                                    fontSize: actionButtonFontSize,
+                                  ),
                                 ),
                               ],
                             )),
@@ -881,54 +991,82 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                           Padding(
                               padding: EdgeInsets.symmetric(
                                   horizontal: horizontalPadding, vertical: 8),
-                              child:
-                                  Wrap(spacing: 10, runSpacing: 10, children: [
-                                SizedBox(
-                                  width: actionButtonWidth,
-                                  child: ElevatedButton.icon(
-                                      onPressed: _isGuardando
-                                          ? null
-                                          : _toggleGuardarJugador,
-                                      icon: Icon(
+                              child: _buildResponsiveActionGroup(
+                                children: [
+                                  ElevatedButton(
+                                    onPressed: _isGuardando
+                                        ? null
+                                        : _toggleGuardarJugador,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _isGuardado
+                                          ? const Color(0xFF38A169)
+                                          : const Color(0xFF0D3B66),
+                                      minimumSize: const Size.fromHeight(46),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
                                           _isGuardado
                                               ? Icons.bookmark
                                               : Icons.bookmark_border,
-                                          color: Colors.white),
-                                      label: Text(
-                                          _isGuardado ? 'Guardado' : 'Guardar',
-                                          style: GoogleFonts.inter(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.white)),
-                                      style: ElevatedButton.styleFrom(
-                                          backgroundColor: _isGuardado
-                                              ? const Color(0xFF38A169)
-                                              : const Color(0xFF0D3B66),
-                                          shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8)))),
-                                ),
-                                SizedBox(
-                                  width: actionButtonWidth,
-                                  child: ElevatedButton.icon(
-                                      onPressed: _showAddToListSheet,
-                                      style: ElevatedButton.styleFrom(
-                                          backgroundColor:
-                                              const Color(0xFF818181),
-                                          shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8)),
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 16, vertical: 12)),
-                                      icon: const Icon(Icons.playlist_add,
-                                          color: Colors.white),
-                                      label: Text('Agregar a lista',
-                                          style: GoogleFonts.inter(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w700,
-                                              color: Colors.white))),
-                                ),
-                              ])),
+                                          color: Colors.white,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Flexible(
+                                          child: _buildActionLabel(
+                                            _isGuardado
+                                                ? 'Guardado'
+                                                : 'Guardar',
+                                            fontSize: actionButtonFontSize,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: _showAddToListSheet,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF818181),
+                                      minimumSize: const Size.fromHeight(46),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(
+                                          Icons.playlist_add,
+                                          color: Colors.white,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Flexible(
+                                          child: _buildActionLabel(
+                                            'Agregar a lista',
+                                            fontSize:
+                                                screenWidth < 380 ? 12.5 : 13,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              )),
                         Padding(
                             padding: EdgeInsets.fromLTRB(
                                 horizontalPadding, 20, horizontalPadding, 0),
@@ -1033,7 +1171,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                               border: Border.all(
                                                   color: Colors.grey)),
                                           child: Text(c,
-                                          style: GoogleFonts.inter(
+                                              style: GoogleFonts.inter(
                                                   fontSize: 12))))
                                       .toList()))
                         ],
@@ -1085,7 +1223,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     }
 
     return const [
-      {'key': 'perfil', 'label': 'Perfil profesional'},
+      {'key': 'perfil', 'label': 'Perfil'},
       {'key': 'historial', 'label': 'Historial'},
     ];
   }
@@ -1125,6 +1263,9 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                   child: Text(
                     tab['label']!,
                     textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
                     style: GoogleFonts.inter(
                       fontSize: 15,
                       fontWeight:
@@ -1170,10 +1311,14 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     ]);
 
     final chips = <Widget>[
-      if (club != null) _buildProfileInfoTile(Icons.apartment_rounded, 'Organización', club),
-      if (phone != null) _buildProfileInfoTile(Icons.call_outlined, 'Teléfono', phone),
-      if (url != null) _buildProfileInfoTile(Icons.language_rounded, 'Link profesional', url),
-      if (dni != null) _buildProfileInfoTile(Icons.badge_outlined, 'Documento', dni),
+      if (club != null)
+        _buildProfileInfoTile(Icons.apartment_rounded, 'Organización', club),
+      if (phone != null)
+        _buildProfileInfoTile(Icons.call_outlined, 'Teléfono', phone),
+      if (url != null)
+        _buildProfileInfoTile(Icons.language_rounded, 'Link profesional', url),
+      if (dni != null)
+        _buildProfileInfoTile(Icons.badge_outlined, 'Documento', dni),
       if (city != null || country != null)
         _buildProfileInfoTile(
           Icons.location_on_outlined,
@@ -1297,33 +1442,36 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   }
 
   Widget _buildFichaDeportivaSection() {
-    final normalizedHistory =
-        normalizeProfileHistory(_userData?['historial_clubes'] ?? _userData?['clubs']);
-    final position = _firstNonEmptyValue([
+    final normalizedHistory = normalizeProfileHistory(
+        _userData?['historial_clubes'] ?? _userData?['clubs']);
+    final position = normalizePlayerPosition(_firstNonEmptyValue([
       _userData?['position'],
       _userData?['posicion'],
       _userData?['posição'],
       _userData?['position_name'],
-    ]);
-    final dominantFoot = _firstNonEmptyValue([
+    ]));
+    final dominantFoot = normalizeDominantFoot(_firstNonEmptyValue([
       _userData?['dominant_foot'],
       _userData?['pie_dominante'],
       _userData?['pierna_habil'],
       _userData?['perna_habil'],
       _userData?['foot'],
-    ]);
+    ]));
     final birthDateRaw = _firstNonEmptyValue([
       _userData?['birth_date'],
       _userData?['birthday'],
       _userData?['fecha_nacimiento'],
       _userData?['data_nascimento'],
     ]);
-    final category = _firstNonEmptyValue([
-          _userData?['category'],
-          _userData?['categoria'],
-          _userData?['categoría'],
-        ]) ??
-        _birthYearFromRaw(birthDateRaw);
+    final category = normalizePlayerCategory(
+      _firstNonEmptyValue([
+            _userData?['category'],
+            _userData?['categoria'],
+            _userData?['categoría'],
+          ]) ??
+          '',
+      birthday: birthDateRaw,
+    );
     final height = _firstNonEmptyValue([
       _userData?['height'],
       _userData?['altura'],
@@ -1333,21 +1481,21 @@ class _PerfilProfesionalSolicitarContatoWidgetState
       _userData?['weight'],
       _userData?['peso'],
     ]);
-    final country = _firstNonEmptyValue([
+    final country = normalizeCountryName(_firstNonEmptyValue([
       _userData?['country'],
       _userData?['pais'],
       _userData?['país'],
       _userData?['nationality'],
       _userData?['nacionalidad'],
-    ]);
-    final city = _firstNonEmptyValue([
+    ]));
+    final city = normalizeCityName(_firstNonEmptyValue([
       _userData?['city'],
       _userData?['location'],
       _userData?['lugar'],
       _userData?['cidade'],
-    ]);
+    ]));
     final club = _firstNonEmptyValue([
-          currentClubFromProfileHistory(normalizedHistory),
+      currentClubFromProfileHistory(normalizedHistory),
       _userData?['club'],
       _userData?['club_actual'],
       _userData?['current_club'],
@@ -1398,14 +1546,14 @@ class _PerfilProfesionalSolicitarContatoWidgetState
             Icons.track_changes_rounded,
             playerStatus,
           ),
-          if (position == null &&
-              dominantFoot == null &&
-              category == null &&
+          if (position.isEmpty &&
+              dominantFoot.isEmpty &&
+              category.isEmpty &&
               birthDateRaw == null &&
               height == null &&
               weight == null &&
-              country == null &&
-              city == null &&
+              country.isEmpty &&
+              city.isEmpty &&
               club == null &&
               playerStatus == null)
             Container(
@@ -1614,9 +1762,13 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   }
 
   Widget _buildVideosSection() {
-    final challengeVideos = _playerVideos.where(_isChallengeVideo).toList();
-    final ugcVideos =
-        _playerVideos.where((v) => !_isChallengeVideo(v)).toList();
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossAxisCount = screenWidth >= 960
+        ? 4
+        : screenWidth >= 520
+            ? 4
+            : 3;
+    final challengeCount = _playerVideos.where(_isChallengeVideo).length;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
@@ -1635,165 +1787,144 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           Text(
             _playerVideos.isEmpty
                 ? 'Este jugador todavía no subió videos.'
-                : '${_playerVideos.length} video(s) subido(s) · ${challengeVideos.length} desafío(s) · ${ugcVideos.length} UGC',
+                : '${_playerVideos.length} video(s) públicos · $challengeCount desafío(s)',
             style: GoogleFonts.inter(
               fontSize: 13,
               color: const Color(0xFF6B7280),
             ),
           ),
           const SizedBox(height: 10),
-          _buildVideoGroup(
-            title: 'Videos de desafíos',
-            videos: challengeVideos,
-            emptyMessage: 'Este jugador no subió videos de desafíos todavía.',
-          ),
-          const SizedBox(height: 12),
-          _buildVideoGroup(
-            title: 'Videos UGC',
-            videos: ugcVideos,
-            emptyMessage: 'Este jugador no subió videos UGC todavía.',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVideoGroup({
-    required String title,
-    required List<Map<String, dynamic>> videos,
-    required String emptyMessage,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '$title (${videos.length})',
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF1E293B),
-          ),
-        ),
-        const SizedBox(height: 6),
-        if (videos.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.videocam_off_outlined,
-                  color: Color(0xFF94A3B8),
-                  size: 18,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    emptyMessage,
-                    style: GoogleFonts.inter(
-                      color: const Color(0xFF64748B),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+          if (_playerVideos.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.videocam_off_outlined,
+                    color: Color(0xFF94A3B8),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Cuando publique videos, acá se verán en formato de perfil.',
+                      style: GoogleFonts.inter(
+                        color: const Color(0xFF64748B),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          )
-        else
-          SizedBox(
-            height: 150,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: videos.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (_, index) {
-                final video = videos[index];
+                ],
+              ),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _playerVideos.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossAxisCount,
+                crossAxisSpacing: 6,
+                mainAxisSpacing: 6,
+                childAspectRatio: 0.66,
+              ),
+              itemBuilder: (context, index) {
+                final video = _playerVideos[index];
                 final thumb = _firstNonEmptyValue([
                       video['thumbnail_url'],
                       video['thumbnail'],
+                      video['cover_url'],
                     ]) ??
                     '';
-                final title =
-                    (video['title']?.toString().trim().isNotEmpty ?? false)
-                        ? video['title'].toString()
-                        : 'Video ${index + 1}';
-                final url = video['video_url']?.toString() ?? '';
+                final isFeatured = _isFeaturedVideo(video);
 
                 return InkWell(
-                  onTap: url.isEmpty
-                      ? null
-                      : () => showDialog<void>(
-                            context: context,
-                            builder: (_) => _PublicVideoPlayerDialog(
-                                title: title, url: url),
-                          ),
+                  onTap: () => _openPlayerVideoFeed(index),
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
-                    width: 210,
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: const Color(0xFF0F172A),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Stack(
+                      fit: StackFit.expand,
                       children: [
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(12),
-                            ),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              if (thumb.isNotEmpty)
+                                Image.network(
+                                  thumb,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: const Color(0xFF1E293B),
+                                  ),
+                                )
+                              else
+                                Container(color: const Color(0xFF1E293B)),
+                              Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.black.withOpacity(0.05),
+                                      Colors.black.withOpacity(0.18),
+                                      Colors.black.withOpacity(0.55),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const Center(
+                                child: Icon(
+                                  Icons.play_circle_fill_rounded,
+                                  color: Colors.white,
+                                  size: 34,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (isFeatured)
+                          Positioned(
+                            left: 8,
+                            top: 8,
                             child: Container(
-                              width: double.infinity,
-                              color: const Color(0xFF0F172A),
-                              child: thumb.isNotEmpty
-                                  ? Image.network(
-                                      thumb,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(
-                                        Icons.play_circle_outline,
-                                        color: Colors.white,
-                                        size: 34,
-                                      ),
-                                    )
-                                  : const Icon(
-                                      Icons.play_circle_outline,
-                                      color: Colors.white,
-                                      size: 34,
-                                    ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F766E),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                'Destacado',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              color: const Color(0xFF1E293B),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),
                 );
               },
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1815,8 +1946,10 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   Widget _card(Map<String, dynamic> item) {
     final d = item['jugador_data'];
     final name = '${d?['name'] ?? ''} ${d?['lastname'] ?? ''}'.trim();
-    final pos = d?['posicion'] ?? 'Sin posición';
-    final city = d?['city'] ?? '';
+    final pos = normalizePlayerPosition(d?['posicion']) == ''
+        ? 'Sin posición'
+        : normalizePlayerPosition(d?['posicion']);
+    final city = normalizeCityName(d?['city']);
     String age = '';
     if (d?['birthday'] != null) {
       try {
@@ -2086,50 +2219,132 @@ class _AddToListBottomSheetState extends State<_AddToListBottomSheet> {
   }
 }
 
-class _PublicVideoPlayerDialog extends StatefulWidget {
-  const _PublicVideoPlayerDialog({
-    required this.title,
-    required this.url,
-  });
+class _PublicPlayerVideoFeedScreen extends StatefulWidget {
+  const _PublicPlayerVideoFeedScreen({required this.videos});
 
-  final String title;
-  final String url;
+  final List<Map<String, dynamic>> videos;
 
   @override
-  State<_PublicVideoPlayerDialog> createState() =>
-      _PublicVideoPlayerDialogState();
+  State<_PublicPlayerVideoFeedScreen> createState() =>
+      _PublicPlayerVideoFeedScreenState();
 }
 
-class _PublicVideoPlayerDialogState extends State<_PublicVideoPlayerDialog> {
+class _PublicPlayerVideoFeedScreenState
+    extends State<_PublicPlayerVideoFeedScreen> {
+  late final PageController _pageController;
+  int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            scrollDirection: Axis.vertical,
+            itemCount: widget.videos.length,
+            onPageChanged: (index) => setState(() => _currentIndex = index),
+            itemBuilder: (context, index) {
+              final video = widget.videos[index];
+              return _PublicPlayerVideoFeedItem(
+                key: ValueKey(video['id'] ?? video['video_url'] ?? index),
+                video: video,
+                active: index == _currentIndex,
+              );
+            },
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 16,
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.arrow_back, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PublicPlayerVideoFeedItem extends StatefulWidget {
+  const _PublicPlayerVideoFeedItem({
+    super.key,
+    required this.video,
+    required this.active,
+  });
+
+  final Map<String, dynamic> video;
+  final bool active;
+
+  @override
+  State<_PublicPlayerVideoFeedItem> createState() =>
+      _PublicPlayerVideoFeedItemState();
+}
+
+class _PublicPlayerVideoFeedItemState
+    extends State<_PublicPlayerVideoFeedItem> {
   VideoPlayerController? _controller;
-  bool _loading = true;
+  bool _isInitialized = false;
   bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
-    _init();
+    _initVideo();
   }
 
-  Future<void> _init() async {
+  @override
+  void didUpdateWidget(covariant _PublicPlayerVideoFeedItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_controller == null || !_isInitialized) return;
+
+    if (widget.active) {
+      _controller!.play();
+    } else {
+      _controller!.pause();
+    }
+  }
+
+  Future<void> _initVideo() async {
+    final url = widget.video['video_url']?.toString().trim() ?? '';
+    if (!url.startsWith('http')) {
+      if (mounted) setState(() => _hasError = true);
+      return;
+    }
+
     try {
-      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      _controller = VideoPlayerController.networkUrl(Uri.parse(url));
       await _controller!.initialize();
       await _controller!.setLooping(true);
-      await _controller!.play();
       if (mounted) {
-        setState(() {
-          _loading = false;
-          _hasError = false;
-        });
+        setState(() => _isInitialized = true);
+        if (widget.active) {
+          await _controller!.play();
+        }
       }
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _hasError = true;
-        });
-      }
+      if (mounted) setState(() => _hasError = true);
     }
   }
 
@@ -2141,97 +2356,49 @@ class _PublicVideoPlayerDialogState extends State<_PublicVideoPlayerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: const Color(0xFF0B1220),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: Colors.white),
-                ),
-              ],
+    final title = widget.video['title']?.toString().trim();
+
+    if (_hasError) {
+      return const Center(
+        child: Text(
+          'No se pudo reproducir el video',
+          style: TextStyle(color: Colors.white),
+        ),
+      );
+    }
+
+    if (!_isInitialized || _controller == null) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: Center(
+            child: AspectRatio(
+              aspectRatio: _controller!.value.aspectRatio,
+              child: VideoPlayer(_controller!),
             ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: AspectRatio(
-                aspectRatio:
-                    (_controller != null && _controller!.value.isInitialized)
-                        ? _controller!.value.aspectRatio
-                        : 16 / 9,
-                child: _loading
-                    ? const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      )
-                    : _hasError || _controller == null
-                        ? Center(
-                            child: Text(
-                              'No se pudo reproducir el video.',
-                              style: GoogleFonts.inter(
-                                color: Colors.white70,
-                                fontSize: 13,
-                              ),
-                            ),
-                          )
-                        : Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              VideoPlayer(_controller!),
-                              Positioned(
-                                right: 10,
-                                bottom: 10,
-                                child: GestureDetector(
-                                  onTap: () {
-                                    if (_controller == null) return;
-                                    if (_controller!.value.isPlaying) {
-                                      _controller!.pause();
-                                    } else {
-                                      _controller!.play();
-                                    }
-                                    setState(() {});
-                                  },
-                                  child: Container(
-                                    width: 38,
-                                    height: 38,
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Icon(
-                                      _controller!.value.isPlaying
-                                          ? Icons.pause_rounded
-                                          : Icons.play_arrow_rounded,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+          ),
+        ),
+        if ((title ?? '').isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                title!,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+      ],
     );
   }
 }

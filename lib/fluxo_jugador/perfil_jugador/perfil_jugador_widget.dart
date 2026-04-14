@@ -1,6 +1,8 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/profile_history_utils.dart';
+import '/fluxo_compartilhado/profile_support_sheet.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
@@ -32,7 +34,6 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   bool _isLoading = true;
   Map<String, dynamic>? _userData;
   List<Map<String, dynamic>> _videos = [];
-  List<Map<String, dynamic>> _completedChallenges = [];
   List<Map<String, dynamic>> _savedVideos = [];
   List<Map<String, dynamic>> _contactRequests = [];
   bool _isLoadingSavedVideos = false;
@@ -115,9 +116,8 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           .eq('user_id', uid)
           .eq('is_public', true)
           .order('created_at', ascending: false);
-      final videos = List<Map<String, dynamic>>.from(videosResponse);
-      final completedChallenges = await _buildCompletedChallenges(videos);
-
+      final videos = _sortVideosForProfile(
+          List<Map<String, dynamic>>.from(videosResponse));
       final savedVideos = await _loadSavedVideos(uid);
 
       // Calcular ranking do usuário (com tratamento de erro)
@@ -139,7 +139,6 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
         setState(() {
           _userData = mergedUserData;
           _videos = videos;
-          _completedChallenges = completedChallenges;
           _savedVideos = savedVideos;
           _contactRequests = requests;
           _pendingContactRequests = requests
@@ -328,6 +327,23 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
         _isTruthy(video['highlighted']);
   }
 
+  List<Map<String, dynamic>> _sortVideosForProfile(
+    Iterable<Map<String, dynamic>> videos,
+  ) {
+    final ordered =
+        videos.map((video) => Map<String, dynamic>.from(video)).toList();
+    ordered.sort((a, b) {
+      final featuredCompare =
+          (_isVideoFeatured(b) ? 1 : 0) - (_isVideoFeatured(a) ? 1 : 0);
+      if (featuredCompare != 0) return featuredCompare;
+
+      final createdAtA = a['created_at']?.toString() ?? '';
+      final createdAtB = b['created_at']?.toString() ?? '';
+      return createdAtB.compareTo(createdAtA);
+    });
+    return ordered;
+  }
+
   Future<void> _toggleFeaturedVideo(Map<String, dynamic> video) async {
     final uid = currentUserUid;
     final videoId = video['id']?.toString() ?? '';
@@ -355,6 +371,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           final itemId = item['id']?.toString() ?? '';
           item['featured_in_explorer'] = shouldFeature && itemId == videoId;
         }
+        _videos = _sortVideosForProfile(_videos);
         _updatingFeaturedVideoId = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -390,31 +407,6 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       'type': (match.group(1) ?? '').trim(),
       'id': (match.group(2) ?? '').trim(),
     };
-  }
-
-  String _normalizeChallengeTitle(String rawTitle, String fallbackType) {
-    final title = rawTitle.trim();
-    if (title.isEmpty) {
-      return fallbackType == 'course' ? 'Curso' : 'Ejercicio';
-    }
-
-    final lower = title.toLowerCase();
-    if (lower.startsWith('desafío:')) {
-      final normalized = title.substring('desafío:'.length).trim();
-      return normalized.isEmpty ? 'Desafío' : normalized;
-    }
-    if (lower.startsWith('desafio:')) {
-      final normalized = title.substring('desafio:'.length).trim();
-      return normalized.isEmpty ? 'Desafío' : normalized;
-    }
-    return title;
-  }
-
-  int? _readInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is double) return value.round();
-    return int.tryParse(value.toString());
   }
 
   Future<int> _loadCategoryRanking(
@@ -473,97 +465,6 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       debugPrint('Erro ao calcular ranking por categoria: $e');
       return 1;
     }
-  }
-
-  Future<List<Map<String, dynamic>>> _buildCompletedChallenges(
-    List<Map<String, dynamic>> videos,
-  ) async {
-    final completed = <Map<String, dynamic>>[];
-    final courseIds = <String>{};
-    final exerciseIds = <String>{};
-
-    for (final video in videos) {
-      final description = video['description']?.toString() ?? '';
-      final ref = _parseChallengeRef(description);
-      if (ref == null) continue;
-
-      final type = ref['type'] ?? '';
-      final itemId = ref['id'] ?? '';
-      if (type.isEmpty || itemId.isEmpty) continue;
-
-      if (type == 'course') {
-        courseIds.add(itemId);
-      } else {
-        exerciseIds.add(itemId);
-      }
-
-      completed.add({
-        'video_id': video['id']?.toString(),
-        'video_url': video['video_url']?.toString() ?? '',
-        'created_at': video['created_at']?.toString() ?? '',
-        'item_type': type,
-        'item_id': itemId,
-        'title': _normalizeChallengeTitle(
-          video['title']?.toString() ?? '',
-          type,
-        ),
-        'status': 'Completado',
-        'points': null,
-      });
-    }
-
-    final courseMap = <String, Map<String, dynamic>>{};
-    final exerciseMap = <String, Map<String, dynamic>>{};
-
-    if (courseIds.isNotEmpty) {
-      try {
-        final response = await SupaFlow.client
-            .from('courses')
-            .select('id, title')
-            .inFilter('id', courseIds.toList());
-        for (final row in (response as List)) {
-          final map = Map<String, dynamic>.from(row);
-          final id = map['id']?.toString() ?? '';
-          if (id.isNotEmpty) courseMap[id] = map;
-        }
-      } catch (e) {
-        debugPrint('Erro ao carregar cursos dos desafios: $e');
-      }
-    }
-
-    if (exerciseIds.isNotEmpty) {
-      try {
-        final response = await SupaFlow.client
-            .from('exercises')
-            .select('id, title')
-            .inFilter('id', exerciseIds.toList());
-        for (final row in (response as List)) {
-          final map = Map<String, dynamic>.from(row);
-          final id = map['id']?.toString() ?? '';
-          if (id.isNotEmpty) exerciseMap[id] = map;
-        }
-      } catch (e) {
-        debugPrint('Erro ao carregar exercícios dos desafios: $e');
-      }
-    }
-
-    for (final challenge in completed) {
-      final type = challenge['item_type']?.toString() ?? '';
-      final itemId = challenge['item_id']?.toString() ?? '';
-      if (itemId.isEmpty) continue;
-
-      final source = type == 'course' ? courseMap[itemId] : exerciseMap[itemId];
-      if (source == null) continue;
-
-      final title = source['title']?.toString().trim() ?? '';
-      if (title.isNotEmpty) {
-        challenge['title'] = title;
-      }
-
-      challenge['points'] = GamificationService.challengeCompletedPoints;
-    }
-
-    return completed;
   }
 
   String _normalizeContactRequestStatus(Map<String, dynamic> request) {
@@ -1565,7 +1466,8 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
 
   // ===== TAB VIDEOS =====
   Widget _buildVideosTab() {
-    if (_videos.isEmpty) {
+    final orderedVideos = _sortVideosForProfile(_videos);
+    if (orderedVideos.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1623,52 +1525,68 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       );
     }
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossAxisCount = screenWidth >= 960
+        ? 4
+        : screenWidth >= 520
+            ? 4
+            : 3;
+    final challengeCount = orderedVideos.where((video) {
+      final description = video['description']?.toString() ?? '';
+      return _parseChallengeRef(description) != null;
+    }).length;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_completedChallenges.isNotEmpty) ...[
-            Text(
-              'Desafíos completados',
-              style: GoogleFonts.inter(
-                color: const Color(0xFF0D3B66),
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
+          Text(
+            'Videos públicos',
+            style: GoogleFonts.inter(
+              color: const Color(0xFF0D3B66),
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(height: 4),
-            Text(
-              '${_completedChallenges.length} desafío(s) finalizado(s)',
-              style: GoogleFonts.inter(
-                color: const Color(0xFF6B7280),
-                fontSize: 13,
-              ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${orderedVideos.length} video(s) en tu perfil · $challengeCount desafío(s)',
+            style: GoogleFonts.inter(
+              color: const Color(0xFF6B7280),
+              fontSize: 13,
             ),
-            const SizedBox(height: 10),
-            ..._completedChallenges.map(_buildCompletedChallengeCard),
-            const SizedBox(height: 14),
-            Text(
-              'Todos os videos',
-              style: GoogleFonts.inter(
-                color: const Color(0xFF444444),
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
+          ),
+          const SizedBox(height: 12),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: orderedVideos.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: 6,
+              mainAxisSpacing: 6,
+              childAspectRatio: 0.66,
             ),
-            const SizedBox(height: 8),
-          ],
-          Wrap(
-            spacing: 5,
-            runSpacing: 5,
-            children: _videos.asMap().entries.map((entry) {
-              final video = entry.value;
+            itemBuilder: (context, index) {
+              final video = orderedVideos[index];
               final videoId = video['id']?.toString() ?? '';
               final isFeatured = _isVideoFeatured(video);
               final isUpdating = _updatingFeaturedVideoId == videoId;
+              final originalIndex = _videos.indexWhere(
+                (item) => item['id']?.toString() == videoId,
+              );
               return _VideoCard(
-                videoUrl: video['video_url'] ?? '',
-                onTap: () => _openVideoFeed(entry.key, _videos),
+                videoUrl: video['video_url']?.toString() ?? '',
+                thumbnailUrl: (video['thumbnail_url'] ??
+                        video['thumbnail'] ??
+                        video['cover_url'] ??
+                        '')
+                    .toString(),
+                onTap: () => _openVideoFeed(
+                  originalIndex >= 0 ? originalIndex : index,
+                  _videos,
+                ),
                 badge: isFeatured
                     ? Container(
                         padding: const EdgeInsets.symmetric(
@@ -1714,11 +1632,11 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                   ),
                 ),
               );
-            }).toList(),
+            },
           ),
           const SizedBox(height: 10),
           Text(
-            'Elegí un video destacado. Explorer abrirá ese primero para scouts.',
+            'Tocá un video para abrir el feed completo. Marcá uno como destacado para que Explorer lo muestre primero.',
             style: GoogleFonts.inter(
               color: const Color(0xFF64748B),
               fontSize: 12,
@@ -1730,160 +1648,35 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     );
   }
 
-  Widget _buildCompletedChallengeCard(Map<String, dynamic> challenge) {
-    final title = challenge['title']?.toString() ?? 'Desafío';
-    final status = challenge['status']?.toString() ?? 'Completado';
-    final points = _readInt(challenge['points']);
-    final createdAt = challenge['created_at']?.toString() ?? '';
-    final videoId = challenge['video_id']?.toString() ?? '';
-    final fallbackUrl = challenge['video_url']?.toString() ?? '';
-
-    var selectedIndex = -1;
-    if (videoId.isNotEmpty) {
-      selectedIndex =
-          _videos.indexWhere((v) => v['id']?.toString() == videoId.toString());
-    }
-    if (selectedIndex < 0 && fallbackUrl.isNotEmpty) {
-      selectedIndex =
-          _videos.indexWhere((v) => v['video_url']?.toString() == fallbackUrl);
-    }
-
-    final submittedLabel = () {
-      final parsed = DateTime.tryParse(createdAt);
-      if (parsed == null) return 'Video enviado';
-      return 'Enviado el ${DateFormat('dd/MM/yyyy').format(parsed)}';
-    }();
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              color: const Color(0xFF111827),
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDBEAFE),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.videocam_rounded,
-                      size: 14,
-                      color: Color(0xFF1D4ED8),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      submittedLabel,
-                      style: GoogleFonts.inter(
-                        color: const Color(0xFF1E3A8A),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDCFCE7),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  status,
-                  style: GoogleFonts.inter(
-                    color: const Color(0xFF166534),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              if (points != null && points > 0)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF3C7),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '+$points XP',
-                    style: GoogleFonts.inter(
-                      color: const Color(0xFF92400E),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 38,
-            child: OutlinedButton.icon(
-              onPressed: selectedIndex >= 0
-                  ? () => _openVideoFeed(selectedIndex, _videos)
-                  : null,
-              icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
-              label: Text(
-                'Ver video enviado',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF0D3B66),
-                side: const BorderSide(color: Color(0xFF0D3B66)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ===== TAB FICHA COMPLETA =====
   Widget _buildFichaTab() {
-    final birthDate =
-        _userData?['birth_date'] ?? _userData?['fecha_nacimiento'] ?? _userData?['birthday'] ?? '';
-    final nationality = _userData?['nationality'] ??
-        _userData?['nacionalidad'] ??
-        _userData?['country'] ??
-        _userData?['pais'] ??
-        'No definido';
+    final birthDate = _userData?['birth_date'] ??
+        _userData?['fecha_nacimiento'] ??
+        _userData?['birthday'] ??
+        '';
+    final nationality = normalizeCountryName(_userData?['nationality'] ??
+                _userData?['nacionalidad'] ??
+                _userData?['country'] ??
+                _userData?['pais']) ==
+            ''
+        ? 'No definido'
+        : normalizeCountryName(_userData?['nationality'] ??
+            _userData?['nacionalidad'] ??
+            _userData?['country'] ??
+            _userData?['pais']);
     final height = _userData?['height'] ?? _userData?['altura'] ?? '';
     final weight = _userData?['weight'] ?? _userData?['peso'] ?? '';
     final playerStatus = _userData?['player_status']?.toString().trim() ?? '';
-    final category = _userData?['categoria']?.toString().trim() ?? '';
-    final position = _userData?['position'] ?? _userData?['posicion']?.toString().trim() ?? '';
-    final dominantFoot = _userData?['dominant_foot'] ?? _userData?['pie_dominante']?.toString().trim() ?? '';
+    final category = normalizePlayerCategory(
+      _userData?['categoria']?.toString().trim() ?? '',
+      birthday: birthDate,
+    );
+    final position = normalizePlayerPosition(_userData?['position'] ??
+        _userData?['posicion']?.toString().trim() ??
+        '');
+    final dominantFoot = normalizeDominantFoot(_userData?['dominant_foot'] ??
+        _userData?['pie_dominante']?.toString().trim() ??
+        '');
     final age = _calculateAge(birthDate.toString());
 
     return SingleChildScrollView(
@@ -2005,7 +1798,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           final position = club['position'] ?? club['posicion'] ?? '';
           final note = club['note'] ?? club['nota'] ?? '';
           final period = formatProfileHistoryPeriod(club);
-          
+
           return Padding(
             padding: const EdgeInsets.only(bottom: 16),
             child: Column(
@@ -2026,7 +1819,10 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                     ),
                     Text(
                       period,
-                      style: GoogleFonts.inter(color: Colors.black, fontSize: 13, fontWeight: FontWeight.normal),
+                      style: GoogleFonts.inter(
+                          color: Colors.black,
+                          fontSize: 13,
+                          fontWeight: FontWeight.normal),
                     ),
                   ],
                 ),
@@ -2035,7 +1831,8 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       position.toString(),
-                      style: GoogleFonts.inter(color: const Color(0xFF444444), fontSize: 13),
+                      style: GoogleFonts.inter(
+                          color: const Color(0xFF444444), fontSize: 13),
                     ),
                   ),
                 if (note.toString().isNotEmpty)
@@ -2383,16 +2180,19 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     final xpInt =
         totalXp is int ? totalXp : int.tryParse(totalXp.toString()) ?? 0;
     final level = _getLevelName(xpInt);
-    final position =
-        _userData?['position'] ?? _userData?['posicion'] ?? 'Jugador';
-    final dominantFoot = _userData?['dominant_foot'] ??
-        _userData?['pie_dominante'] ??
-        'No definido';
+    final position = normalizePlayerPosition(
+      _userData?['position'] ?? _userData?['posicion'] ?? '',
+    );
+    final dominantFoot = normalizeDominantFoot(
+      _userData?['dominant_foot'] ?? _userData?['pie_dominante'] ?? '',
+    );
     final playerStatus = _userData?['player_status']?.toString().trim() ?? '';
-    final location = _userData?['location'] ??
-        _userData?['ubicacion'] ??
-        _userData?['club'] ??
-        '';
+    final location = titleCaseLabel(
+      _userData?['location'] ??
+          _userData?['ubicacion'] ??
+          _userData?['club'] ??
+          '',
+    );
     final followers =
         _userData?['followers_count'] ?? _userData?['seguidores'] ?? 0;
     final screenSize = MediaQuery.sizeOf(context);
@@ -2459,7 +2259,14 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                   behavior: HitTestBehavior.opaque,
                                   onTap: () {
                                     debugPrint('🔵 Configurações clicado!');
-                                    context.pushNamed('configuraciones');
+                                    showProfileSupportSheet(
+                                      context: context,
+                                      userId: currentUserUid,
+                                      screenName: PerfilJugadorWidget.routeName,
+                                      onEditProfile: () {
+                                        context.pushNamed('editar_perfil');
+                                      },
+                                    );
                                   },
                                   child: Container(
                                     width: 35,
@@ -3044,72 +2851,30 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   }
 }
 
-class _VideoCard extends StatefulWidget {
+class _VideoCard extends StatelessWidget {
   final String videoUrl;
+  final String thumbnailUrl;
   final VoidCallback onTap;
   final Widget? badge;
   final Widget? topRightAction;
 
   const _VideoCard({
     required this.videoUrl,
+    required this.thumbnailUrl,
     required this.onTap,
     this.badge,
     this.topRightAction,
   });
 
   @override
-  State<_VideoCard> createState() => _VideoCardState();
-}
-
-class _VideoCardState extends State<_VideoCard> {
-  VideoPlayerController? _controller;
-  bool _isInitialized = false;
-  bool _hasError = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _initVideo();
-  }
-
-  Future<void> _initVideo() async {
-    if (widget.videoUrl.isEmpty) {
-      if (mounted) setState(() => _hasError = true);
-      return;
-    }
-
-    try {
-      _controller = VideoPlayerController.networkUrl(
-        Uri.parse(widget.videoUrl),
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-      );
-
-      await _controller!.initialize();
-      _controller!.setVolume(0);
-      _controller!.setLooping(true);
-      // Removido play() automático para evitar exaustão de MediaCodec em grids com muitos vídeos
-
-      if (mounted) setState(() => _isInitialized = true);
-    } catch (e) {
-      if (mounted) setState(() => _hasError = true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final hasThumbnail = thumbnailUrl.trim().isNotEmpty;
+
     return GestureDetector(
-      onTap: widget.onTap,
+      onTap: onTap,
       child: Container(
-        width: 107,
-        height: 143,
         decoration: BoxDecoration(
-          color: Colors.grey[300],
+          color: const Color(0xFF0F172A),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Stack(
@@ -3117,52 +2882,53 @@ class _VideoCardState extends State<_VideoCard> {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: _hasError
-                  ? Container(
-                      color: Colors.grey[400],
-                      child: const Icon(
-                        Icons.videocam_off,
-                        color: Colors.white70,
-                        size: 30,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (hasThumbnail)
+                    Image.network(
+                      thumbnailUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: const Color(0xFF1E293B),
                       ),
                     )
-                  : !_isInitialized || _controller == null
-                      ? Container(
-                          color: Colors.grey[400],
-                          child: const Center(
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ),
-                        )
-                      : SizedBox.expand(
-                          child: FittedBox(
-                            fit: BoxFit.cover,
-                            clipBehavior: Clip.hardEdge,
-                            child: SizedBox(
-                              width: _controller!.value.size.width,
-                              height: _controller!.value.size.height,
-                              child: VideoPlayer(_controller!),
-                            ),
-                          ),
-                        ),
+                  else
+                    Container(color: const Color(0xFF1E293B)),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.04),
+                          Colors.black.withOpacity(0.18),
+                          Colors.black.withOpacity(0.52),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Center(
+                    child: Icon(
+                      Icons.play_circle_fill_rounded,
+                      color: Colors.white,
+                      size: 34,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            if (widget.badge != null)
+            if (badge != null)
               Positioned(
                 left: 8,
                 top: 8,
-                child: widget.badge!,
+                child: badge!,
               ),
-            if (widget.topRightAction != null)
+            if (topRightAction != null)
               Positioned(
                 right: 8,
                 top: 8,
-                child: widget.topRightAction!,
+                child: topRightAction!,
               ),
           ],
         ),

@@ -1,5 +1,6 @@
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -170,6 +171,8 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       final sitioWeb = _websiteController.text.isNotEmpty
           ? _websiteController.text
           : _otherUrlController.text;
+      final normalizedCountry = normalizeCountryName(_countryController.text);
+      final normalizedCity = normalizeCityName(_cityController.text);
 
       // Update User
       final existingUser = await SupaFlow.client
@@ -179,7 +182,9 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
           .maybeSingle();
       final userData = {
         'name': _clubNameController.text,
-        'city': _cityController.text,
+        'city': normalizedCity,
+        'country': normalizedCountry,
+        'pais': normalizedCountry,
         'country_id': _selectedCountryId != null
             ? int.tryParse(_selectedCountryId!)
             : null,
@@ -241,6 +246,10 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
             ? _aboutClubController.text
             : 'Sin descripción',
         'liga': _leagueController.text.isNotEmpty ? _leagueController.text : '',
+        'city': normalizedCity,
+        'ciudad': normalizedCity,
+        'pais': normalizedCountry,
+        'country': normalizedCountry,
         'sitio_web': sitioWeb.isNotEmpty ? sitioWeb : '',
       };
       if (existingClub != null) {
@@ -263,7 +272,11 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       final clubsData = {
         'nombre': _clubNameController.text,
         'nombre_corto': _clubNameController.text,
-        'pais': _countryController.text,
+        'pais': normalizedCountry,
+        'country': normalizedCountry,
+        'city': normalizedCity,
+        'ciudad': normalizedCity,
+        'ubicacion': normalizedCity,
         'liga': _leagueController.text.isNotEmpty ? _leagueController.text : '',
         'descripcion': _aboutClubController.text.isNotEmpty
             ? _aboutClubController.text

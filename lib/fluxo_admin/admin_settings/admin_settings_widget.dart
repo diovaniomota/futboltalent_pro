@@ -1,4 +1,5 @@
 import '/admin/admin_runtime_service.dart';
+import '/admin/admin_user_management_service.dart';
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
@@ -112,13 +113,18 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
     if (mounted) setState(() => _isLoading = false);
   }
 
-  Future<void> _loadOverrideUsers() async {
+  Future<void> _loadOverrideUsers({bool allowRetry = true}) async {
     try {
-      final response = await SupaFlow.client
-          .from('users')
-          .select('user_id, name, lastname, username, userType')
-          .order('name', ascending: true);
-      _overrideUsers = List<Map<String, dynamic>>.from(response as List);
+      var users = await AdminUserManagementService.loadUsersCatalog(
+        includeOperationalFields: false,
+      );
+      if (users.isEmpty && allowRetry) {
+        await Future.delayed(const Duration(milliseconds: 250));
+        users = await AdminUserManagementService.loadUsersCatalog(
+          includeOperationalFields: false,
+        );
+      }
+      _overrideUsers = users;
     } catch (_) {
       _overrideUsers = [];
     }
@@ -405,6 +411,13 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
   }
 
   Future<String?> _pickOverrideUser(String? currentUserId) async {
+    if (_overrideUsers.isEmpty) {
+      await _loadOverrideUsers(allowRetry: true);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+
     final searchCtrl = TextEditingController();
     String query = '';
 
@@ -481,8 +494,7 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                             children: [
                               Text(
                                 'Seleccionar usuario',
-                                style:
-                                    FlutterFlowTheme.of(ctx).headlineSmall,
+                                style: FlutterFlowTheme.of(ctx).headlineSmall,
                               ),
                               const SizedBox(height: 4),
                               Text(
@@ -507,8 +519,7 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
                     child: TextField(
                       controller: searchCtrl,
-                      onChanged: (value) =>
-                          setSheetState(() => query = value),
+                      onChanged: (value) => setSheetState(() => query = value),
                       decoration: InputDecoration(
                         hintText: 'Buscar por nombre, usuario o ID',
                         prefixIcon: const Icon(Icons.search),
@@ -545,119 +556,118 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                             padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
                             children: [
                               for (final role in _overrideRoleOrder)
-                                if ((groupedUsers[role] ?? const []).isNotEmpty)
-                                  ...[
-                                    Padding(
-                                      padding:
-                                          const EdgeInsets.only(top: 8, bottom: 8),
-                                      child: Row(
-                                        children: [
-                                          _buildOverrideRoleChip(ctx, role),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            '${groupedUsers[role]!.length}',
-                                            style: theme.bodySmall.override(
-                                              fontFamily: 'Inter',
-                                              color: theme.secondaryText,
-                                              letterSpacing: 0.0,
-                                            ),
+                                if ((groupedUsers[role] ?? const [])
+                                    .isNotEmpty) ...[
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                        top: 8, bottom: 8),
+                                    child: Row(
+                                      children: [
+                                        _buildOverrideRoleChip(ctx, role),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '${groupedUsers[role]!.length}',
+                                          style: theme.bodySmall.override(
+                                            fontFamily: 'Inter',
+                                            color: theme.secondaryText,
+                                            letterSpacing: 0.0,
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
-                                    ...groupedUsers[role]!.map(
-                                      (user) {
-                                        final isSelected =
-                                            (user['user_id']?.toString() ?? '') ==
-                                                currentUserId;
-                                        return Container(
-                                          margin:
-                                              const EdgeInsets.only(bottom: 10),
-                                          decoration: BoxDecoration(
-                                            color: theme.secondaryBackground,
-                                            borderRadius:
-                                                BorderRadius.circular(18),
-                                            border: Border.all(
-                                              color: isSelected
-                                                  ? theme.primary
-                                                  : theme.alternate,
-                                              width: isSelected ? 1.4 : 1,
-                                            ),
+                                  ),
+                                  ...groupedUsers[role]!.map(
+                                    (user) {
+                                      final isSelected =
+                                          (user['user_id']?.toString() ?? '') ==
+                                              currentUserId;
+                                      return Container(
+                                        margin:
+                                            const EdgeInsets.only(bottom: 10),
+                                        decoration: BoxDecoration(
+                                          color: theme.secondaryBackground,
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                          border: Border.all(
+                                            color: isSelected
+                                                ? theme.primary
+                                                : theme.alternate,
+                                            width: isSelected ? 1.4 : 1,
                                           ),
-                                          child: ListTile(
-                                            onTap: () => Navigator.pop(
-                                              ctx,
-                                              user['user_id']?.toString(),
+                                        ),
+                                        child: ListTile(
+                                          onTap: () => Navigator.pop(
+                                            ctx,
+                                            user['user_id']?.toString(),
+                                          ),
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                            vertical: 4,
+                                          ),
+                                          leading: Container(
+                                            width: 42,
+                                            height: 42,
+                                            decoration: BoxDecoration(
+                                              color: _overrideRoleBackground(
+                                                ctx,
+                                                role,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
                                             ),
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                              horizontal: 14,
-                                              vertical: 4,
-                                            ),
-                                            leading: Container(
-                                              width: 42,
-                                              height: 42,
-                                              decoration: BoxDecoration(
-                                                color: _overrideRoleBackground(
+                                            alignment: Alignment.center,
+                                            child: Text(
+                                              _overrideUserAvatarLetter(user),
+                                              style: theme.bodyLarge.override(
+                                                fontFamily: 'Inter',
+                                                color: _overrideRoleForeground(
                                                   ctx,
                                                   role,
                                                 ),
-                                                borderRadius:
-                                                    BorderRadius.circular(14),
-                                              ),
-                                              alignment: Alignment.center,
-                                              child: Text(
-                                                _overrideUserAvatarLetter(user),
-                                                style: theme.bodyLarge.override(
-                                                  fontFamily: 'Inter',
-                                                  color:
-                                                      _overrideRoleForeground(
-                                                    ctx,
-                                                    role,
-                                                  ),
-                                                  fontWeight: FontWeight.w700,
-                                                  letterSpacing: 0.0,
-                                                ),
-                                              ),
-                                            ),
-                                            title: Text(
-                                              _overrideUserName(user),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: theme.bodyLarge.override(
-                                                fontFamily: 'Inter',
-                                                fontWeight: FontWeight.w600,
+                                                fontWeight: FontWeight.w700,
                                                 letterSpacing: 0.0,
                                               ),
                                             ),
-                                            subtitle: Padding(
-                                              padding:
-                                                  const EdgeInsets.only(top: 4),
-                                              child: Text(
-                                                _overrideUserSecondary(user),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: theme.bodySmall.override(
-                                                  fontFamily: 'Inter',
-                                                  color: theme.secondaryText,
-                                                  letterSpacing: 0.0,
-                                                ),
+                                          ),
+                                          title: Text(
+                                            _overrideUserName(user),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.bodyLarge.override(
+                                              fontFamily: 'Inter',
+                                              fontWeight: FontWeight.w600,
+                                              letterSpacing: 0.0,
+                                            ),
+                                          ),
+                                          subtitle: Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              _overrideUserSecondary(user),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: theme.bodySmall.override(
+                                                fontFamily: 'Inter',
+                                                color: theme.secondaryText,
+                                                letterSpacing: 0.0,
                                               ),
                                             ),
-                                            trailing: isSelected
-                                                ? Icon(
-                                                    Icons.check_circle,
-                                                    color: theme.primary,
-                                                  )
-                                                : Icon(
-                                                    Icons.chevron_right_rounded,
-                                                    color: theme.secondaryText,
-                                                  ),
                                           ),
-                                        );
-                                      },
-                                    ),
-                                  ],
+                                          trailing: isSelected
+                                              ? Icon(
+                                                  Icons.check_circle,
+                                                  color: theme.primary,
+                                                )
+                                              : Icon(
+                                                  Icons.chevron_right_rounded,
+                                                  color: theme.secondaryText,
+                                                ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
                             ],
                           ),
                   ),
@@ -764,8 +774,7 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                       ? selectedFeatureKey
                       : null,
                   isExpanded: true,
-                  decoration:
-                      const InputDecoration(labelText: 'Funcionalidad'),
+                  decoration: const InputDecoration(labelText: 'Funcionalidad'),
                   items: _featureOrder
                       .map(
                         (featureKey) => DropdownMenuItem<String>(
@@ -821,7 +830,8 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
         'notes': notesCtrl.text.trim(),
         'updated_at': DateTime.now().toIso8601String(),
         'updated_by': currentUserUid,
-      });
+      }, onConflict: 'user_id,feature_key');
+      await FFAppState().refreshAdminRuntimeSettings();
       await _loadOverrides();
       if (mounted) setState(() {});
     } catch (e) {
@@ -839,6 +849,7 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
           .from('admin_user_feature_overrides')
           .delete()
           .eq('id', id);
+      await FFAppState().refreshAdminRuntimeSettings();
       await _loadOverrides();
       if (mounted) setState(() {});
     } catch (e) {
@@ -945,8 +956,8 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                     const SizedBox(height: 8),
                     TextField(
                       controller: _blockedMessageCtrl,
-                      decoration:
-                          const InputDecoration(labelText: 'Mensaje de bloqueo'),
+                      decoration: const InputDecoration(
+                          labelText: 'Mensaje de bloqueo'),
                       maxLines: 2,
                     ),
                     const SizedBox(height: 8),
@@ -958,14 +969,14 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                     const SizedBox(height: 8),
                     TextField(
                       controller: _uploadSuccessCtrl,
-                      decoration: const InputDecoration(
-                          labelText: 'Mensaje de éxito'),
+                      decoration:
+                          const InputDecoration(labelText: 'Mensaje de éxito'),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _feedEmptyCtrl,
                       decoration:
-                        const InputDecoration(labelText: 'Feed vacío'),
+                          const InputDecoration(labelText: 'Feed vacío'),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
