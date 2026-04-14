@@ -143,6 +143,11 @@ class AdminUserOperationResult {
 class AdminUserManagementService {
   AdminUserManagementService._();
 
+  static const String _fullUserCatalogSelect =
+      'user_id, name, lastname, username, photo_url, city, country, pais, userType, plan_id, banned_until, verification_status, is_verified, full_profile, is_test_account';
+  static const String _compactUserCatalogSelect =
+      'user_id, name, lastname, username, userType';
+
   static Future<AdminUserManagementCapabilities> loadCapabilities() async {
     final fallback = AdminUserManagementCapabilities.fallback(
       isAdmin: FFAppState().isAdminSession,
@@ -157,6 +162,34 @@ class AdminUserManagementService {
     } catch (_) {}
 
     return fallback;
+  }
+
+  static Future<List<Map<String, dynamic>>> loadUsersCatalog({
+    bool includeOperationalFields = true,
+  }) async {
+    final attempts = <String>[
+      if (includeOperationalFields) _fullUserCatalogSelect,
+      _compactUserCatalogSelect,
+    ];
+
+    for (final fields in attempts) {
+      try {
+        final orderedResponse = await SupaFlow.client
+            .from('users')
+            .select(fields)
+            .order('name', ascending: true);
+        final orderedRows = _normalizeUserCatalogResponse(orderedResponse);
+        if (orderedRows.isNotEmpty) return orderedRows;
+      } catch (_) {}
+
+      try {
+        final response = await SupaFlow.client.from('users').select(fields);
+        final rows = _normalizeUserCatalogResponse(response);
+        if (rows.isNotEmpty) return rows;
+      } catch (_) {}
+    }
+
+    return const [];
   }
 
   static Future<AdminUserOperationResult> createUser(
@@ -363,6 +396,46 @@ class AdminUserManagementService {
       if (first is Map) return Map<String, dynamic>.from(first);
     }
     return null;
+  }
+
+  static List<Map<String, dynamic>> _normalizeUserCatalogResponse(
+    dynamic response,
+  ) {
+    if (response is! List) return const [];
+
+    final rows = <Map<String, dynamic>>[];
+    for (final row in response) {
+      final map = row is Map<String, dynamic>
+          ? Map<String, dynamic>.from(row)
+          : row is Map
+              ? Map<String, dynamic>.from(row)
+              : null;
+      if (map == null) continue;
+
+      final userId = map['user_id']?.toString().trim() ?? '';
+      if (userId.isEmpty) continue;
+
+      map['userType'] = FFAppState.normalizeUserType(
+        map['userType'] ?? map['user_type'] ?? map['usertype'],
+      );
+      rows.add(map);
+    }
+
+    rows.sort((a, b) {
+      final aName = [
+        a['name'],
+        a['lastname'],
+        a['username'],
+      ].map((value) => value?.toString().trim() ?? '').join(' ').toLowerCase();
+      final bName = [
+        b['name'],
+        b['lastname'],
+        b['username'],
+      ].map((value) => value?.toString().trim() ?? '').join(' ').toLowerCase();
+      return aName.compareTo(bName);
+    });
+
+    return rows;
   }
 
   static String _humanizeError(

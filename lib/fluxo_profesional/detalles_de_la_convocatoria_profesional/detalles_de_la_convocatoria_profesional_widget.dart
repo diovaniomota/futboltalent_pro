@@ -1,5 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
@@ -532,8 +533,13 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
         '';
     final titulo = _convocatoria!['titulo'] ?? 'Convocatoria';
     final desc = _convocatoria!['descripcion'] ?? '';
-    final cat = _convocatoria!['categoria'] ?? '';
-    final pos = _convocatoria!['posicion'] ?? '';
+    final cat = normalizePlayerCategory(
+      _convocatoria!['categoria'] ?? _convocatoria!['category'],
+      birthday: _convocatoria!['birthday'],
+    );
+    final pos = normalizePlayerPosition(
+      _convocatoria!['posicion'] ?? _convocatoria!['position'],
+    );
     final min = _convocatoria!['edad_minima'];
     final max = _convocatoria!['edad_maxima'];
     final start = _date(_convocatoria!['fecha_inicio']);

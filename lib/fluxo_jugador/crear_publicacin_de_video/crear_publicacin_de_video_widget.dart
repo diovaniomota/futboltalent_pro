@@ -46,6 +46,66 @@ class _CrearPublicacinDeVideoWidgetState
   String _uploadStatus = '';
   double _uploadProgress = 0;
 
+  bool get _canUploadVideos => FFAppState().canAccessFeature('videos');
+
+  void _showFeatureUnavailableMessage() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Subir videos no está habilitado para tu cuenta.'),
+      ),
+    );
+  }
+
+  Widget _buildFeatureUnavailableState() {
+    return SafeArea(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: const Icon(
+                  Icons.lock_outline_rounded,
+                  size: 34,
+                  color: Color(0xFF475569),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Subir videos no disponible',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Esta funcionalidad no está habilitada para tu cuenta en este momento.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: const Color(0xFF475569),
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +126,10 @@ class _CrearPublicacinDeVideoWidgetState
   }
 
   Future<void> _pickAndUploadVideo() async {
+    if (!_canUploadVideos) {
+      _showFeatureUnavailableMessage();
+      return;
+    }
     try {
       final ImagePicker picker = ImagePicker();
       final XFile? video = await picker.pickVideo(
@@ -160,6 +224,10 @@ class _CrearPublicacinDeVideoWidgetState
   }
 
   Future<void> _publishVideo() async {
+    if (!_canUploadVideos) {
+      _showFeatureUnavailableMessage();
+      return;
+    }
     if (_uploadedVideoUrl == null || _uploadedVideoUrl!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Por favor, selecciona un video primero'),
@@ -270,7 +338,9 @@ class _CrearPublicacinDeVideoWidgetState
 
   @override
   Widget build(BuildContext context) {
-    final userType = context.watch<FFAppState>().userType;
+    final appState = context.watch<FFAppState>();
+    final userType = appState.userType;
+    final canUploadVideos = appState.canAccessFeature('videos');
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
@@ -279,39 +349,41 @@ class _CrearPublicacinDeVideoWidgetState
         body: Stack(
           children: [
             SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 25, 16, 120),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildVideoUploadArea(),
-                    const SizedBox(height: 20),
-                    _buildTextField(
-                        label: 'Título',
-                        hint: 'Ej: Mi mejor gol',
-                        controller: _tituloController,
-                        focusNode: _tituloFocusNode),
-                    const SizedBox(height: 20),
-                    _buildTextField(
-                        label: 'Descripción',
-                        hint: 'Describe tu video',
-                        controller: _descripcionController,
-                        focusNode: _descripcionFocusNode,
-                        maxLines: 4),
-                    const SizedBox(height: 20),
-                    _buildTextField(
-                        label: 'Etiquetas',
-                        hint: 'delantero, gol',
-                        controller: _etiquetasController,
-                        focusNode: _etiquetasFocusNode,
-                        helperText: 'Separa con comas'),
-                    const SizedBox(height: 20),
-                    _buildPrivacySection(),
-                    const SizedBox(height: 30),
-                    _buildPublishButton(),
-                  ],
-                ),
-              ),
+              child: canUploadVideos
+                  ? SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(16, 25, 16, 120),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildVideoUploadArea(),
+                          const SizedBox(height: 20),
+                          _buildTextField(
+                              label: 'Título',
+                              hint: 'Ej: Mi mejor gol',
+                              controller: _tituloController,
+                              focusNode: _tituloFocusNode),
+                          const SizedBox(height: 20),
+                          _buildTextField(
+                              label: 'Descripción',
+                              hint: 'Describe tu video',
+                              controller: _descripcionController,
+                              focusNode: _descripcionFocusNode,
+                              maxLines: 4),
+                          const SizedBox(height: 20),
+                          _buildTextField(
+                              label: 'Etiquetas',
+                              hint: 'delantero, gol',
+                              controller: _etiquetasController,
+                              focusNode: _etiquetasFocusNode,
+                              helperText: 'Separa con comas'),
+                          const SizedBox(height: 20),
+                          _buildPrivacySection(),
+                          const SizedBox(height: 30),
+                          _buildPublishButton(),
+                        ],
+                      ),
+                    )
+                  : _buildFeatureUnavailableState(),
             ),
             if (userType == 'jugador')
               Align(

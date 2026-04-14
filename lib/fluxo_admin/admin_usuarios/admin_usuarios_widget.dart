@@ -1,6 +1,7 @@
 import '/admin/admin_user_management_service.dart';
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
@@ -82,21 +83,22 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
     super.dispose();
   }
 
-  Future<void> _loadUsers() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadUsers({bool showLoading = true, bool allowRetry = true}) async {
+    if (showLoading && mounted) {
+      setState(() => _isLoading = true);
+    }
     try {
-      final response = await SupaFlow.client
-          .from('users')
-          .select()
-          .order('name', ascending: true);
+      var users = await AdminUserManagementService.loadUsersCatalog(
+        includeOperationalFields: true,
+      );
+      if (users.isEmpty && allowRetry) {
+        await Future.delayed(const Duration(milliseconds: 250));
+        users = await AdminUserManagementService.loadUsersCatalog(
+          includeOperationalFields: true,
+        );
+      }
 
       if (mounted) {
-        final users = List<Map<String, dynamic>>.from(response as List)
-            .map((u) => {
-                  ...u,
-                  'userType': FFAppState.normalizeUserType(u['userType']),
-                })
-            .toList();
         setState(() {
           _allUsers = users;
           _applyFilters();
@@ -115,25 +117,28 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
           await AdminUserManagementService.loadCapabilities();
       if (!mounted) return;
       setState(() => _capabilities = capabilities);
+      if (capabilities.isAdmin && _allUsers.isEmpty) {
+        await _loadUsers(showLoading: false, allowRetry: false);
+      }
     } catch (e) {
       debugPrint('Error loading admin capabilities: $e');
     }
   }
 
   void _applyFilters() {
-    final query = _searchController.text.toLowerCase();
+    final query = normalizeLookupKey(_searchController.text);
     _filteredUsers = _allUsers.where((user) {
       final normalizedType = FFAppState.normalizeUserType(user['userType']);
       final matchesType =
           _selectedFilter == 'todos' || normalizedType == _selectedFilter;
-      final searchable = [
+      final searchable = normalizeLookupKey([
         user['name'],
         user['lastname'],
         user['username'],
-        user['city'],
-        user['country'],
-        user['pais'],
-      ].map((value) => value?.toString().toLowerCase() ?? '').join(' ');
+        normalizeCityName(user['city']),
+        normalizeCountryName(user['country']),
+        normalizeCountryName(user['pais']),
+      ].join(' '));
       final matchesSearch = query.isEmpty || searchable.contains(query);
       return matchesType && matchesSearch;
     }).toList();
@@ -320,13 +325,20 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
     final planController = TextEditingController(
       text: _readPlanId(user['plan_id']).toString(),
     );
-    final cityController = TextEditingController(text: user['city'] ?? '');
+    final cityController =
+        TextEditingController(text: normalizeCityName(user['city']));
     final countryController =
-        TextEditingController(text: user['country'] ?? user['pais'] ?? '');
+        TextEditingController(
+            text: normalizeCountryName(user['country'] ?? user['pais']));
     final positionController =
-        TextEditingController(text: user['posicion'] ?? user['position'] ?? '');
+        TextEditingController(
+            text: normalizePlayerPosition(user['posicion'] ?? user['position']));
     final categoryController =
-        TextEditingController(text: user['categoria'] ?? user['category'] ?? '');
+        TextEditingController(
+            text: normalizePlayerCategory(
+          user['categoria'] ?? user['category'],
+          birthday: user['birthday'] ?? user['birth_date'],
+        ));
     final ageController = TextEditingController();
     final currentBirthday = user['birthday'] ?? user['birth_date'];
     if (currentBirthday != null) {
@@ -450,26 +462,26 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
         final birthday = DateTime(now.year - ageValue, now.month, now.day);
         birthdayIso = birthday.toIso8601String();
       }
+      final normalizedPosition =
+          normalizePlayerPosition(positionController.text.trim());
+      final normalizedCategory = normalizePlayerCategory(
+        categoryController.text.trim(),
+        birthday: birthdayIso ?? user['birthday'] ?? user['birth_date'],
+      );
+      final normalizedCountry =
+          normalizeCountryName(countryController.text.trim());
+      final normalizedCity = normalizeCityName(cityController.text.trim());
+
       await SupaFlow.client.from('users').update({
         'name': nameController.text,
         'lastname': lastnameController.text,
         'userType': sanitizedType.isEmpty ? 'jugador' : sanitizedType,
         'plan_id': parsedPlanId,
-        'posicion': positionController.text.trim().isEmpty
-            ? null
-            : positionController.text.trim(),
-        'categoria': categoryController.text.trim().isEmpty
-            ? null
-            : categoryController.text.trim(),
-        'country': countryController.text.trim().isEmpty
-            ? null
-            : countryController.text.trim(),
-        'pais': countryController.text.trim().isEmpty
-            ? null
-            : countryController.text.trim(),
-        'city': cityController.text.trim().isEmpty
-            ? null
-            : cityController.text.trim(),
+        'posicion': normalizedPosition.isEmpty ? null : normalizedPosition,
+        'categoria': normalizedCategory.isEmpty ? null : normalizedCategory,
+        'country': normalizedCountry.isEmpty ? null : normalizedCountry,
+        'pais': normalizedCountry.isEmpty ? null : normalizedCountry,
+        'city': normalizedCity.isEmpty ? null : normalizedCity,
         if (birthdayIso != null) 'birthday': birthdayIso,
         'verification_status': isVerified ? 'verified' : 'pending',
         'is_verified': isVerified,
@@ -1021,17 +1033,26 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredUsers.isEmpty
-                    ? const Center(child: Text('No se encontraron usuarios'))
-                    : RefreshIndicator(
-                        onRefresh: _loadUsers,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: _filteredUsers.length,
-                          itemBuilder: (context, index) =>
-                              _buildUserCard(_filteredUsers[index]),
-                        ),
-                      ),
+                : RefreshIndicator(
+                    onRefresh: _loadUsers,
+                    child: _filteredUsers.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            children: const [
+                              SizedBox(height: 120),
+                              Center(
+                                child: Text('No se encontraron usuarios'),
+                              ),
+                            ],
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: _filteredUsers.length,
+                            itemBuilder: (context, index) =>
+                                _buildUserCard(_filteredUsers[index]),
+                          ),
+                  ),
           ),
         ],
       ),

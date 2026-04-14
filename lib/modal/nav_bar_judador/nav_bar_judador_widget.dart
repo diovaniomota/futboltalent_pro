@@ -3,6 +3,7 @@ import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'nav_bar_judador_model.dart';
 export 'nav_bar_judador_model.dart';
 
@@ -15,6 +16,15 @@ class NavBarJudadorWidget extends StatefulWidget {
 
 class _NavBarJudadorWidgetState extends State<NavBarJudadorWidget> {
   late NavBarJudadorModel _model;
+
+  void _showFeatureUnavailableMessage(String featureName) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$featureName no está habilitado para tu cuenta.'),
+      ),
+    );
+  }
 
   Widget _navButton({
     required IconData icon,
@@ -62,6 +72,9 @@ class _NavBarJudadorWidgetState extends State<NavBarJudadorWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final appState = context.watch<FFAppState>();
+    final canOpenExplorer = appState.canAccessFeature('explorer');
+    final canUploadVideos = appState.canAccessFeature('videos');
     final bottomSafeArea = MediaQuery.of(context).padding.bottom;
     final navBarBottomPadding = bottomSafeArea > 0 ? bottomSafeArea : 8.0;
     final navBarHeight = 56.0 + 8.0 + navBarBottomPadding;
@@ -128,7 +141,16 @@ class _NavBarJudadorWidgetState extends State<NavBarJudadorWidget> {
                                   icon: Icons.search,
                                   buttonSize: iconButtonSize,
                                   size: iconSize,
+                                  iconColor: canOpenExplorer
+                                      ? const Color(0xFF0D3B66)
+                                      : const Color(0xFF94A3B8),
                                   onPressed: () async {
+                                    if (!canOpenExplorer) {
+                                      _showFeatureUnavailableMessage(
+                                        'Explorer',
+                                      );
+                                      return;
+                                    }
                                     context.pushNamed(ExplorarWidget.routeName);
                                   },
                                 ),
@@ -169,9 +191,17 @@ class _NavBarJudadorWidgetState extends State<NavBarJudadorWidget> {
                         icon: Icons.add,
                         size: plusIconSize,
                         buttonSize: plusButtonSize,
-                        fillColor: const Color(0xFF0D3B66),
-                        iconColor: Colors.white,
+                        fillColor: canUploadVideos
+                            ? const Color(0xFF0D3B66)
+                            : const Color(0xFFE2E8F0),
+                        iconColor: canUploadVideos
+                            ? Colors.white
+                            : const Color(0xFF94A3B8),
                         onPressed: () async {
+                          if (!canUploadVideos) {
+                            _showFeatureUnavailableMessage('Subir videos');
+                            return;
+                          }
                           context.pushNamed(
                             CrearPublicacinDeVideoWidget.routeName,
                           );

@@ -5,6 +5,7 @@ import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/club_identity_utils.dart' as club_utils;
 import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/gamification/gamification_service.dart';
@@ -430,20 +431,14 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     try {
       List<Map<String, dynamic>> players;
       try {
-        final response = await SupaFlow.client
-            .from('users')
-            .select()
-            .inFilter('userType',
-                ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
-            .limit(500);
+        final response = await SupaFlow.client.from('users').select().inFilter(
+            'userType',
+            ['jugador', 'jogador', 'player', 'athlete', 'atleta']).limit(500);
         players = List<Map<String, dynamic>>.from(response);
       } catch (_) {
-        final response = await SupaFlow.client
-            .from('users')
-            .select()
-            .inFilter('usertype',
-                ['jugador', 'jogador', 'player', 'athlete', 'atleta'])
-            .limit(500);
+        final response = await SupaFlow.client.from('users').select().inFilter(
+            'usertype',
+            ['jugador', 'jogador', 'player', 'athlete', 'atleta']).limit(500);
         players = List<Map<String, dynamic>>.from(response);
       }
       if (hasTextQuery) {
@@ -543,19 +538,19 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       final allClubs = List<Map<String, dynamic>>.from(response);
       final clubs = hasTextQuery
           ? allClubs.where((club) {
-              final name =
-                  (club['nombre'] ?? club['name'] ?? club['club_name'] ?? 'Club')
-                      .toString()
-                      .toLowerCase();
+              final name = (club['nombre'] ??
+                      club['name'] ??
+                      club['club_name'] ??
+                      'Club')
+                  .toString()
+                  .toLowerCase();
               final city = (club['city'] ?? club['ubicacion'] ?? '')
                   .toString()
                   .toLowerCase();
-              final league = (club['liga'] ??
-                      club['league'] ??
-                      club['league_name'] ??
-                      '')
-                  .toString()
-                  .toLowerCase();
+              final league =
+                  (club['liga'] ?? club['league'] ?? club['league_name'] ?? '')
+                      .toString()
+                      .toLowerCase();
               final country = (club['pais'] ??
                       club['country'] ??
                       club['country_name'] ??
@@ -612,8 +607,9 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       await _decorateTryoutsWithClubData(allTryouts);
       final tryouts = hasTextQuery
           ? allTryouts.where((row) {
-              final title =
-                  (row['titulo'] ?? row['title'] ?? '').toString().toLowerCase();
+              final title = (row['titulo'] ?? row['title'] ?? '')
+                  .toString()
+                  .toLowerCase();
               final desc = (row['descripcion'] ?? row['description'] ?? '')
                   .toString()
                   .toLowerCase();
@@ -744,24 +740,16 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     try {
       List<Map<String, dynamic>> players;
       try {
-        final response = await SupaFlow.client
-            .from('users')
-            .select()
-            .inFilter(
-              'userType',
-              ['jugador', 'jogador', 'player', 'athlete', 'atleta'],
-            )
-            .limit(1200);
+        final response = await SupaFlow.client.from('users').select().inFilter(
+          'userType',
+          ['jugador', 'jogador', 'player', 'athlete', 'atleta'],
+        ).limit(1200);
         players = List<Map<String, dynamic>>.from(response);
       } catch (_) {
-        final response = await SupaFlow.client
-            .from('users')
-            .select()
-            .inFilter(
-              'usertype',
-              ['jugador', 'jogador', 'player', 'athlete', 'atleta'],
-            )
-            .limit(1200);
+        final response = await SupaFlow.client.from('users').select().inFilter(
+          'usertype',
+          ['jugador', 'jogador', 'player', 'athlete', 'atleta'],
+        ).limit(1200);
         players = List<Map<String, dynamic>>.from(response);
       }
 
@@ -773,7 +761,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           _extractUniqueStrings(players.map(_playerPosition));
       _playerFilterCountryOptions =
           _extractUniqueStrings(players.map(_playerCountry));
-      _playerFilterCityOptions = _extractUniqueStrings(players.map(_playerCity));
+      _playerFilterCityOptions =
+          _extractUniqueStrings(players.map(_playerCity));
       _playerFilterLevelOptions =
           _extractUniqueStrings(players.map(_playerLevel));
     } catch (_) {
@@ -785,12 +774,10 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     }
 
     try {
-      final response = await SupaFlow.client
-          .from('clubs')
-          .select()
-          .limit(1200);
+      final response = await SupaFlow.client.from('clubs').select().limit(1200);
       final clubs = List<Map<String, dynamic>>.from(response);
-      _clubFilterCountryOptions = _extractUniqueStrings(clubs.map(_clubCountry));
+      _clubFilterCountryOptions =
+          _extractUniqueStrings(clubs.map(_clubCountry));
       _clubFilterCityOptions = _extractUniqueStrings(clubs.map(_clubCity));
       _clubFilterLeagueOptions = _extractUniqueStrings(clubs.map(_clubLeague));
     } catch (_) {
@@ -1001,8 +988,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     }
   }
 
-  ({Color background, Color foreground, IconData icon})
-      _pipelineBadgeStyle(String status) {
+  ({Color background, Color foreground, IconData icon}) _pipelineBadgeStyle(
+      String status) {
     switch (_normalizeStatus(status)) {
       case 'preseleccionado':
         return (
@@ -1129,26 +1116,40 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     );
   }
 
+  double _screenWidth(BuildContext context) =>
+      MediaQuery.of(context).size.width;
+
+  double _textScale(BuildContext context) =>
+      MediaQuery.textScalerOf(context).scale(1);
+
+  bool _isCompactDashboard(BuildContext context) =>
+      _screenWidth(context) < 360 || _textScale(context) > 1.05;
+
+  bool _shouldStackDashboardActions(BuildContext context) =>
+      _screenWidth(context) < 340 || _textScale(context) > 1.12;
+
+  Widget _buildAdaptiveButtonLabel(
+    String label, {
+    required Color color,
+    double fontSize = 12.5,
+  }) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.inter(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   String _categoryFromBirthday(dynamic birthday) {
-    if (birthday == null) return 'N/A';
-
-    try {
-      final birth = DateTime.parse(birthday.toString());
-      final now = DateTime.now();
-      int age = now.year - birth.year;
-      if (now.month < birth.month ||
-          (now.month == birth.month && now.day < birth.day)) {
-        age--;
-      }
-
-      if (age <= 12) return 'U12';
-      if (age <= 14) return 'U14';
-      if (age <= 16) return 'U16';
-      if (age <= 19) return 'U19';
-      return 'Senior';
-    } catch (_) {
-      return 'N/A';
-    }
+    return playerCategoryFromBirthday(birthday) ?? 'N/A';
   }
 
   int? _birthYear(dynamic birthday) {
@@ -1187,58 +1188,61 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       player['country'],
       player['country_name'],
     ]);
-    if (direct != null) return direct;
+    if (direct != null) return normalizeCountryName(direct);
 
     final rawCountryId = player['country_id'];
     final countryId = rawCountryId is int
         ? rawCountryId
         : int.tryParse(rawCountryId?.toString() ?? '');
     if (countryId == null) return '';
-    return _countryNameById[countryId] ?? '';
+    return normalizeCountryName(_countryNameById[countryId]);
   }
 
   String _clubCountry(Map<String, dynamic> club) {
-    return _firstNonEmpty([
+    return normalizeCountryName(_firstNonEmpty([
           club['pais'],
           club['country'],
           club['country_name'],
         ]) ??
-        '';
+        '');
   }
 
   String _clubCity(Map<String, dynamic> club) {
-    return _firstNonEmpty([
+    return normalizeCityName(_firstNonEmpty([
           club['city'],
           club['ciudad'],
           club['ubicacion'],
           club['location'],
         ]) ??
-        '';
+        '');
   }
 
   String _clubLeague(Map<String, dynamic> club) {
-    return _firstNonEmpty([
+    return normalizeLeagueName(_firstNonEmpty([
           club['liga'],
           club['league'],
           club['league_name'],
         ]) ??
-        '';
+        '');
   }
 
   String _playerPosition(Map<String, dynamic> player) {
-    return _firstNonEmpty([
+    final position = normalizePlayerPosition(_firstNonEmpty([
           player['posicion'],
           player['position'],
         ]) ??
-        'Sin posición';
+        '');
+    return position.isNotEmpty ? position : 'Sin posición';
   }
 
   String _playerCategory(Map<String, dynamic> player) {
-    return _firstNonEmpty([
-          player['categoria'],
-          player['category'],
-        ]) ??
-        _categoryFromBirthday(player['birthday'] ?? player['birth_date']);
+    return normalizePlayerCategory(
+        _firstNonEmpty([
+              player['categoria'],
+              player['category'],
+            ]) ??
+            '',
+        birthday: player['birthday'] ?? player['birth_date']);
   }
 
   String _playerLevel(Map<String, dynamic> player) {
@@ -1249,11 +1253,11 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }
 
   String _playerCity(Map<String, dynamic> player) {
-    return _firstNonEmpty([
+    return normalizeCityName(_firstNonEmpty([
           player['city'],
           player['ciudad'],
         ]) ??
-        '';
+        '');
   }
 
   String _resolveTryoutClubName(Map<String, dynamic> tryout) {
@@ -1279,11 +1283,11 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }
 
   String _resolveTryoutCategory(Map<String, dynamic> tryout) {
-    final direct = _firstNonEmpty([
+    final direct = normalizePlayerCategory(_firstNonEmpty([
       tryout['categoria'],
       tryout['category'],
-    ]);
-    if (direct != null) return direct;
+    ]));
+    if (direct.isNotEmpty) return direct;
 
     final minAge = tryout['edad_minima'] ?? tryout['edad_min'];
     final maxAge = tryout['edad_maxima'] ?? tryout['edad_max'];
@@ -1294,12 +1298,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }
 
   String _resolveTryoutPosition(Map<String, dynamic> tryout) {
-    return _firstNonEmpty([
+    return normalizePlayerPosition(_firstNonEmpty([
           tryout['posicion'],
           tryout['position'],
           tryout['posição'],
         ]) ??
-        '';
+        '');
   }
 
   String _resolveTryoutLocation(Map<String, dynamic> tryout) {
@@ -1309,7 +1313,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       tryout['city'],
       tryout['ciudad'],
     ]);
-    if (direct != null) return direct;
+    if (direct != null) return normalizeCityName(direct);
 
     final clubData = tryout['club_data'];
     if (clubData is Map) {
@@ -1324,7 +1328,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       tryout['country'],
       tryout['country_name'],
     ]);
-    if (direct != null) return direct;
+    if (direct != null) return normalizeCountryName(direct);
 
     final clubData = tryout['club_data'];
     if (clubData is Map) {
@@ -1558,6 +1562,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   void _openPublicClubProfile(Map<String, dynamic> club) {
     final clubRef = _clubRefFromMap(club);
     if (clubRef.isEmpty) return;
+
+    if (_clubRefs.contains(clubRef) ||
+        (currentUserUid.isNotEmpty && clubRef == currentUserUid)) {
+      context.pushNamed(ConfiguracinWidget.routeName);
+      return;
+    }
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -2513,16 +2523,18 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               ),
                               _drawerItem(
                                 context,
-                                label: 'Ver perfil',
+                                label: 'Perfil público',
                                 icon: Icons.visibility_outlined,
                                 selected: false,
                                 onTap: () {
-                                  Navigator.pop(context);
-                                  if (_clubRefs.isNotEmpty) {
-                                    Navigator.of(context).push(
+                                  final ownClubRef = _clubRefs.isNotEmpty
+                                      ? _clubRefs.first
+                                      : currentUserUid;
+                                  if (ownClubRef.isNotEmpty) {
+                                    Navigator.of(ctx).push(
                                       MaterialPageRoute(
                                         builder: (_) => PerfilPublicoClubWidget(
-                                          clubRef: _clubRefs.first,
+                                          clubRef: ownClubRef,
                                         ),
                                       ),
                                     );
@@ -2531,16 +2543,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               ),
                               _drawerItem(
                                 context,
-                                label: 'Editar perfil',
-                                icon: Icons.edit_outlined,
-                                selected: false,
-                                onTap: () => context
-                                    .pushNamed(ConfiguracinWidget.routeName),
-                              ),
-                              _drawerItem(
-                                context,
-                                label: 'Club',
-                                icon: Icons.settings_outlined,
+                                label: 'Mi perfil',
+                                icon: Icons.shield_outlined,
                                 selected: false,
                                 onTap: () => context
                                     .pushNamed(ConfiguracinWidget.routeName),
@@ -2648,7 +2652,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               child: Text(
                 'Dashboard',
                 style: GoogleFonts.inter(
-                  fontSize: 30,
+                  fontSize: 28,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -2658,10 +2662,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         Padding(
           padding: const EdgeInsets.only(left: 12, bottom: 14),
           child: Text(
-            'Gestión de talento de ${_clubName ?? 'tu club'} a partir de convocatorias y seguimiento de candidatos.',
+            'Convocatorias y candidatos de ${_clubName ?? 'tu club'}.',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
               color: const Color(0xFF4A5568),
-              fontSize: 13,
+              fontSize: 12.5,
             ),
           ),
         ),
@@ -2682,10 +2688,10 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         _buildSectionHeader(title: 'Postulaciones recientes'),
         _buildRecentPostulacionesSection(),
         const SizedBox(height: 18),
-        _buildSectionHeader(title: 'Jugadores verificados recientes'),
+        _buildSectionHeader(title: 'Jugadores verificados'),
         _buildSuggestedPlayersSection(),
         const SizedBox(height: 18),
-        _buildSectionHeader(title: 'Seguimiento de candidatos'),
+        _buildSectionHeader(title: 'Seguimiento'),
         _buildPipelineSection(),
       ],
     );
@@ -2707,7 +2713,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               child: Text(
                 'Buscar',
                 style: GoogleFonts.inter(
-                  fontSize: 28,
+                  fontSize: 26,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -2717,10 +2723,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         Padding(
           padding: const EdgeInsets.only(left: 12, bottom: 14),
           child: Text(
-            'Buscá jugadores, clubes y convocatorias sin mezclar resultados con el dashboard.',
+            'Buscá jugadores, clubes y convocatorias.',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
               color: const Color(0xFF4A5568),
-              fontSize: 13,
+              fontSize: 12.5,
             ),
           ),
         ),
@@ -2747,7 +2755,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             icon: Icons.search_rounded,
             title: 'Empezá a explorar',
             subtitle:
-                'Podés escribir al menos 2 letras o aplicar filtros para ver resultados en Jugadores, Clubes o Convocatorias.',
+                'Escribí 2 letras o usá filtros para ver resultados.',
           ),
         ],
       ],
@@ -2792,32 +2800,57 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   Widget _buildSectionHeader({required String title, Widget? trailing}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF1A202C),
-              ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final shouldStack =
+              trailing != null && (constraints.maxWidth < 330 || _isCompactDashboard(context));
+
+          final titleWidget = Text(
+            title,
+            maxLines: shouldStack ? 2 : 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1A202C),
             ),
-          ),
-          if (trailing != null) trailing,
-        ],
+          );
+
+          if (!shouldStack) {
+            return Row(
+              children: [
+                Expanded(child: titleWidget),
+                if (trailing != null) trailing,
+              ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              titleWidget,
+              if (trailing != null) ...[
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: trailing,
+                ),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _buildSearchBar() {
     final hintText = !widget.searchOnly
-        ? 'Buscar jugador, club o convocatoria...'
+        ? 'Buscar jugadores, clubes o convocatorias'
         : _homeScope == 'clubes'
-            ? 'Buscar club, ciudad...'
+            ? 'Buscar club o ciudad'
             : _homeScope == 'tryouts'
-                ? 'Buscar convocatoria, categoría, posición, país...'
-                : 'Buscar jugador, club, posición, año, ciudad...';
+                ? 'Buscar convocatoria o posición'
+                : 'Buscar jugador o ciudad';
 
     if (!widget.searchOnly) {
       return InkWell(
@@ -2856,9 +2889,11 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               Expanded(
                 child: Text(
                   hintText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
                     color: const Color(0xFF94A3B8),
-                    fontSize: 15,
+                    fontSize: 14,
                   ),
                 ),
               ),
@@ -2912,7 +2947,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                 hintText: hintText,
                 hintStyle: GoogleFonts.inter(
                   color: const Color(0xFF94A3B8),
-                  fontSize: 15,
+                  fontSize: 14,
                 ),
               ),
             ),
@@ -3651,124 +3686,179 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
     final previewItems = _activeConvocatorias.take(3).toList();
 
-    return SizedBox(
-      height: 208,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: previewItems.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (_, index) {
-          final conv = previewItems[index];
-          final title = conv['titulo']?.toString() ?? 'Convocatoria';
-          final zone = conv['ubicacion']?.toString() ?? 'Sin zona';
-          final minAge = conv['edad_minima'] ?? conv['edad_min'];
-          final maxAge = conv['edad_maxima'] ?? conv['edad_max'];
-          final category = (minAge != null || maxAge != null)
-              ? '${minAge ?? '-'}-${maxAge ?? '-'}'
-              : 'N/A';
-          final position = _resolveTryoutPosition(conv);
-          final postulaciones = conv['postulaciones_count'] ?? 0;
-          final saved = conv['saved_count'] ?? 0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = _isCompactDashboard(context);
+        final stackedActions = _shouldStackDashboardActions(context);
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width - 32;
+        final cardWidth = compact
+            ? (maxWidth - 4).clamp(248.0, 320.0).toDouble()
+            : 286.0;
+        final sectionHeight = stackedActions
+            ? 288.0
+            : compact
+                ? 250.0
+                : 208.0;
 
-          return Container(
-            width: 286,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        return SizedBox(
+          height: sectionHeight,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: previewItems.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (_, index) {
+              final conv = previewItems[index];
+              final title = conv['titulo']?.toString() ?? 'Convocatoria';
+              final zone = conv['ubicacion']?.toString() ?? 'Sin zona';
+              final minAge = conv['edad_minima'] ?? conv['edad_min'];
+              final maxAge = conv['edad_maxima'] ?? conv['edad_max'];
+              final category = (minAge != null || maxAge != null)
+                  ? '${minAge ?? '-'}-${maxAge ?? '-'}'
+                  : 'N/A';
+              final position = _resolveTryoutPosition(conv);
+              final postulaciones = conv['postulaciones_count'] ?? 0;
+              final saved = conv['saved_count'] ?? 0;
+
+              return Container(
+                width: cardWidth,
+                padding: EdgeInsets.all(compact ? 14 : 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8F0FE),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        'Activa',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF0D3B66),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE8F0FE),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            'Activa',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0D3B66),
+                            ),
+                          ),
                         ),
+                        const Spacer(),
+                        Text(
+                          '${index + 1}/${previewItems.length}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      title,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700,
+                        fontSize: compact ? 15 : 16,
+                        color: const Color(0xFF1A202C),
                       ),
+                      maxLines: compact ? 3 : 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _metaChip('Zona: $zone'),
+                        _metaChip('Categoría: $category'),
+                        if (position.isNotEmpty) _metaChip('Posición: $position'),
+                        _metaChip('Postulaciones: $postulaciones'),
+                        _metaChip('En seguimiento: $saved'),
+                      ],
                     ),
                     const Spacer(),
-                    Text(
-                      '${index + 1}/${previewItems.length}',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF94A3B8),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  title,
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                    color: const Color(0xFF1A202C),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    _metaChip('Zona: $zone'),
-                    _metaChip('Categoria: $category'),
-                    if (position.isNotEmpty) _metaChip('Posición: $position'),
-                    _metaChip('Postulaciones: $postulaciones'),
-                    _metaChip('En seguimiento: $saved'),
-                  ],
-                ),
-                const Spacer(),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => _showCandidatesSheet(conv),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0D3B66),
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                        ),
-                        child: const Text(
-                          'Ver candidatos',
-                          style: TextStyle(color: Colors.white),
+                    if (stackedActions) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => _showCandidatesSheet(conv),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0D3B66),
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                          ),
+                          child: _buildAdaptiveButtonLabel(
+                            'Ver candidatos',
+                            color: Colors.white,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () =>
-                            context.pushNamed(PostulacionesWidget.routeName),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 11),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () =>
+                              context.pushNamed(PostulacionesWidget.routeName),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                          ),
+                          child: _buildAdaptiveButtonLabel(
+                            'Postulaciones',
+                            color: const Color(0xFF0D3B66),
+                          ),
                         ),
-                        child: const Text('Postulaciones'),
                       ),
-                    ),
+                    ] else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => _showCandidatesSheet(conv),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0D3B66),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 11),
+                              ),
+                              child: _buildAdaptiveButtonLabel(
+                                'Ver candidatos',
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => context.pushNamed(
+                                PostulacionesWidget.routeName,
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 11),
+                              ),
+                              child: _buildAdaptiveButtonLabel(
+                                'Postulaciones',
+                                color: const Color(0xFF0D3B66),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
-              ],
-            ),
-          );
-        },
-      ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -4024,46 +4114,70 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildRecentCardAction(
-                  label: 'Ver perfil',
-                  icon: Icons.person_outline_rounded,
-                  onPressed: userId.isEmpty
-                      ? null
-                      : () {
-                          context.pushNamed(
-                            'perfil_profesional_solicitar_Contato',
-                            queryParameters: {'userId': userId},
-                          );
-                        },
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stackActions = constraints.maxWidth < 300 ||
+                  _shouldStackDashboardActions(context);
+
+              final profileAction = _buildRecentCardAction(
+                label: 'Ver perfil',
+                icon: Icons.person_outline_rounded,
+                onPressed: userId.isEmpty
+                    ? null
+                    : () {
+                        context.pushNamed(
+                          'perfil_profesional_solicitar_Contato',
+                          queryParameters: {'userId': userId},
+                        );
+                      },
+              );
+
+              final videoAction = _buildRecentCardAction(
+                label: 'Ver video',
+                icon: Icons.play_circle_outline_rounded,
+                onPressed: hasVideo ? () => _openPlayerVideo(videoData) : null,
+              );
+
+              final pipelineAction = _buildRecentCardAction(
+                label: 'Agregar al pipeline',
+                icon: Icons.playlist_add_rounded,
+                primary: true,
+                onPressed: () => _updatePipelineStatus(
+                  post['id']?.toString() ?? '',
+                  'guardado',
+                  sourceTable: post['_source_table']?.toString(),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildRecentCardAction(
-                  label: 'Ver video',
-                  icon: Icons.play_circle_outline_rounded,
-                  onPressed:
-                      hasVideo ? () => _openPlayerVideo(videoData) : null,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: _buildRecentCardAction(
-              label: 'Agregar al pipeline',
-              icon: Icons.playlist_add_rounded,
-              primary: true,
-              onPressed: () => _updatePipelineStatus(
-                post['id']?.toString() ?? '',
-                'guardado',
-                sourceTable: post['_source_table']?.toString(),
-              ),
-            ),
+              );
+
+              if (stackActions) {
+                return Column(
+                  children: [
+                    SizedBox(width: double.infinity, child: profileAction),
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: videoAction),
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: pipelineAction),
+                  ],
+                );
+              }
+
+              return Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: profileAction),
+                      const SizedBox(width: 8),
+                      Expanded(child: videoAction),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: pipelineAction,
+                  ),
+                ],
+              );
+            },
           ),
         ],
       ),

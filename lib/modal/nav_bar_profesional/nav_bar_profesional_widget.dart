@@ -3,6 +3,7 @@ import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:provider/provider.dart';
 import 'nav_bar_profesional_model.dart';
 export 'nav_bar_profesional_model.dart';
 
@@ -16,6 +17,15 @@ class NavBarProfesionalWidget extends StatefulWidget {
 
 class _NavBarProfesionalWidgetState extends State<NavBarProfesionalWidget> {
   late NavBarProfesionalModel _model;
+
+  void _showFeatureUnavailableMessage(String featureName) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$featureName no está habilitado para tu cuenta.'),
+      ),
+    );
+  }
 
   Widget _navButton({
     required Widget icon,
@@ -57,6 +67,8 @@ class _NavBarProfesionalWidgetState extends State<NavBarProfesionalWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final appState = context.watch<FFAppState>();
+    final canOpenExplorer = appState.canAccessFeature('explorer');
     final bottomSafeArea = MediaQuery.of(context).padding.bottom;
     final navBarBottomPadding = bottomSafeArea > 0 ? bottomSafeArea : 8.0;
     final navBarHeight = 56.0 + 8.0 + navBarBottomPadding;
@@ -112,12 +124,18 @@ class _NavBarProfesionalWidgetState extends State<NavBarProfesionalWidget> {
                   Expanded(
                     child: Center(
                       child: _navButton(
-                        icon: const FaIcon(
+                        icon: FaIcon(
                           FontAwesomeIcons.magnifyingGlass,
-                          color: Color(0xFF0D3B66),
+                          color: canOpenExplorer
+                              ? const Color(0xFF0D3B66)
+                              : const Color(0xFF94A3B8),
                           size: 30.0,
                         ),
                         onPressed: () async {
+                          if (!canOpenExplorer) {
+                            _showFeatureUnavailableMessage('Explorer');
+                            return;
+                          }
                           context.pushNamed(ExplorarWidget.routeName);
                         },
                       ),

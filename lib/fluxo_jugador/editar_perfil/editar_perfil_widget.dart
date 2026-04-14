@@ -1,6 +1,7 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/profile_history_utils.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -45,9 +46,6 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   // Focus nodes
   FocusNode? _nomeFocusNode;
   FocusNode? _usernameFocusNode;
-  FocusNode? _posicaoFocusNode;
-  FocusNode? _pieDominanteFocusNode;
-  FocusNode? _lugarFocusNode;
 
   // Estado
   bool _isLoading = true;
@@ -59,6 +57,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   String _currentUserType = 'jugador';
   bool _hasPlayerRecord = false;
   bool _hasScoutRecord = false;
+  List<Map<String, dynamic>> _countries = [];
+  String? _selectedCountryId;
 
   // Opção selecionada (club ou sin club)
   String? _selectedPlayerStatus;
@@ -98,11 +98,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     _model = createModel(context, () => EditarPerfilModel());
     _nomeFocusNode = FocusNode();
     _usernameFocusNode = FocusNode();
-    _posicaoFocusNode = FocusNode();
-    _pieDominanteFocusNode = FocusNode();
-    _lugarFocusNode = FocusNode();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadCountries();
       _loadUserData();
     });
   }
@@ -139,9 +137,6 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     }
     _nomeFocusNode?.dispose();
     _usernameFocusNode?.dispose();
-    _posicaoFocusNode?.dispose();
-    _pieDominanteFocusNode?.dispose();
-    _lugarFocusNode?.dispose();
     super.dispose();
   }
 
@@ -222,20 +217,41 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           TextEditingController(text: merged['name']?.toString() ?? '');
       _usernameController =
           TextEditingController(text: merged['username']?.toString() ?? '');
-      _birthdayController =
-          TextEditingController(text: _formatDateForInput(merged['birthday']));
+      _birthdayController = TextEditingController(
+          text: _formatDateForInput(merged['birthday'] ??
+              merged['birth_date'] ??
+              merged['fecha_nacimiento']));
       _countryController = TextEditingController(
-          text: _firstNonEmptyValue([merged['country'], merged['pais']]) ?? '');
-      _cityController =
-          TextEditingController(text: merged['city']?.toString() ?? '');
-      _posicaoController =
-          TextEditingController(text: merged['posicion']?.toString() ?? '');
-      _categoryController =
-          TextEditingController(text: merged['categoria']?.toString() ?? '');
+        text: normalizeCountryName(
+          _firstNonEmptyValue([
+                merged['country'],
+                merged['pais'],
+                merged['country_name'],
+              ]) ??
+              '',
+        ),
+      );
+      _cityController = TextEditingController(
+        text: normalizeCityName(merged['city']?.toString() ?? ''),
+      );
+      _posicaoController = TextEditingController(
+        text: normalizePlayerPosition(
+          _firstNonEmptyValue([merged['posicion'], merged['position']]) ?? '',
+        ),
+      );
+      _categoryController = TextEditingController(
+        text: normalizePlayerCategory(
+          _firstNonEmptyValue([merged['categoria'], merged['category']]) ?? '',
+          birthday: merged['birthday'] ?? merged['birth_date'],
+        ),
+      );
       _pieDominanteController = TextEditingController(
-        text: _firstNonEmptyValue(
-                [merged['dominant_foot'], merged['pie_dominante']]) ??
-            '',
+        text: normalizeDominantFoot(
+          _firstNonEmptyValue(
+                [merged['dominant_foot'], merged['pie_dominante']],
+              ) ??
+              '',
+        ),
       );
       _clubController = TextEditingController(text: currentHistoryClub);
       _experienceController =
@@ -260,10 +276,18 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         text: _parseCollaborations(merged['colaboraciones']).join(', '),
       );
       _selectedPlayerStatus = _normalizePlayerStatus(merged['player_status']);
-      _selectedBirthday = _parseDate(merged['birthday']);
+      _selectedBirthday = _parseDate(
+        merged['birthday'] ??
+            merged['birth_date'] ??
+            merged['fecha_nacimiento'],
+      );
       _photoUrl = merged['photo_url']?.toString();
       _coverUrl = merged['cover_url']?.toString();
       _setHistoryControllers(normalizedHistory);
+      _selectedCountryId = merged['country_id']?.toString();
+      _applySelectedCountryByName(_countryController?.text,
+          updateController: false);
+      _refreshDerivedPlayerCategory();
     } catch (e) {
       debugPrint('Error al cargar usuario: $e');
       _errorMessage = 'Error al cargar datos';
@@ -271,6 +295,25 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _loadCountries() async {
+    try {
+      final response = await SupaFlow.client
+          .from('countrys')
+          .select('id, name')
+          .order('name');
+      if (!mounted) return;
+      setState(() {
+        _countries = List<Map<String, dynamic>>.from(response as List);
+        _applySelectedCountryByName(
+          _countryController?.text,
+          updateController: false,
+        );
+      });
+    } catch (e) {
+      debugPrint('Error al cargar países: $e');
     }
   }
 
@@ -631,7 +674,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       final historyItems = _collectHistoryItems();
       final currentClubName =
           currentClubFromProfileHistory(historyItems)?.trim() ?? '';
-      final hasCurrentHistory = historyItems.any((item) => item['is_current'] == true);
+      final hasCurrentHistory =
+          historyItems.any((item) => item['is_current'] == true);
 
       for (final item in historyItems) {
         final name = item['name']?.toString().trim() ?? '';
@@ -658,8 +702,18 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         }
       }
 
-      final country = _countryController?.text.trim() ?? '';
-      final city = _cityController?.text.trim() ?? '';
+      final country = normalizeCountryName(_countryController?.text);
+      final city = normalizeCityName(_cityController?.text);
+      _applySelectedCountryByName(country, updateController: false);
+      final normalizedPosition =
+          normalizePlayerPosition(_posicaoController?.text);
+      final normalizedCategory = normalizePlayerCategory(
+        _categoryController?.text,
+        birthday:
+            _selectedBirthday?.toIso8601String() ?? _birthdayController?.text,
+      );
+      final normalizedFoot =
+          normalizeDominantFoot(_pieDominanteController?.text);
 
       final userPayload = <String, dynamic>{
         'name': _nomeController?.text.trim() ?? '',
@@ -667,6 +721,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         'city': city,
         'country': country,
         'pais': country,
+        'country_id': _selectedCountryId != null
+            ? int.tryParse(_selectedCountryId!)
+            : null,
         'birthday': _selectedBirthday?.toIso8601String(),
         'birth_date': _selectedBirthday?.toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
@@ -676,15 +733,18 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         userPayload.addAll({
           'bio': _bioController?.text.trim() ?? '',
           'descripcion': _bioController?.text.trim() ?? '',
-          'colaboraciones': _collaborationsController?.text.trim().isEmpty == true
-              ? null
-              : _collaborationsController?.text.trim(),
+          'colaboraciones':
+              _collaborationsController?.text.trim().isEmpty == true
+                  ? null
+                  : _collaborationsController?.text.trim(),
         });
       } else {
         userPayload.addAll({
-          'posicion': _posicaoController?.text.trim() ?? '',
-          'categoria': _categoryController?.text.trim() ?? '',
-          'pie_dominante': _pieDominanteController?.text.trim() ?? '',
+          'posicion': normalizedPosition,
+          'position': normalizedPosition,
+          'categoria': normalizedCategory,
+          'category': normalizedCategory,
+          'pie_dominante': normalizedFoot,
           'juega_en_club': hasCurrentHistory,
           'player_status': _selectedPlayerStatus,
           'historial_clubes': historyItems,
@@ -722,7 +782,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         }
       } else {
         final playerPayload = <String, dynamic>{
-          'dominant_foot': _pieDominanteController?.text.trim() ?? '',
+          'dominant_foot': normalizedFoot,
           'club': currentClubName,
           'experience': _tryParseInt(_experienceController?.text),
           'altura': _tryParseDouble(_heightController?.text),
@@ -843,6 +903,49 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     return text;
   }
 
+  List<String> get _countryOptions => _countries
+      .map((country) => normalizeCountryName(country['name']))
+      .where((country) => country.isNotEmpty)
+      .toList();
+
+  void _applySelectedCountryByName(
+    String? countryName, {
+    bool updateController = true,
+  }) {
+    final normalized = normalizeCountryName(countryName);
+    if (normalized.isEmpty) {
+      _selectedCountryId = null;
+      if (updateController) {
+        _countryController?.text = '';
+      }
+      return;
+    }
+
+    final match = _countries.cast<Map<String, dynamic>?>().firstWhere(
+          (country) =>
+              normalizeLookupKey(country?['name']) ==
+              normalizeLookupKey(normalized),
+          orElse: () => null,
+        );
+
+    _selectedCountryId = match?['id']?.toString();
+    if (updateController) {
+      _countryController?.text =
+          normalizeCountryName(match?['name']?.toString() ?? normalized);
+    }
+  }
+
+  void _refreshDerivedPlayerCategory() {
+    final derivedCategory = normalizePlayerCategory(
+      _categoryController?.text,
+      birthday:
+          _selectedBirthday?.toIso8601String() ?? _birthdayController?.text,
+    );
+    if (derivedCategory.isNotEmpty) {
+      _categoryController?.text = derivedCategory;
+    }
+  }
+
   String? _firstNonEmptyValue(List<dynamic> values) {
     for (final value in values) {
       final text = value?.toString().trim() ?? '';
@@ -934,7 +1037,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         TextEditingController(text: item['name'] ?? ''),
       );
       _historyPositionControllers.add(
-        TextEditingController(text: item['position'] ?? ''),
+        TextEditingController(
+          text: normalizePlayerPosition(item['position'] ?? ''),
+        ),
       );
       _historyNoteControllers.add(
         TextEditingController(text: item['note'] ?? ''),
@@ -953,9 +1058,11 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     final items = <Map<String, dynamic>>[];
     for (var i = 0; i < _historyClubControllers.length; i++) {
       final name = _historyClubControllers[i].text.trim();
-      final position = _historyPositionControllers[i].text.trim();
+      final position =
+          normalizePlayerPosition(_historyPositionControllers[i].text);
       final note = _historyNoteControllers[i].text.trim();
-      final startYear = _historyStartYears.length > i ? _historyStartYears[i] : null;
+      final startYear =
+          _historyStartYears.length > i ? _historyStartYears[i] : null;
       final endYear = _historyEndYears.length > i ? _historyEndYears[i] : null;
       final isCurrent =
           _historyCurrentFlags.length > i && _historyCurrentFlags[i] == true;
@@ -996,6 +1103,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     setState(() {
       _selectedBirthday = picked;
       _birthdayController?.text = _formatDateForInput(picked.toIso8601String());
+      _refreshDerivedPlayerCategory();
     });
   }
 
@@ -1095,7 +1203,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             ),
           ),
           DropdownButtonFormField<String>(
-            initialValue: value,
+            initialValue:
+                value != null && options.contains(value) ? value : null,
             onChanged: onChanged,
             isExpanded: true,
             decoration: _buildInputDecoration(
@@ -1319,11 +1428,20 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                     ),
                   ),
                 ),
-                _buildTextField(
+                _buildDropdownField(
                   label: 'Posición',
-                  controller: _historyPositionControllers[index],
-                  focusNode: null,
-                  hintText: 'Mediocampista',
+                  hintText: 'Selecciona una posición',
+                  value: canonicalPlayerPositions.contains(
+                    _historyPositionControllers[index].text.trim(),
+                  )
+                      ? _historyPositionControllers[index].text.trim()
+                      : null,
+                  onChanged: (value) {
+                    setState(() {
+                      _historyPositionControllers[index].text = value ?? '';
+                    });
+                  },
+                  options: canonicalPlayerPositions,
                 ),
                 _buildTextField(
                   label: 'Nota opcional',
@@ -1385,26 +1503,39 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             onTap: _pickBirthday,
             suffixIcon: const Icon(Icons.calendar_today_outlined,
                 size: 18, color: Color(0xFF718096))),
-        _buildTextField(
+        _buildDropdownField(
             label: 'País / nacionalidad',
-            controller: _countryController,
-            focusNode: null,
-            hintText: 'Argentina'),
+            hintText: 'Selecciona tu país',
+            value: _countryOptions.contains(_countryController?.text.trim())
+                ? _countryController?.text.trim()
+                : null,
+            onChanged: (value) {
+              setState(() => _applySelectedCountryByName(value));
+            },
+            options: _countryOptions),
         _buildTextField(
             label: 'Ciudad',
             controller: _cityController,
             focusNode: null,
-            hintText: 'Rosario'),
-        _buildTextField(
+            hintText: 'Rosario',
+            textCapitalization: TextCapitalization.words),
+        _buildDropdownField(
             label: 'Posición principal',
-            controller: _posicaoController,
-            focusNode: _posicaoFocusNode,
-            hintText: 'Extremo derecho'),
+            hintText: 'Selecciona tu posición',
+            value: canonicalPlayerPositions
+                    .contains(_posicaoController?.text.trim())
+                ? _posicaoController?.text.trim()
+                : null,
+            onChanged: (value) {
+              setState(() => _posicaoController?.text = value ?? '');
+            },
+            options: canonicalPlayerPositions),
         _buildTextField(
             label: 'Categoría',
             controller: _categoryController,
             focusNode: null,
-            hintText: 'Sub-20'),
+            hintText: 'Se calcula por edad',
+            readOnly: true),
         _buildDropdownField(
             label: 'Status del jugador',
             hintText: 'Selecciona tu momento actual',
@@ -1418,11 +1549,17 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           subtitle:
               'Mostrá tu contexto actual, tu físico y la experiencia que ya acumulaste.',
         ),
-        _buildTextField(
+        _buildDropdownField(
             label: 'Pie dominante',
-            controller: _pieDominanteController,
-            focusNode: _pieDominanteFocusNode,
-            hintText: 'Derecho'),
+            hintText: 'Selecciona tu pie dominante',
+            value: canonicalDominantFeet
+                    .contains(_pieDominanteController?.text.trim())
+                ? _pieDominanteController?.text.trim()
+                : null,
+            onChanged: (value) {
+              setState(() => _pieDominanteController?.text = value ?? '');
+            },
+            options: canonicalDominantFeet),
         _buildTextField(
             label: 'Altura (cm)',
             controller: _heightController,
@@ -1471,16 +1608,22 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             focusNode: _usernameFocusNode,
             hintText: 'usuario',
             textCapitalization: TextCapitalization.none),
-        _buildTextField(
+        _buildDropdownField(
             label: 'País',
-            controller: _countryController,
-            focusNode: null,
-            hintText: 'Portugal'),
+            hintText: 'Selecciona tu país',
+            value: _countryOptions.contains(_countryController?.text.trim())
+                ? _countryController?.text.trim()
+                : null,
+            onChanged: (value) {
+              setState(() => _applySelectedCountryByName(value));
+            },
+            options: _countryOptions),
         _buildTextField(
             label: 'Ciudad',
             controller: _cityController,
             focusNode: null,
-            hintText: 'Lisboa'),
+            hintText: 'Lisboa',
+            textCapitalization: TextCapitalization.words),
         _buildTextField(
             label: 'Fecha de nacimiento',
             controller: _birthdayController,

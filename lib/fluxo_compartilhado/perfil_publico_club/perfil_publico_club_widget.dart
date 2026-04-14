@@ -21,7 +21,7 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
   List<Map<String, dynamic>> _convocatorias = [];
   bool _isLoading = true;
   String? _errorMessage;
-  String _selectedTabKey = 'perfil';
+  String _selectedTabKey = 'convocatorias';
 
   @override
   void initState() {
@@ -47,7 +47,7 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
         _convocatorias = convocatorias;
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
@@ -105,14 +105,14 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
       final response = refs.length == 1
           ? await SupaFlow.client
               .from('convocatorias')
-              .select()
+              .select('id, titulo, categoria, posicion, ubicacion, created_at')
               .eq('club_id', refs.first)
               .eq('is_active', true)
               .order('created_at', ascending: false)
               .limit(20)
           : await SupaFlow.client
               .from('convocatorias')
-              .select()
+              .select('id, titulo, categoria, posicion, ubicacion, created_at')
               .inFilter('club_id', refs.toList())
               .eq('is_active', true)
               .order('created_at', ascending: false)
@@ -131,246 +131,303 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
     return null;
   }
 
-  Widget _buildInfoChip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: const Color(0xFF0D3B66)),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
+  bool _isVerifiedClub(Map<String, dynamic> club) {
+    final direct = club['is_verified'];
+    if (direct is bool) return direct;
+    final directText = direct?.toString().trim().toLowerCase() ?? '';
+    if (directText == 'true') return true;
+
+    final status = club['verification_status']?.toString().trim().toLowerCase() ?? '';
+    return status == 'verified' ||
+        status == 'verificado' ||
+        status == 'approved' ||
+        status == 'aprobado';
+  }
+
+  Widget _buildMetricCard({
+    required String value,
+    required String label,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF151B28),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF20293A)),
+        ),
+        child: Column(
+          children: [
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 21,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
               label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: GoogleFonts.inter(
                 fontSize: 12,
+                height: 1.2,
                 fontWeight: FontWeight.w600,
-                color: const Color(0xFF334155),
+                color: const Color(0xFF94A3B8),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildTabSelector() {
+  Widget _buildTabs() {
     final tabs = const [
-      {'key': 'perfil', 'label': 'Perfil'},
-      {'key': 'convocatorias', 'label': 'Convocatorias'},
+      ('convocatorias', 'Convocatorias'),
+      ('cursos', 'Cursos'),
+      ('sobre', 'Sobre Nosotros'),
     ];
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: tabs.map((tab) {
-            final isSelected = _selectedTabKey == tab['key'];
-            return Expanded(
-              child: GestureDetector(
-                onTap: () => setState(() => _selectedTabKey = tab['key']!),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  decoration: BoxDecoration(
-                    color:
-                        isSelected ? const Color(0xFF0D3B66) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    tab['label']!,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color:
-                          isSelected ? Colors.white : const Color(0xFF475569),
-                    ),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: tabs.map((tab) {
+          final selected = _selectedTabKey == tab.$1;
+          return GestureDetector(
+            onTap: () => setState(() => _selectedTabKey = tab.$1),
+            child: Container(
+              margin: const EdgeInsets.only(right: 28),
+              padding: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: selected
+                        ? const Color(0xFF1473E6)
+                        : Colors.transparent,
+                    width: 2.5,
                   ),
                 ),
               ),
-            );
-          }).toList(),
-        ),
+              child: Text(
+                tab.$2,
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : const Color(0xFF8B96A8),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
 
-  Widget _buildProfileTab(String? description, String? website) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (description != null) ...[
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text(
-              'Descripción',
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF0F172A),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-            child: Text(
-              description,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                height: 1.5,
-                color: const Color(0xFF475569),
-              ),
-            ),
-          ),
-        ],
-        if (website != null) ...[
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.link, size: 18, color: Color(0xFF0D3B66)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      website,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF0D3B66),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-        if (description == null && website == null) ...[
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-            child: Text(
-              'Este club todavía no completó su presentación pública.',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: const Color(0xFF64748B),
-              ),
-            ),
-          ),
-        ],
-      ],
+  Widget _buildPanel(Widget child) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0C111B),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF1B2331)),
+      ),
+      child: child,
     );
   }
 
-  Widget _buildConvocatoriasTab() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 24),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-          child: Text(
-            'Convocatorias activas',
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF0F172A),
-            ),
-          ),
-        ),
-        if (_convocatorias.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-            child: Text(
-              'Este club no tiene convocatorias activas por ahora.',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: const Color(0xFF64748B),
-              ),
-            ),
-          )
-        else
-          ..._convocatorias.map(
-            (conv) => Container(
-              margin: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    conv['titulo']?.toString() ?? 'Convocatoria',
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF0F172A),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    [
-                      conv['posicion']?.toString() ?? '',
-                      conv['categoria']?.toString() ?? '',
-                      conv['ubicacion']?.toString() ?? '',
-                    ].where((value) => value.trim().isNotEmpty).join(' • '),
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: const Color(0xFF64748B),
-                    ),
-                  ),
+  Widget _buildConvocatoriaTile(Map<String, dynamic> convocatoria) {
+    final title = _firstNonEmpty([
+          convocatoria['titulo'],
+          convocatoria['title'],
+        ]) ??
+        'Convocatoria';
+    final subtitle = [
+      convocatoria['categoria']?.toString() ?? '',
+      convocatoria['posicion']?.toString() ?? '',
+      convocatoria['ubicacion']?.toString() ?? '',
+    ].where((item) => item.trim().isNotEmpty).join(' • ');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF1F2937)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF64B5F6),
+                  Color(0xFF2E7D32),
                 ],
               ),
             ),
+            child: const Icon(
+              Icons.sports_soccer_rounded,
+              color: Colors.white,
+            ),
           ),
-      ],
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: Color(0xFF94A3B8),
+          ),
+        ],
+      ),
     );
+  }
+
+  Widget _buildTabContent(Map<String, dynamic> club) {
+    final description = _firstNonEmpty([
+      club['descripcion'],
+      club['description'],
+    ]);
+    final website = _firstNonEmpty([
+      club['sitio_web'],
+      club['website'],
+      club['site_url'],
+    ]);
+    final country = _firstNonEmpty([
+      club['pais'],
+      club['country'],
+    ]);
+    final league = _firstNonEmpty([
+      club['liga'],
+      club['league'],
+    ]);
+
+    switch (_selectedTabKey) {
+      case 'cursos':
+        return _buildPanel(
+          Text(
+            'Este club todavía no publicó cursos.',
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+        );
+      case 'sobre':
+        return _buildPanel(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                description ??
+                    'Este club todavía no completó su presentación pública.',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: const Color(0xFFE2E8F0),
+                ),
+              ),
+              if (website != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  website,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF60A5FA),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              Text(
+                [country, league]
+                    .where((item) => item != null && item.trim().isNotEmpty)
+                    .join(' • '),
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+            ],
+          ),
+        );
+      default:
+        if (_convocatorias.isEmpty) {
+          return _buildPanel(
+            Text(
+              'Este club no tiene convocatorias activas por ahora.',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: const Color(0xFF94A3B8),
+              ),
+            ),
+          );
+        }
+        return Column(
+          children: _convocatorias.map(_buildConvocatoriaTile).toList(),
+        );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: Color(0xFF050913),
         body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF0D3B66)),
+          child: CircularProgressIndicator(color: Color(0xFF1473E6)),
         ),
       );
     }
 
     if (_clubData == null) {
       return Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFF050913),
         appBar: AppBar(
-          backgroundColor: Colors.white,
-          foregroundColor: const Color(0xFF0D3B66),
+          backgroundColor: const Color(0xFF050913),
+          foregroundColor: Colors.white,
           elevation: 0,
         ),
         body: Center(
@@ -378,7 +435,7 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
             _errorMessage ?? 'Club no encontrado.',
             style: GoogleFonts.inter(
               fontSize: 14,
-              color: const Color(0xFF475569),
+              color: const Color(0xFF94A3B8),
             ),
           ),
         ),
@@ -392,35 +449,6 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
           club['club_name'],
         ]) ??
         'Club';
-    final shortName = _firstNonEmpty([
-      club['nombre_corto'],
-      club['short_name'],
-    ]);
-    final description = _firstNonEmpty([
-      club['descripcion'],
-      club['description'],
-    ]);
-    final league = _firstNonEmpty([
-      club['liga'],
-      club['league'],
-      club['league_name'],
-    ]);
-    final country = _firstNonEmpty([
-      club['pais'],
-      club['country'],
-      club['country_name'],
-    ]);
-    final city = _firstNonEmpty([
-      club['city'],
-      club['ciudad'],
-      club['localidad'],
-      club['ubicacion'],
-    ]);
-    final website = _firstNonEmpty([
-      club['sitio_web'],
-      club['website'],
-      club['site_url'],
-    ]);
     final coverUrl = _firstNonEmpty([
       club['cover_url'],
       club['banner_url'],
@@ -430,119 +458,185 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
       club['photo_url'],
       club['avatar_url'],
     ]);
+    final verified = _isVerifiedClub(club);
+    final staffCapacity = club['max_staff']?.toString() ?? '0';
+    final convocatoriasCap = club['max_convocatorias']?.toString() ?? '0';
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFF050913),
       appBar: AppBar(
+        backgroundColor: const Color(0xFF050913),
+        foregroundColor: Colors.white,
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF0D3B66),
+        centerTitle: true,
         title: Text(
-          'Club',
+          'Perfil del Club',
           style: GoogleFonts.inter(
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF0D3B66),
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
           ),
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.only(bottom: 32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  height: 170,
-                  width: double.infinity,
-                  color: const Color(0xFFE2E8F0),
-                  child: coverUrl != null && coverUrl.startsWith('http')
-                      ? Image.network(
-                          coverUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                        )
-                      : null,
-                ),
-                Positioned(
-                  left: 20,
-                  bottom: -38,
-                  child: Container(
-                    width: 92,
-                    height: 92,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 4),
-                      image: logoUrl != null && logoUrl.startsWith('http')
-                          ? DecorationImage(
-                              image: NetworkImage(logoUrl),
-                              fit: BoxFit.cover,
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      height: 210,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(22),
+                        color: const Color(0xFF0E1624),
+                        image: coverUrl != null
+                            ? DecorationImage(
+                                image: NetworkImage(coverUrl),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
+                      ),
+                      child: coverUrl == null
+                          ? Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(22),
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xFF3E7EC3),
+                                    Color(0xFF123A18),
+                                  ],
+                                ),
+                              ),
                             )
                           : null,
                     ),
-                    child: logoUrl == null || !logoUrl.startsWith('http')
-                        ? const Icon(
-                            Icons.shield_outlined,
-                            size: 42,
-                            color: Color(0xFF0D3B66),
-                          )
-                        : null,
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: -54,
+                      child: Center(
+                        child: Container(
+                          width: 112,
+                          height: 112,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFFF4EDE2),
+                            border: Border.all(
+                              color: const Color(0xFF050913),
+                              width: 5,
+                            ),
+                            image: logoUrl != null
+                                ? DecorationImage(
+                                    image: NetworkImage(logoUrl),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
+                          ),
+                          child: logoUrl == null
+                              ? const Icon(
+                                  Icons.shield_rounded,
+                                  size: 48,
+                                  color: Color(0xFF0D3B66),
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 72),
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      if (verified) ...[
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.verified_rounded,
+                          size: 22,
+                          color: Color(0xFF1D9BF0),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
+                const SizedBox(height: 8),
+                Center(
+                  child: Text(
+                    verified ? 'Club Verificado' : 'Perfil público del club',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Text(
+                      _firstNonEmpty([
+                            club['descripcion'],
+                            club['description'],
+                          ]) ??
+                          'Este club todavía no completó su presentación pública.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        height: 1.5,
+                        color: const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    _buildMetricCard(
+                      value: '${_convocatorias.length}',
+                      label: 'Convocatorias',
+                    ),
+                    const SizedBox(width: 12),
+                    _buildMetricCard(
+                      value: staffCapacity,
+                      label: 'Capacidad Staff',
+                    ),
+                    const SizedBox(width: 12),
+                    _buildMetricCard(
+                      value: convocatoriasCap,
+                      label: 'Capacidad Conv.',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                _buildTabs(),
+                const SizedBox(height: 18),
+                _buildTabContent(club),
               ],
             ),
-            const SizedBox(height: 50),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-              child: Text(
-                name,
-                style: GoogleFonts.inter(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF0F172A),
-                ),
-              ),
-            ),
-            if (shortName != null) ...[
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                child: Text(
-                  shortName,
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    color: const Color(0xFF64748B),
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  if (league != null) _buildInfoChip(Icons.emoji_events_outlined, league),
-                  if (city != null) _buildInfoChip(Icons.location_city_outlined, city),
-                  if (country != null) _buildInfoChip(Icons.flag_outlined, country),
-                  _buildInfoChip(Icons.campaign_outlined, '${_convocatorias.length} convocatorias'),
-                ],
-              ),
-            ),
-            _buildTabSelector(),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              child: KeyedSubtree(
-                key: ValueKey(_selectedTabKey),
-                child: _selectedTabKey == 'convocatorias'
-                    ? _buildConvocatoriasTab()
-                    : _buildProfileTab(description, website),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

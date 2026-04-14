@@ -1,5 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
 import 'package:flutter/material.dart';
@@ -74,7 +75,8 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   String? _selectedCountryId;
 
   // Guardian controllers (Tab 4 - menores)
-  final TextEditingController _guardianEmailController = TextEditingController();
+  final TextEditingController _guardianEmailController =
+      TextEditingController();
   final String _guardianRelationship = 'tutor';
   bool _acceptedCommunityRules = false;
   bool _guardianAuthorized = false;
@@ -135,7 +137,8 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
   Future<void> _loadCountries() async {
     try {
-      final response = await SupaFlow.client.from('countrys').select().order('name');
+      final response =
+          await SupaFlow.client.from('countrys').select().order('name');
       if (mounted) {
         setState(() => _countries = List<Map<String, dynamic>>.from(response));
       }
@@ -282,7 +285,8 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
     final birthday = _parseBirthday();
     if (birthday == null) {
-      _showSnackBar('Fecha de nacimiento inválida. Usa el formato DD/MM/AAAA con un año entre 1920 y ${DateTime.now().year}');
+      _showSnackBar(
+          'Fecha de nacimiento inválida. Usa el formato DD/MM/AAAA con un año entre 1920 y ${DateTime.now().year}');
       return;
     }
 
@@ -299,7 +303,8 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       return;
     }
 
-    setState(() => _shouldShowGuardianStep = _usesMinorProtectionFlow && age < 18);
+    setState(
+        () => _shouldShowGuardianStep = _usesMinorProtectionFlow && age < 18);
     _goToNextTab();
   }
 
@@ -359,13 +364,21 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       final nowIso = DateTime.now().toIso8601String();
       final approvalCode =
           isMinor ? GuardianMvpService.generateApprovalCode() : null;
+      final selectedCountryName = _countries
+          .where((country) => country['id']?.toString() == _selectedCountryId)
+          .map((country) => normalizeCountryName(country['name']))
+          .firstWhere((country) => country.isNotEmpty, orElse: () => '');
+      final normalizedCity = normalizeCityName(_cidadeController.text);
 
       final userPayload = {
         'name': _nameController.text.trim(),
         'birthday': birthday?.toIso8601String(),
-        'country_id':
-            _selectedCountryId != null ? int.tryParse(_selectedCountryId!) ?? 1 : 1,
-        'city': _cidadeController.text.trim(),
+        'country_id': _selectedCountryId != null
+            ? int.tryParse(_selectedCountryId!) ?? 1
+            : 1,
+        'country': selectedCountryName,
+        'pais': selectedCountryName,
+        'city': normalizedCity,
         'userType': userType,
         'user_id': uid,
         'username': _nameController.text.trim(),
@@ -402,9 +415,9 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
         try {
           await SupaFlow.client.from('users').upsert(
-            payload,
-            onConflict: 'user_id',
-          );
+                payload,
+                onConflict: 'user_id',
+              );
           return;
         } catch (upsertError) {
           // Alguns ambientes têm conflito na PK (users_pkey) mesmo com user_id.
@@ -550,35 +563,27 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
         // Marca guardian somente após sucesso no insert/update.
         try {
-          await SupaFlow.client
-              .from('users')
-              .update({
-                'has_guardian': true,
-                'guardian_status': GuardianMvpService.pendingStatus,
-                'visibility_status': GuardianMvpService.limitedVisibility,
-              })
-              .eq('user_id', uid);
+          await SupaFlow.client.from('users').update({
+            'has_guardian': true,
+            'guardian_status': GuardianMvpService.pendingStatus,
+            'visibility_status': GuardianMvpService.limitedVisibility,
+          }).eq('user_id', uid);
         } catch (_) {
           try {
-            await SupaFlow.client
-                .from('users')
-                .update({
-                  'has_guardian': true,
-                  'guardian_status': GuardianMvpService.pendingStatus,
-                  'visibility_status': GuardianMvpService.limitedVisibility,
-                })
-                .eq('id', uid);
+            await SupaFlow.client.from('users').update({
+              'has_guardian': true,
+              'guardian_status': GuardianMvpService.pendingStatus,
+              'visibility_status': GuardianMvpService.limitedVisibility,
+            }).eq('id', uid);
           } catch (_) {
             try {
               await SupaFlow.client
                   .from('users')
-                  .update({'has_guardian': true})
-                  .eq('user_id', uid);
+                  .update({'has_guardian': true}).eq('user_id', uid);
             } catch (_) {
               await SupaFlow.client
                   .from('users')
-                  .update({'has_guardian': true})
-                  .eq('id', uid);
+                  .update({'has_guardian': true}).eq('id', uid);
             }
           }
         }
@@ -1092,6 +1097,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             focusNode: _cidadeFocusNode,
             width: double.infinity,
             suffixIcon: const Icon(Icons.keyboard_arrow_down),
+            textCapitalization: TextCapitalization.words,
           ),
           SizedBox(height: 60 * scale),
           Row(
@@ -1412,9 +1418,12 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                 ),
                 SizedBox(height: 12 * scale),
                 consentItem(Icons.description_outlined, 'términos de uso'),
-                consentItem(Icons.privacy_tip_outlined, 'política de privacidad'),
-                consentItem(Icons.photo_camera_back_outlined, 'autorización de uso de imagen'),
-                consentItem(Icons.video_library_outlined, 'publicación de videos en la plataforma'),
+                consentItem(
+                    Icons.privacy_tip_outlined, 'política de privacidad'),
+                consentItem(Icons.photo_camera_back_outlined,
+                    'autorización de uso de imagen'),
+                consentItem(Icons.video_library_outlined,
+                    'publicación de videos en la plataforma'),
               ],
             ),
           ),
@@ -1540,8 +1549,9 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
               onChanged: (v) => setState(() {
                 _selectedCountryId = v;
                 _paisController.text = _countries
-                    .firstWhere((c) => c['id'].toString() == v)['name']
-                    ?.toString() ?? '';
+                        .firstWhere((c) => c['id'].toString() == v)['name']
+                        ?.toString() ??
+                    '';
               }),
             ),
           ),
@@ -1561,6 +1571,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     Widget? suffixIcon,
     TextInputType? keyboardType,
     List<TextInputFormatter>? inputFormatters,
+    TextCapitalization textCapitalization = TextCapitalization.sentences,
   }) {
     final scale = _scaleFactor(context);
     final fontSize = 13 * scale;
@@ -1584,6 +1595,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             obscureText: obscureText,
             keyboardType: keyboardType,
             inputFormatters: inputFormatters,
+            textCapitalization: textCapitalization,
             style: GoogleFonts.inter(fontSize: fontSize),
             decoration: InputDecoration(
               hintText: hint,

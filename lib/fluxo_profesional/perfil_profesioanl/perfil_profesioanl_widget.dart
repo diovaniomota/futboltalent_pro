@@ -1,5 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/profile_support_sheet.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/fluxo_compartilhado/notificacoes/notificacoes_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
@@ -372,13 +373,22 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                                   padding:
                                       const EdgeInsets.fromLTRB(16, 8, 16, 0),
                                   child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        _iconBtn(Icons.settings, () {
-                                          context.pushNamed(
-                                              EditarPerfilWidget.routeName);
-                                        }),
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      _iconBtn(Icons.settings, () {
+                                        showProfileSupportSheet(
+                                          context: context,
+                                          userId: currentUserUid,
+                                          screenName:
+                                              PerfilProfesioanlWidget.routeName,
+                                          onEditProfile: () {
+                                            context.pushNamed(
+                                              EditarPerfilWidget.routeName,
+                                            );
+                                          },
+                                        );
+                                      }),
                                         Row(children: [
                                           _iconBtn(Icons.notifications, () {
                                             Navigator.push(
