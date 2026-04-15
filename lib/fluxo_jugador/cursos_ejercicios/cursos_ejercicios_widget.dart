@@ -333,6 +333,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           'course_count': item['type'] == 'course' ? 1 : 0,
           'exercise_count': item['type'] == 'exercise' ? 1 : 0,
           'cover_item': item,
+          'cover_url': null,
+          'image_url': null,
         };
       } else {
         current['count'] = (current['count'] as int? ?? 0) + 1;
@@ -340,6 +342,35 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
             (item['type'] == 'course' ? 1 : 0);
         current['exercise_count'] = (current['exercise_count'] as int? ?? 0) +
             (item['type'] == 'exercise' ? 1 : 0);
+      }
+    }
+
+    // Mostrar todas las categorías configuradas en el admin, incluso las que no tienen ítems.
+    for (final category in _challengeCategories) {
+      final categoryId = category['id']?.toString().trim() ?? '';
+      if (categoryId.isEmpty) continue;
+
+      final existing = grouped[categoryId];
+      final categoryName = category['name']?.toString().trim() ?? '';
+      final resolvedLabel = categoryName.isEmpty ? categoryId : categoryName;
+
+      if (existing == null) {
+        grouped[categoryId] = {
+          'key': categoryId,
+          'label': resolvedLabel,
+          'count': 0,
+          'category_id': categoryId,
+          'course_count': 0,
+          'exercise_count': 0,
+          'cover_item': <String, dynamic>{},
+          'cover_url': category['cover_url'],
+          'image_url': category['image_url'],
+        };
+      } else {
+        existing['category_id'] = categoryId;
+        existing['label'] = resolvedLabel;
+        existing['cover_url'] = category['cover_url'];
+        existing['image_url'] = category['image_url'];
       }
     }
 
@@ -2081,7 +2112,12 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final coverItem =
         summary['cover_item'] as Map<String, dynamic>? ?? <String, dynamic>{};
     final categoryId = summary['category_id']?.toString().trim() ?? '';
-    final categoryCoverUrl = _categoryCoverUrlForId(categoryId);
+    final categoryCoverUrl =
+        (summary['cover_url']?.toString().trim().isNotEmpty ?? false)
+            ? summary['cover_url']!.toString().trim()
+            : ((summary['image_url']?.toString().trim().isNotEmpty ?? false)
+                ? summary['image_url']!.toString().trim()
+                : _categoryCoverUrlForId(categoryId));
     final imageUrl = _cacheBustedMediaUrl(
       coverItem,
       categoryCoverUrl.isNotEmpty

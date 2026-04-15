@@ -6,6 +6,7 @@ import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -67,6 +68,36 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     super.dispose();
   }
 
+  List<String> _parseCollaborations(dynamic rawValue) {
+    if (rawValue is List) {
+      return rawValue
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+
+    final text = rawValue?.toString().trim() ?? '';
+    if (text.isEmpty) return [];
+
+    if (text.startsWith('[') && text.endsWith(']')) {
+      try {
+        final decoded = jsonDecode(text);
+        if (decoded is List) {
+          return decoded
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .toList();
+        }
+      } catch (_) {}
+    }
+
+    return text
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
   Future<void> _loadProfile() async {
     if (widget.userId == null || widget.userId!.isEmpty) {
       if (mounted) setState(() => _isLoading = false);
@@ -124,15 +155,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         _selectedProfileTabKey = targetType == 'jugador' ? 'videos' : 'perfil';
         _guardianStatus = GuardianMvpService.normalizedGuardianStatus(merged);
         if (merged['colaboraciones'] != null) {
-          if (merged['colaboraciones'] is List) {
-            _colabs = List<String>.from(merged['colaboraciones']);
-          } else if (merged['colaboraciones'] is String) {
-            _colabs = (merged['colaboraciones'] as String)
-                .split(',')
-                .map((e) => e.trim())
-                .where((e) => e.isNotEmpty)
-                .toList();
-          }
+          _colabs = _parseCollaborations(merged['colaboraciones']);
         }
         if (_isTargetPlayer) {
           await _registerProfileView();
@@ -494,12 +517,14 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         _contactRequestStatus == 'recusado';
   }
 
-  String _contactButtonLabel() {
-    if (_isContactAccepted) return 'Contacto aprobado';
+  String _contactButtonLabel({bool compact = false}) {
+    if (_isContactAccepted) return compact ? 'Aprobado' : 'Contacto aprobado';
     if (_isContactPending) return 'Solicitado';
     if (_isLimitedMinorProfile) return 'Protegido';
-    if (_isContactRejected) return 'Solicitar nuevamente';
-    return 'Solicitar Contacto';
+    if (_isContactRejected) {
+      return compact ? 'Reenviar' : 'Solicitar nuevamente';
+    }
+    return compact ? 'Solicitar' : 'Solicitar contacto';
   }
 
   Color _contactButtonColor() {
@@ -745,11 +770,13 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   }) {
     return FittedBox(
       fit: BoxFit.scaleDown,
+      alignment: Alignment.center,
       child: Text(
         label,
         maxLines: 1,
         softWrap: false,
-        overflow: TextOverflow.fade,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
         style: GoogleFonts.inter(
           fontSize: fontSize,
           fontWeight: fontWeight,
@@ -763,8 +790,10 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   Widget build(BuildContext context) {
     final userType = context.watch<FFAppState>().userType;
     final screenWidth = MediaQuery.of(context).size.width;
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
     final horizontalPadding = screenWidth < 360 ? 12.0 : 16.0;
     final actionButtonFontSize = screenWidth < 380 ? 13.0 : 14.0;
+    final compactActionLabel = screenWidth < 390 || textScale > 1.05;
     if (_isLoading)
       return Container(
           color: Colors.white,
@@ -907,7 +936,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                     disabledBackgroundColor: Colors.grey,
                                     minimumSize: const Size.fromHeight(46),
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
+                                      horizontal: 10,
                                       vertical: 12,
                                     ),
                                     shape: RoundedRectangleBorder(
@@ -924,7 +953,9 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                           ),
                                         )
                                       : _buildActionLabel(
-                                          _contactButtonLabel(),
+                                          _contactButtonLabel(
+                                            compact: compactActionLabel,
+                                          ),
                                           fontSize: actionButtonFontSize,
                                         ),
                                 ),
@@ -936,7 +967,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                         : const Color(0xFF0D3B66),
                                     minimumSize: const Size.fromHeight(46),
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
+                                      horizontal: 10,
                                       vertical: 12,
                                     ),
                                     shape: RoundedRectangleBorder(

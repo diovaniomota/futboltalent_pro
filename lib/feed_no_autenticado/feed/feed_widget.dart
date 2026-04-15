@@ -1856,26 +1856,49 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
     required IconData icon,
     required String label,
     Color? backgroundColor,
+    Color? accentColor,
   }) {
+    final bg = backgroundColor ?? Colors.white.withOpacity(0.13);
+    final accent = accentColor ?? Colors.white;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: backgroundColor ?? Colors.white.withOpacity(0.18),
+        color: bg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.24)),
+        border: Border.all(color: Colors.white.withOpacity(0.22), width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.18),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: Colors.white),
+          Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: accent.withOpacity(0.18),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 11, color: accent),
+          ),
           const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              height: 1.0,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.95),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.1,
+                height: 1.0,
+              ),
             ),
           ),
         ],
@@ -1976,41 +1999,154 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
         ]) ??
         '';
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isCompact = screenWidth < 360;
+    final chipFontSize = isCompact ? 10.0 : 11.0;
+    final chipPadH = isCompact ? 7.0 : 9.0;
+    final chipPadV = isCompact ? 4.0 : 5.0;
+    final iconCircle = isCompact ? 16.0 : 18.0;
+    final iconSize = isCompact ? 10.0 : 11.0;
+    final spacing = isCompact ? 5.0 : 6.0;
+
+    Widget chip({
+      required IconData icon,
+      required String label,
+      required Color accent,
+    }) {
+      return Container(
+        padding: EdgeInsets.symmetric(horizontal: chipPadH, vertical: chipPadV),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.13),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withOpacity(0.22), width: 0.8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.18),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: iconCircle,
+              height: iconCircle,
+              decoration: BoxDecoration(
+                color: accent.withOpacity(0.22),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: iconSize, color: accent),
+            ),
+            SizedBox(width: isCompact ? 4 : 5),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: isCompact ? 70 : 90),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.95),
+                  fontSize: chipFontSize,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.1,
+                  height: 1.0,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final flagEmoji = countryFlagEmoji(country);
+
+    Widget countryChip() {
+      return Container(
+        padding: EdgeInsets.symmetric(horizontal: chipPadH, vertical: chipPadV),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.13),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withOpacity(0.22), width: 0.8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.18),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (flagEmoji.isNotEmpty)
+              Text(
+                flagEmoji,
+                style: TextStyle(fontSize: isCompact ? 14.0 : 16.0, height: 1),
+              )
+            else
+              Container(
+                width: iconCircle,
+                height: iconCircle,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFCA5A5).withOpacity(0.22),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.flag_rounded,
+                    size: iconSize, color: const Color(0xFFFCA5A5)),
+              ),
+            if (flagEmoji.isEmpty) ...[
+              SizedBox(width: isCompact ? 4 : 5),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: isCompact ? 70 : 90),
+                child: Text(
+                  country,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.95),
+                    fontSize: chipFontSize,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.1,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
     final chips = <Widget>[
       if (category.isNotEmpty)
-        _buildScoutOverlayChip(icon: Icons.category_outlined, label: category),
+        chip(
+          icon: Icons.sports_soccer_rounded,
+          label: category,
+          accent: const Color(0xFF93C5FD),
+        ),
       if (position.isNotEmpty)
-        _buildScoutOverlayChip(
-          icon: Icons.shield_outlined,
+        chip(
+          icon: Icons.shield_rounded,
           label: position,
+          accent: const Color(0xFF6EE7B7),
         ),
-      if (country.isNotEmpty)
-        _buildScoutOverlayChip(
-          icon: Icons.flag_outlined,
-          label: country,
-        ),
+      if (country.isNotEmpty) countryChip(),
       if (club.isNotEmpty)
-        _buildScoutOverlayChip(
-          icon: Icons.groups_outlined,
+        chip(
+          icon: Icons.groups_rounded,
           label: club,
+          accent: const Color(0xFFFCD34D),
         ),
     ].take(3).toList();
 
     if (chips.isEmpty) return const SizedBox.shrink();
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.36),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.16)),
-      ),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        children: chips,
-      ),
+    return Wrap(
+      spacing: spacing,
+      runSpacing: spacing,
+      children: chips,
     );
   }
 

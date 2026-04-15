@@ -2748,8 +2748,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       normalizeStateName,
     );
     final currentResults = _jugadorCurrentResults;
-    final hasActiveCriteria =
-        _searchQuery.trim().length >= 2 || _jugadorCurrentTabHasActiveFilters;
+    final hasActiveCriteria = _searchQuery.trim().length >= 2 ||
+        _jugadorCurrentTabHasActiveFilters ||
+        _jugadorSearchTab == _JugadorSearchTab.clubes ||
+        _jugadorSearchTab == _JugadorSearchTab.scouts;
     final resultLabel = currentResults.length == 1 ? 'resultado' : 'resultados';
 
     return RefreshIndicator(

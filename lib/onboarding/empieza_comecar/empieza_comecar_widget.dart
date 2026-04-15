@@ -4,6 +4,7 @@ import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
@@ -74,11 +75,23 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   List<Map<String, dynamic>> _countries = [];
   String? _selectedCountryId;
 
+  // State dropdown
+  List<String> _states = [];
+  String? _selectedState;
+  bool _isStatesLoading = false;
+
+  // City dropdown
+  List<String> _cities = [];
+  String? _selectedCity;
+  bool _isCitiesLoading = false;
+  bool _cityFreeText = false; // fallback: digitação livre
+
   // Guardian controllers (Tab 4 - menores)
   final TextEditingController _guardianEmailController =
       TextEditingController();
   final String _guardianRelationship = 'tutor';
   bool _acceptedCommunityRules = false;
+  bool _acceptedTerms = false; // términos de uso y privacidad
   bool _guardianAuthorized = false;
   bool _shouldShowGuardianStep = false;
 
@@ -144,6 +157,223 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       }
     } catch (e) {
       debugPrint('Error loading countries: $e');
+    }
+  }
+
+  /// Traduz nomes de países do espanhol/português para o inglês aceito pela API.
+  String _toApiCountryName(String name) {
+    const map = {
+      'España': 'Spain',
+      'Espana': 'Spain',
+      'México': 'Mexico',
+      'Mexico': 'Mexico',
+      'Brasil': 'Brazil',
+      'Alemania': 'Germany',
+      'Francia': 'France',
+      'Italia': 'Italy',
+      'Países Bajos': 'Netherlands',
+      'Paises Bajos': 'Netherlands',
+      'Holanda': 'Netherlands',
+      'Bélgica': 'Belgium',
+      'Belgica': 'Belgium',
+      'Suiza': 'Switzerland',
+      'Suecia': 'Sweden',
+      'Noruega': 'Norway',
+      'Dinamarca': 'Denmark',
+      'Finlandia': 'Finland',
+      'Polonia': 'Poland',
+      'Grecia': 'Greece',
+      'Turquía': 'Turkey',
+      'Turquia': 'Turkey',
+      'Rusia': 'Russia',
+      'Ucrania': 'Ukraine',
+      'Rumania': 'Romania',
+      'Rumanía': 'Romania',
+      'Hungría': 'Hungary',
+      'Hungria': 'Hungary',
+      'República Checa': 'Czech Republic',
+      'Republica Checa': 'Czech Republic',
+      'Croacia': 'Croatia',
+      'Reino Unido': 'United Kingdom',
+      'Irlanda': 'Ireland',
+      'Escocia': 'Scotland',
+      'Estados Unidos': 'United States',
+      'EE.UU.': 'United States',
+      'EEUU': 'United States',
+      'Canadá': 'Canada',
+      'Canada': 'Canada',
+      'Colombia': 'Colombia',
+      'Venezuela': 'Venezuela',
+      'Chile': 'Chile',
+      'Perú': 'Peru',
+      'Peru': 'Peru',
+      'Ecuador': 'Ecuador',
+      'Bolivia': 'Bolivia',
+      'Paraguay': 'Paraguay',
+      'Uruguay': 'Uruguay',
+      'Costa Rica': 'Costa Rica',
+      'Guatemala': 'Guatemala',
+      'Honduras': 'Honduras',
+      'El Salvador': 'El Salvador',
+      'Nicaragua': 'Nicaragua',
+      'Panamá': 'Panama',
+      'Panama': 'Panama',
+      'Cuba': 'Cuba',
+      'República Dominicana': 'Dominican Republic',
+      'Republica Dominicana': 'Dominican Republic',
+      'Puerto Rico': 'Puerto Rico',
+      'Marruecos': 'Morocco',
+      'Argelia': 'Algeria',
+      'Túnez': 'Tunisia',
+      'Tunez': 'Tunisia',
+      'Egipto': 'Egypt',
+      'Nigeria': 'Nigeria',
+      'Ghana': 'Ghana',
+      'Senegal': 'Senegal',
+      'Costa de Marfil': "Côte d'Ivoire",
+      'Camerún': 'Cameroon',
+      'Camerun': 'Cameroon',
+      'Sudáfrica': 'South Africa',
+      'Sudafrica': 'South Africa',
+      'Japón': 'Japan',
+      'Japon': 'Japan',
+      'Corea del Sur': 'South Korea',
+      'Arabia Saudita': 'Saudi Arabia',
+      'Emiratos Árabes': 'United Arab Emirates',
+    };
+    return map[name] ?? name;
+  }
+
+  Future<void> _loadStates(String countryName) async {
+    if (countryName.isEmpty) return;
+    final apiName = _toApiCountryName(countryName);
+    setState(() {
+      _states = [];
+      _selectedState = null;
+      _cities = [];
+      _selectedCity = null;
+      _cidadeController.text = '';
+      _cityFreeText = false;
+      _isStatesLoading = true;
+    });
+    try {
+      final uri =
+          Uri.parse('https://countriesnow.space/api/v0.1/countries/states');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'country': apiName}),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['error'] == false && data['data'] is Map) {
+          final statesRaw = data['data']['states'];
+          if (statesRaw is List) {
+            final list = statesRaw
+                .map((s) => (s['name'] ?? '').toString())
+                .where((s) => s.isNotEmpty)
+                .toList()
+              ..sort();
+            if (mounted) setState(() => _states = list);
+          }
+        }
+      }
+      // Fallback: sin estados → carga ciudades directamente
+      if (_states.isEmpty && mounted) {
+        await _loadCitiesDirectly(apiName);
+      }
+    } catch (e) {
+      debugPrint('Error al cargar estados: $e');
+      if (mounted) await _loadCitiesDirectly(apiName);
+    } finally {
+      if (mounted) setState(() => _isStatesLoading = false);
+    }
+  }
+
+  /// Carga todas las ciudades del país sin filtrar por estado (fallback).
+  Future<void> _loadCitiesDirectly(String apiCountryName) async {
+    setState(() => _isCitiesLoading = true);
+    try {
+      final uri =
+          Uri.parse('https://countriesnow.space/api/v0.1/countries/cities');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'country': apiCountryName}),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['error'] == false && data['data'] is List) {
+          final list = (data['data'] as List)
+              .map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toList()
+            ..sort();
+          if (mounted) {
+            setState(() {
+              _cities = list;
+              if (_selectedState == null) _selectedState = '__all__';
+            });
+          }
+        }
+      }
+      // Último recurso: texto libre
+      if (_cities.isEmpty && mounted) {
+        setState(() {
+          _cityFreeText = true;
+          if (_selectedState == null) _selectedState = '__all__';
+        });
+      }
+    } catch (e) {
+      debugPrint('Error al cargar ciudades directas: $e');
+      if (mounted)
+        setState(() {
+          _cityFreeText = true;
+          if (_selectedState == null) _selectedState = '__all__';
+        });
+    } finally {
+      if (mounted) setState(() => _isCitiesLoading = false);
+    }
+  }
+
+  Future<void> _loadCitiesByState(String countryName, String stateName) async {
+    if (countryName.isEmpty || stateName.isEmpty) return;
+    final apiName = _toApiCountryName(countryName);
+    setState(() {
+      _cities = [];
+      _selectedCity = null;
+      _cidadeController.text = '';
+      _cityFreeText = false;
+      _isCitiesLoading = true;
+    });
+    try {
+      final uri = Uri.parse(
+          'https://countriesnow.space/api/v0.1/countries/state/cities');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'country': apiName, 'state': stateName}),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['error'] == false && data['data'] is List) {
+          final list = (data['data'] as List)
+              .map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toList()
+            ..sort();
+          if (mounted) setState(() => _cities = list);
+        }
+      }
+      // Fallback: sin ciudades → texto libre
+      if (_cities.isEmpty && mounted) {
+        setState(() => _cityFreeText = true);
+      }
+    } catch (e) {
+      debugPrint('Error al cargar ciudades: $e');
+      if (mounted) setState(() => _cityFreeText = true);
+    } finally {
+      if (mounted) setState(() => _isCitiesLoading = false);
     }
   }
 
@@ -300,6 +530,12 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
     if (age > 100) {
       _showSnackBar('La edad debe ser válida para continuar.');
+      return;
+    }
+
+    if (!_acceptedTerms) {
+      _showSnackBar(
+          'Debes aceptar los Términos de uso y la Política de privacidad para continuar.');
       return;
     }
 
@@ -1089,17 +1325,12 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           SizedBox(height: 15 * scale),
           _buildCountryDropdown(context),
           SizedBox(height: 15 * scale),
-          _buildTextField(
-            context: context,
-            label: 'Ciudad',
-            hint: 'Selecciona la ciudad',
-            controller: _cidadeController,
-            focusNode: _cidadeFocusNode,
-            width: double.infinity,
-            suffixIcon: const Icon(Icons.keyboard_arrow_down),
-            textCapitalization: TextCapitalization.words,
-          ),
-          SizedBox(height: 60 * scale),
+          _buildStateDropdown(context),
+          SizedBox(height: 15 * scale),
+          _buildCityDropdown(context),
+          SizedBox(height: 24 * scale),
+          _buildTermsCheckbox(context),
+          SizedBox(height: 32 * scale),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -1546,16 +1777,397 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                       child: Text(c['name']?.toString() ?? '',
                           style: GoogleFonts.inter(fontSize: fontSize))))
                   .toList(),
-              onChanged: (v) => setState(() {
-                _selectedCountryId = v;
-                _paisController.text = _countries
-                        .firstWhere((c) => c['id'].toString() == v)['name']
+              onChanged: (v) {
+                final countryName = _countries
+                        .firstWhere((c) => c['id'].toString() == v,
+                            orElse: () => {})['name']
                         ?.toString() ??
                     '';
-              }),
+                setState(() {
+                  _selectedCountryId = v;
+                  _paisController.text = countryName;
+                });
+                if (countryName.isNotEmpty) _loadStates(countryName);
+              },
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  void _showTermsModal(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: _LegalModal(
+          title: 'Términos de Uso',
+          content: '''
+TÉRMINOS DE USO DE FUTBOLTALENT
+
+Última actualización: 2025
+
+1. ACEPTACIÓN DE LOS TÉRMINOS
+Al crear una cuenta y utilizar FutbolTalent, aceptas estos Términos de Uso en su totalidad. Si no estás de acuerdo, no utilices la plataforma.
+
+2. DESCRIPCIÓN DEL SERVICIO
+FutbolTalent es una plataforma digital que conecta jugadores de fútbol, entrenadores, clubes y ojeadores. Los usuarios pueden crear perfiles, publicar contenido deportivo y acceder a recursos de formación.
+
+3. REGISTRO Y CUENTA
+- Debes tener al menos 13 años para usar la plataforma.
+- Los menores de 18 años requieren consentimiento de un tutor legal.
+- Eres responsable de mantener la confidencialidad de tus credenciales.
+- Debes proporcionar información veraz y actualizada.
+
+4. USO ACEPTABLE
+Queda prohibido:
+- Publicar contenido falso, ofensivo o ilegal.
+- Suplantar la identidad de otras personas.
+- Usar la plataforma con fines comerciales no autorizados.
+- Acosar, intimidar o amenazar a otros usuarios.
+- Compartir contenido de terceros sin autorización.
+
+5. CONTENIDO DEL USUARIO
+Al publicar contenido en FutbolTalent, nos otorgas una licencia no exclusiva para mostrar y distribuir dicho contenido dentro de la plataforma. Conservas todos los derechos sobre tu contenido.
+
+6. PRIVACIDAD
+El tratamiento de tus datos personales se rige por nuestra Política de Privacidad, disponible en la plataforma.
+
+7. PROPIEDAD INTELECTUAL
+Todo el contenido de la plataforma (diseño, código, marcas) es propiedad de FutbolTalent y está protegido por las leyes de propiedad intelectual.
+
+8. LIMITACIÓN DE RESPONSABILIDAD
+FutbolTalent no garantiza la disponibilidad ininterrumpida del servicio ni la exactitud del contenido publicado por los usuarios.
+
+9. MODIFICACIONES
+Podemos actualizar estos términos en cualquier momento. Te notificaremos de los cambios relevantes.
+
+10. CONTACTO
+Para cualquier consulta: info@futboltalent.pro
+''',
+        ),
+      ),
+    );
+  }
+
+  void _showPrivacyModal(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: _LegalModal(
+          title: 'Política de Privacidad',
+          content: '''
+POLÍTICA DE PRIVACIDAD DE FUTBOLTALENT
+
+Última actualización: 2025
+
+1. RESPONSABLE DEL TRATAMIENTO
+FutbolTalent es el responsable del tratamiento de los datos personales recogidos a través de esta aplicación.
+
+2. DATOS QUE RECOPILAMOS
+- Datos de registro: nombre, correo electrónico, fecha de nacimiento, país, ciudad.
+- Datos de perfil: foto, posición, club, estadísticas deportivas.
+- Datos de uso: interacciones, contenidos publicados, videos subidos.
+- Datos técnicos: dirección IP, tipo de dispositivo, sistema operativo.
+
+3. FINALIDAD DEL TRATAMIENTO
+Utilizamos tus datos para:
+- Gestionar tu cuenta y proporcionarte el servicio.
+- Conectarte con otros usuarios (jugadores, clubes, ojeadores).
+- Personalizar tu experiencia en la plataforma.
+- Enviarte notificaciones relacionadas con tu actividad.
+- Mejorar y desarrollar nuevas funcionalidades.
+
+4. BASE LEGAL
+El tratamiento se basa en tu consentimiento al registrarte y en el interés legítimo de prestar el servicio.
+
+5. CONSERVACIÓN DE DATOS
+Conservamos tus datos mientras tu cuenta esté activa. Puedes solicitar la eliminación en cualquier momento.
+
+6. DESTINATARIOS
+No compartimos tus datos con terceros salvo:
+- Proveedores de servicios técnicos necesarios para operar la plataforma.
+- Cuando lo exija la ley o una autoridad competente.
+
+7. DERECHOS DEL USUARIO
+Tienes derecho a:
+- Acceder a tus datos personales.
+- Rectificar datos inexactos.
+- Solicitar la supresión de tus datos.
+- Oponerte al tratamiento.
+- Solicitar la portabilidad de tus datos.
+
+Para ejercer tus derechos, escríbenos a: info@futboltalent.pro
+
+8. MENORES DE EDAD
+Los usuarios menores de 18 años deben contar con el consentimiento de su tutor legal para registrarse.
+
+9. SEGURIDAD
+Aplicamos medidas técnicas y organizativas para proteger tus datos frente a accesos no autorizados.
+
+10. CAMBIOS EN LA POLÍTICA
+Podemos actualizar esta política. Te notificaremos de los cambios relevantes a través de la aplicación.
+
+11. CONTACTO
+Para cualquier consulta sobre privacidad: info@futboltalent.pro
+''',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTermsCheckbox(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final fontSize = 13 * scale;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 24,
+          height: 24,
+          child: Checkbox(
+            value: _acceptedTerms,
+            activeColor: const Color(0xFF0D3B66),
+            onChanged: (v) => setState(() => _acceptedTerms = v ?? false),
+          ),
+        ),
+        SizedBox(width: 10 * scale),
+        Expanded(
+          child: GestureDetector(
+            onTap: () => setState(() => _acceptedTerms = !_acceptedTerms),
+            child: RichText(
+              text: TextSpan(
+                style: GoogleFonts.inter(
+                    fontSize: fontSize, color: const Color(0xFF334155)),
+                children: [
+                  const TextSpan(text: 'He leído y acepto los '),
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.baseline,
+                    baseline: TextBaseline.alphabetic,
+                    child: GestureDetector(
+                      onTap: () => _showTermsModal(context),
+                      child: Text(
+                        'Términos de uso',
+                        style: GoogleFonts.inter(
+                          fontSize: fontSize,
+                          color: const Color(0xFF2B6CB0),
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const TextSpan(text: ' y la '),
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.baseline,
+                    baseline: TextBaseline.alphabetic,
+                    child: GestureDetector(
+                      onTap: () => _showPrivacyModal(context),
+                      child: Text(
+                        'Política de privacidad',
+                        style: GoogleFonts.inter(
+                          fontSize: fontSize,
+                          color: const Color(0xFF2B6CB0),
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const TextSpan(text: ' de FutbolTalent.'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStateDropdown(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final fontSize = 13 * scale;
+    final countryName = _paisController.text;
+    // Si el país no tiene estados (modo fallback), no muestra este campo
+    if (_selectedState == '__all__' && _states.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(bottom: 8 * scale),
+          child: Text('Estado / Provincia',
+              style: GoogleFonts.inter(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black)),
+        ),
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(horizontal: 16 * scale),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: const Color(0xFFA0AEC0)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: _isStatesLoading
+              ? Padding(
+                  padding: EdgeInsets.symmetric(vertical: 14 * scale),
+                  child: Row(children: [
+                    SizedBox(
+                      width: 16 * scale,
+                      height: 16 * scale,
+                      child: const CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 10 * scale),
+                    Text('Cargando estados...',
+                        style: GoogleFonts.inter(
+                            fontSize: fontSize,
+                            color: const Color(0xFF2F3336))),
+                  ]),
+                )
+              : DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: (_selectedState != null &&
+                            _states.contains(_selectedState))
+                        ? _selectedState
+                        : null,
+                    hint: Text(
+                      _selectedCountryId == null
+                          ? 'Selecciona primero el país'
+                          : _states.isEmpty
+                              ? 'Cargando...'
+                              : 'Selecciona el estado',
+                      style: GoogleFonts.inter(
+                          fontSize: fontSize, color: const Color(0xFF2F3336)),
+                    ),
+                    isExpanded: true,
+                    icon: const Icon(Icons.keyboard_arrow_down),
+                    items: _states
+                        .map((s) => DropdownMenuItem<String>(
+                            value: s,
+                            child: Text(s,
+                                style: GoogleFonts.inter(fontSize: fontSize))))
+                        .toList(),
+                    onChanged: _selectedCountryId == null
+                        ? null
+                        : (v) {
+                            setState(() => _selectedState = v);
+                            if (v != null && countryName.isNotEmpty) {
+                              _loadCitiesByState(countryName, v);
+                            }
+                          },
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCityDropdown(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final fontSize = 13 * scale;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(bottom: 8 * scale),
+          child: Text('Ciudad',
+              style: GoogleFonts.inter(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black)),
+        ),
+        if (_isCitiesLoading)
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(
+                horizontal: 16 * scale, vertical: 14 * scale),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: const Color(0xFFA0AEC0)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(children: [
+              SizedBox(
+                width: 16 * scale,
+                height: 16 * scale,
+                child: const CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 10 * scale),
+              Text('Cargando ciudades...',
+                  style: GoogleFonts.inter(
+                      fontSize: fontSize, color: const Color(0xFF2F3336))),
+            ]),
+          )
+        else if (_cityFreeText)
+          // Texto libre cuando la API no encontró ciudades
+          TextField(
+            controller: _cidadeController,
+            focusNode: _cidadeFocusNode,
+            textCapitalization: TextCapitalization.words,
+            style: GoogleFonts.inter(fontSize: fontSize),
+            decoration: InputDecoration(
+              hintText: 'Escribe el nombre de la ciudad',
+              hintStyle: GoogleFonts.inter(
+                  fontSize: fontSize, color: const Color(0xFF2F3336)),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: EdgeInsets.symmetric(
+                  horizontal: 16 * scale, vertical: 14 * scale),
+              enabledBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: Color(0xFFA0AEC0)),
+                  borderRadius: BorderRadius.circular(8)),
+              focusedBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: Color(0xFF2B6CB0)),
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+          )
+        else
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(horizontal: 16 * scale),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: const Color(0xFFA0AEC0)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedCity,
+                hint: Text(
+                  _selectedCountryId == null
+                      ? 'Selecciona primero el país'
+                      : (_selectedState == null)
+                          ? 'Selecciona primero el estado'
+                          : _cities.isEmpty
+                              ? 'Sin ciudades disponibles'
+                              : 'Selecciona la ciudad',
+                  style: GoogleFonts.inter(
+                      fontSize: fontSize, color: const Color(0xFF2F3336)),
+                ),
+                isExpanded: true,
+                icon: const Icon(Icons.keyboard_arrow_down),
+                items: _cities
+                    .map((city) => DropdownMenuItem<String>(
+                        value: city,
+                        child: Text(city,
+                            style: GoogleFonts.inter(fontSize: fontSize))))
+                    .toList(),
+                onChanged: _selectedState == null
+                    ? null
+                    : (v) {
+                        setState(() {
+                          _selectedCity = v;
+                          _cidadeController.text = v ?? '';
+                        });
+                      },
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -1642,6 +2254,83 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                 fontWeight: FontWeight.bold,
                 color: Colors.white)),
       ),
+    );
+  }
+}
+
+class _LegalModal extends StatelessWidget {
+  const _LegalModal({required this.title, required this.content});
+
+  final String title;
+  final String content;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: const BoxDecoration(
+            color: Color(0xFF0D3B66),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: const Icon(Icons.close, color: Colors.white, size: 22),
+              ),
+            ],
+          ),
+        ),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Text(
+              content.trim(),
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                height: 1.6,
+                color: const Color(0xFF334155),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0D3B66),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: Text(
+                'Cerrar',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -57,6 +57,25 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
 
   String _challengeKey(String type, String id) => '$type:$id';
 
+  String? _normalizeCategoryId(dynamic value) {
+    final categoryId = value?.toString().trim() ?? '';
+    if (categoryId.isEmpty) return null;
+    return categoryId;
+  }
+
+  bool _categoryExists(String categoryId) {
+    return _categories.any(
+      (category) => category['id']?.toString().trim() == categoryId,
+    );
+  }
+
+  String? _sanitizeCategoryId(dynamic value) {
+    final categoryId = _normalizeCategoryId(value);
+    if (categoryId == null) return null;
+    if (_categories.isEmpty) return categoryId;
+    return _categoryExists(categoryId) ? categoryId : null;
+  }
+
   int _toInt(dynamic value, {int fallback = 0}) {
     if (value is int) return value;
     return int.tryParse(value?.toString() ?? '') ?? fallback;
@@ -491,6 +510,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     final table = type == 'course' ? 'courses' : 'exercises';
     final rawId = challenge['id'];
     final isActive = challenge['is_active'] == true;
+    final sanitizedCategoryId = _sanitizeCategoryId(challenge['category_id']);
     if (rawId == null || rawId.toString().trim().isEmpty) {
       _showSnack('No se encontró el identificador del desafío.',
           color: Colors.red);
@@ -500,6 +520,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       final updatedRows = await SupaFlow.client
           .from(table)
           .update({
+            'category_id': sanitizedCategoryId,
             'is_active': !isActive,
             'updated_at': DateTime.now().toIso8601String(),
           })
@@ -600,6 +621,9 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                 return;
               }
 
+              final sanitizedCategoryId =
+                  _sanitizeCategoryId(selectedCategoryId);
+
               final payload = <String, dynamic>{
                 'title': titleController.text.trim(),
                 'description': descriptionController.text.trim().isEmpty
@@ -607,7 +631,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                     : descriptionController.text.trim(),
                 'video_url': finalVideoUrl,
                 'thumbnail_url': finalThumbnailUrl,
-                'category_id': selectedCategoryId,
+                'category_id': sanitizedCategoryId,
                 'difficulty': difficultyController.text.trim().isEmpty
                     ? null
                     : difficultyController.text.trim(),
@@ -962,6 +986,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
   }
 
   Future<void> _openEditChallengeDialog(Map<String, dynamic> challenge) async {
+    String? selectedCategoryId = _sanitizeCategoryId(challenge['category_id']);
     final titleController =
         TextEditingController(text: challenge['title'] ?? '');
     final descriptionController =
@@ -984,7 +1009,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
         TextEditingController(text: challenge['sets']?.toString() ?? '');
     final instructionsController =
         TextEditingController(text: challenge['instructions'] ?? '');
-    String? selectedCategoryId = challenge['category_id']?.toString();
     bool isActive = challenge['is_active'] == true;
     bool isPremium = challenge['is_premium'] == true;
     final type = challenge['type']?.toString() ?? 'exercise';
@@ -1268,6 +1292,8 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
         );
       }
 
+      final sanitizedCategoryId = _sanitizeCategoryId(selectedCategoryId);
+
       final payload = <String, dynamic>{
         'title': titleController.text.trim(),
         'description': descriptionController.text.trim().isEmpty
@@ -1275,7 +1301,7 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
             : descriptionController.text.trim(),
         'video_url': finalVideoUrl.isEmpty ? null : finalVideoUrl,
         'thumbnail_url': finalThumbnailUrl.isEmpty ? null : finalThumbnailUrl,
-        'category_id': selectedCategoryId,
+        'category_id': sanitizedCategoryId,
         'validity_days': maybeInt(validityController.text) ?? 60,
         'difficulty': difficultyController.text.trim().isEmpty
             ? null

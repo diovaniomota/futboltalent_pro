@@ -3,8 +3,10 @@ import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'editar_perfil_model.dart';
 export 'editar_perfil_model.dart';
@@ -28,6 +30,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   TextEditingController? _usernameController;
   TextEditingController? _birthdayController;
   TextEditingController? _countryController;
+  TextEditingController? _stateController;
   TextEditingController? _cityController;
   TextEditingController? _posicaoController;
   TextEditingController? _categoryController;
@@ -59,6 +62,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   bool _hasScoutRecord = false;
   List<Map<String, dynamic>> _countries = [];
   String? _selectedCountryId;
+  List<String> _states = [];
+  String? _selectedState;
+  bool _isStatesLoading = false;
+  List<String> _cities = [];
+  String? _selectedCity;
+  bool _isCitiesLoading = false;
 
   // Opção selecionada (club ou sin club)
   String? _selectedPlayerStatus;
@@ -112,6 +121,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     _usernameController?.dispose();
     _birthdayController?.dispose();
     _countryController?.dispose();
+    _stateController?.dispose();
     _cityController?.dispose();
     _posicaoController?.dispose();
     _categoryController?.dispose();
@@ -195,7 +205,15 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               .eq('id', uid)
               .maybeSingle();
           if (scoutResponse != null) {
-            merged.addAll(Map<String, dynamic>.from(scoutResponse));
+            // Merge only non-empty scout values to avoid wiping users fields
+            // like city/state when scout columns are null.
+            final scoutMap = Map<String, dynamic>.from(scoutResponse);
+            for (final entry in scoutMap.entries) {
+              final value = entry.value;
+              if (value == null) continue;
+              if (value is String && value.trim().isEmpty) continue;
+              merged[entry.key] = value;
+            }
             if ((merged['bio']?.toString().trim().isEmpty ?? true) &&
                 (scoutResponse['biography']?.toString().trim().isNotEmpty ??
                     false)) {
@@ -227,6 +245,18 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 merged['country'],
                 merged['pais'],
                 merged['country_name'],
+              ]) ??
+              '',
+        ),
+      );
+      _stateController = TextEditingController(
+        text: normalizeStateName(
+          _firstNonEmptyValue([
+                merged['state'],
+                merged['estado'],
+                merged['province'],
+                merged['provincia'],
+                merged['region'],
               ]) ??
               '',
         ),
@@ -287,6 +317,13 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       _selectedCountryId = merged['country_id']?.toString();
       _applySelectedCountryByName(_countryController?.text,
           updateController: false);
+      _selectedState = _stateController?.text.trim().isNotEmpty == true
+          ? _stateController?.text.trim()
+          : null;
+      _selectedCity = _cityController?.text.trim().isNotEmpty == true
+          ? _cityController?.text.trim()
+          : null;
+      await _initializeLocationDropdowns();
       _refreshDerivedPlayerCategory();
     } catch (e) {
       debugPrint('Error al cargar usuario: $e');
@@ -314,6 +351,342 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       });
     } catch (e) {
       debugPrint('Error al cargar países: $e');
+    }
+  }
+
+  String _toApiCountryName(String name) {
+    const map = {
+      'España': 'Spain',
+      'Espana': 'Spain',
+      'México': 'Mexico',
+      'Mexico': 'Mexico',
+      'Brasil': 'Brazil',
+      'Alemania': 'Germany',
+      'Francia': 'France',
+      'Italia': 'Italy',
+      'Países Bajos': 'Netherlands',
+      'Paises Bajos': 'Netherlands',
+      'Holanda': 'Netherlands',
+      'Bélgica': 'Belgium',
+      'Belgica': 'Belgium',
+      'Suiza': 'Switzerland',
+      'Suecia': 'Sweden',
+      'Noruega': 'Norway',
+      'Dinamarca': 'Denmark',
+      'Finlandia': 'Finland',
+      'Polonia': 'Poland',
+      'Grecia': 'Greece',
+      'Turquía': 'Turkey',
+      'Turquia': 'Turkey',
+      'Rusia': 'Russia',
+      'Ucrania': 'Ukraine',
+      'Rumania': 'Romania',
+      'Rumanía': 'Romania',
+      'Hungría': 'Hungary',
+      'Hungria': 'Hungary',
+      'República Checa': 'Czech Republic',
+      'Republica Checa': 'Czech Republic',
+      'Croacia': 'Croatia',
+      'Reino Unido': 'United Kingdom',
+      'Irlanda': 'Ireland',
+      'Estados Unidos': 'United States',
+      'EE.UU.': 'United States',
+      'EEUU': 'United States',
+      'Canadá': 'Canada',
+      'Canada': 'Canada',
+      'Colombia': 'Colombia',
+      'Venezuela': 'Venezuela',
+      'Chile': 'Chile',
+      'Perú': 'Peru',
+      'Peru': 'Peru',
+      'Ecuador': 'Ecuador',
+      'Bolivia': 'Bolivia',
+      'Paraguay': 'Paraguay',
+      'Uruguay': 'Uruguay',
+      'Costa Rica': 'Costa Rica',
+      'Guatemala': 'Guatemala',
+      'Honduras': 'Honduras',
+      'El Salvador': 'El Salvador',
+      'Nicaragua': 'Nicaragua',
+      'Panamá': 'Panama',
+      'Panama': 'Panama',
+      'Cuba': 'Cuba',
+      'República Dominicana': 'Dominican Republic',
+      'Republica Dominicana': 'Dominican Republic',
+      'Puerto Rico': 'Puerto Rico',
+      'Marruecos': 'Morocco',
+      'Argelia': 'Algeria',
+      'Túnez': 'Tunisia',
+      'Tunez': 'Tunisia',
+      'Egipto': 'Egypt',
+      'Nigeria': 'Nigeria',
+      'Ghana': 'Ghana',
+      'Senegal': 'Senegal',
+      'Costa de Marfil': "Côte d'Ivoire",
+      'Camerún': 'Cameroon',
+      'Camerun': 'Cameroon',
+      'Sudáfrica': 'South Africa',
+      'Sudafrica': 'South Africa',
+      'Japón': 'Japan',
+      'Japon': 'Japan',
+      'Corea del Sur': 'South Korea',
+      'Arabia Saudita': 'Saudi Arabia',
+      'Emiratos Árabes': 'United Arab Emirates',
+    };
+    return map[name] ?? name;
+  }
+
+  Future<void> _initializeLocationDropdowns() async {
+    final country = normalizeCountryName(_countryController?.text);
+    if (country.isEmpty) return;
+    await _loadStates(
+      country,
+      preferredState: normalizeStateName(_stateController?.text),
+      preferredCity: normalizeCityName(_cityController?.text),
+    );
+  }
+
+  Future<void> _loadStates(
+    String countryName, {
+    String? preferredState,
+    String? preferredCity,
+  }) async {
+    if (countryName.isEmpty) return;
+
+    final apiName = _toApiCountryName(countryName);
+    final preferredStateText = normalizeStateName(preferredState);
+    final preferredCityText = normalizeCityName(preferredCity);
+    setState(() {
+      _isStatesLoading = true;
+      _states = [];
+      _cities = [];
+      _isCitiesLoading = false;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://countriesnow.space/api/v0.1/countries/states'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'country': apiName}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['error'] == false && data['data'] is Map) {
+          final statesRaw = data['data']['states'];
+          if (statesRaw is List) {
+            final stateList = statesRaw
+                .map((item) => (item['name'] ?? '').toString().trim())
+                .where((item) => item.isNotEmpty)
+                .toList()
+              ..sort();
+
+            if (!mounted) return;
+            setState(() => _states = stateList);
+          }
+        }
+      }
+
+      if (_states.isEmpty) {
+        if (preferredStateText.isNotEmpty) {
+          setState(() {
+            _selectedState = preferredStateText;
+            _stateController?.text = preferredStateText;
+            _states = [preferredStateText];
+          });
+        }
+        await _loadCitiesDirectly(apiName, preferredCity: preferredCityText);
+        return;
+      }
+
+      final normalizedPreferred = preferredStateText;
+      final matchedState = _states.cast<String?>().firstWhere(
+            (state) =>
+                normalizeLookupKey(state) ==
+                normalizeLookupKey(normalizedPreferred),
+            orElse: () => null,
+          );
+
+      final selectedState = matchedState ??
+          (normalizedPreferred.isNotEmpty ? normalizedPreferred : null);
+
+      if (!mounted) return;
+      setState(() {
+        if (selectedState != null &&
+            !_states.any((s) =>
+                normalizeLookupKey(s) == normalizeLookupKey(selectedState))) {
+          _states = [selectedState, ..._states];
+        }
+        _selectedState = selectedState;
+        _stateController?.text = selectedState ?? '';
+      });
+
+      if (selectedState != null) {
+        await _loadCitiesByState(
+          countryName,
+          selectedState,
+          preferredCity: preferredCityText,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error al cargar estados: $e');
+      if (preferredStateText.isNotEmpty && mounted) {
+        setState(() {
+          _selectedState = preferredStateText;
+          _stateController?.text = preferredStateText;
+          _states = [preferredStateText];
+        });
+      }
+      await _loadCitiesDirectly(apiName, preferredCity: preferredCityText);
+    } finally {
+      if (mounted) {
+        setState(() => _isStatesLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadCitiesDirectly(
+    String apiCountryName, {
+    String? preferredCity,
+  }) async {
+    final preferredCityText = normalizeCityName(preferredCity);
+    setState(() {
+      _isCitiesLoading = true;
+      _cities = [];
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://countriesnow.space/api/v0.1/countries/cities'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'country': apiCountryName}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['error'] == false && data['data'] is List) {
+          final cityList = (data['data'] as List)
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .toList()
+            ..sort();
+
+          final normalizedPreferred = preferredCityText;
+          final matchedCity = cityList.cast<String?>().firstWhere(
+                (city) =>
+                    normalizeLookupKey(city) ==
+                    normalizeLookupKey(normalizedPreferred),
+                orElse: () => null,
+              );
+
+          final selectedCity = matchedCity ??
+              (normalizedPreferred.isNotEmpty ? normalizedPreferred : null);
+
+          if (!mounted) return;
+          setState(() {
+            if (selectedCity != null &&
+                !cityList.any((c) =>
+                    normalizeLookupKey(c) ==
+                    normalizeLookupKey(selectedCity))) {
+              cityList.insert(0, selectedCity);
+            }
+            _cities = cityList;
+            _selectedCity = selectedCity;
+            _cityController?.text = selectedCity ?? '';
+          });
+        }
+      }
+      if (_cities.isEmpty && preferredCityText.isNotEmpty && mounted) {
+        setState(() {
+          _cities = [preferredCityText];
+          _selectedCity = preferredCityText;
+          _cityController?.text = preferredCityText;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error al cargar ciudades: $e');
+      if (preferredCityText.isNotEmpty && mounted) {
+        setState(() {
+          _cities = [preferredCityText];
+          _selectedCity = preferredCityText;
+          _cityController?.text = preferredCityText;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCitiesLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadCitiesByState(
+    String countryName,
+    String stateName, {
+    String? preferredCity,
+  }) async {
+    if (countryName.isEmpty || stateName.isEmpty) return;
+
+    final preferredCityText = normalizeCityName(preferredCity);
+
+    setState(() {
+      _isCitiesLoading = true;
+      _cities = [];
+    });
+
+    final apiName = _toApiCountryName(countryName);
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://countriesnow.space/api/v0.1/countries/state/cities'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'country': apiName, 'state': stateName}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['error'] == false && data['data'] is List) {
+          final cityList = (data['data'] as List)
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .toList()
+            ..sort();
+
+          final normalizedPreferred = preferredCityText;
+          final matchedCity = cityList.cast<String?>().firstWhere(
+                (city) =>
+                    normalizeLookupKey(city) ==
+                    normalizeLookupKey(normalizedPreferred),
+                orElse: () => null,
+              );
+
+          final selectedCity = matchedCity ??
+              (normalizedPreferred.isNotEmpty ? normalizedPreferred : null);
+
+          if (!mounted) return;
+          setState(() {
+            if (selectedCity != null &&
+                !cityList.any((c) =>
+                    normalizeLookupKey(c) ==
+                    normalizeLookupKey(selectedCity))) {
+              cityList.insert(0, selectedCity);
+            }
+            _cities = cityList;
+            _selectedCity = selectedCity;
+            _cityController?.text = selectedCity ?? '';
+          });
+        }
+      }
+
+      if (_cities.isEmpty) {
+        await _loadCitiesDirectly(apiName, preferredCity: preferredCityText);
+      }
+    } catch (e) {
+      debugPrint('Error al cargar ciudades por estado: $e');
+      await _loadCitiesDirectly(apiName, preferredCity: preferredCityText);
+    } finally {
+      if (mounted) {
+        setState(() => _isCitiesLoading = false);
+      }
     }
   }
 
@@ -667,6 +1040,51 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     }
   }
 
+  Future<void> _updateTableWithSchemaFallback({
+    required String table,
+    required String matchColumn,
+    required String matchValue,
+    required Map<String, dynamic> payload,
+  }) async {
+    final mutablePayload = Map<String, dynamic>.from(payload);
+
+    for (var attempt = 0; attempt < 12; attempt++) {
+      try {
+        await SupaFlow.client
+            .from(table)
+            .update(mutablePayload)
+            .eq(matchColumn, matchValue);
+        return;
+      } catch (e) {
+        final message = e.toString();
+        final regexSingle =
+            RegExp("Could not find the '([^']+)' column of '$table'");
+        final regexDouble =
+            RegExp('Could not find the \"([^\"]+)\" column of \"$table\"');
+        final singleMatch = regexSingle.firstMatch(message);
+        final doubleMatch = regexDouble.firstMatch(message);
+        final missingColumn =
+            (singleMatch?.group(1) ?? doubleMatch?.group(1))?.trim();
+
+        if (missingColumn == null || missingColumn.isEmpty) {
+          rethrow;
+        }
+
+        if (!mutablePayload.containsKey(missingColumn)) {
+          rethrow;
+        }
+
+        mutablePayload.remove(missingColumn);
+        if (mutablePayload.isEmpty) {
+          rethrow;
+        }
+      }
+    }
+
+    throw Exception(
+        'No se pudo actualizar $table por incompatibilidad de schema');
+  }
+
   Future<void> _saveChanges() async {
     try {
       setState(() => _isSaving = true);
@@ -703,6 +1121,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       }
 
       final country = normalizeCountryName(_countryController?.text);
+      final state = normalizeStateName(_stateController?.text);
       final city = normalizeCityName(_cityController?.text);
       _applySelectedCountryByName(country, updateController: false);
       final normalizedPosition =
@@ -729,6 +1148,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         'updated_at': DateTime.now().toIso8601String(),
       };
 
+      if (state.isNotEmpty) {
+        userPayload['state'] = state;
+        userPayload['province'] = state;
+        userPayload['region'] = state;
+      }
+
       if (_currentUserType == 'profesional') {
         userPayload.addAll({
           'bio': _bioController?.text.trim() ?? '',
@@ -753,10 +1178,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         });
       }
 
-      await SupaFlow.client
-          .from('users')
-          .update(userPayload)
-          .eq('user_id', uid);
+      await _updateTableWithSchemaFallback(
+        table: 'users',
+        matchColumn: 'user_id',
+        matchValue: uid,
+        payload: userPayload,
+      );
 
       if (_currentUserType == 'profesional') {
         final scoutPayload = <String, dynamic>{
@@ -765,18 +1192,32 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           'club': _clubController?.text.trim() ?? '',
           'url_profesional': _professionalUrlController?.text.trim() ?? '',
           'dni': _tryParseInt(_dniController?.text),
+          'city': city,
+          'country': country,
+          if (state.isNotEmpty) 'state': state,
+          if (state.isNotEmpty) 'province': state,
+          if (state.isNotEmpty) 'region': state,
         };
 
         if (_hasScoutRecord) {
-          await SupaFlow.client
-              .from('scouts')
-              .update(scoutPayload)
-              .eq('id', uid);
+          await _updateTableWithSchemaFallback(
+            table: 'scouts',
+            matchColumn: 'id',
+            matchValue: uid,
+            payload: scoutPayload,
+          );
         } else {
+          final scoutInsertPayload = <String, dynamic>{
+            'biography': _bioController?.text.trim() ?? '',
+            'telephone': _phoneController?.text.trim() ?? '',
+            'club': _clubController?.text.trim() ?? '',
+            'url_profesional': _professionalUrlController?.text.trim() ?? '',
+            'dni': _tryParseInt(_dniController?.text),
+          };
           await SupaFlow.client.from('scouts').insert({
             'id': uid,
             'created_at': DateTime.now().toIso8601String(),
-            ...scoutPayload,
+            ...scoutInsertPayload,
           });
           _hasScoutRecord = true;
         }
@@ -1510,15 +1951,48 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 ? _countryController?.text.trim()
                 : null,
             onChanged: (value) {
-              setState(() => _applySelectedCountryByName(value));
+              final country = normalizeCountryName(value);
+              setState(() => _applySelectedCountryByName(country));
+              _loadStates(country);
             },
             options: _countryOptions),
-        _buildTextField(
+        _buildDropdownField(
+            label: 'Estado / provincia',
+            hintText: _isStatesLoading
+                ? 'Cargando estados...'
+                : 'Selecciona tu estado',
+            value: _states.contains(_selectedState) ? _selectedState : null,
+            onChanged: _isStatesLoading
+                ? (_) {}
+                : (value) {
+                    setState(() {
+                      _selectedState = value;
+                      _stateController?.text = value ?? '';
+                    });
+                    final country =
+                        normalizeCountryName(_countryController?.text);
+                    if (country.isNotEmpty &&
+                        value != null &&
+                        value.isNotEmpty) {
+                      _loadCitiesByState(country, value);
+                    }
+                  },
+            options: _states),
+        _buildDropdownField(
             label: 'Ciudad',
-            controller: _cityController,
-            focusNode: null,
-            hintText: 'Rosario',
-            textCapitalization: TextCapitalization.words),
+            hintText: _isCitiesLoading
+                ? 'Cargando ciudades...'
+                : 'Selecciona tu ciudad',
+            value: _cities.contains(_selectedCity) ? _selectedCity : null,
+            onChanged: _isCitiesLoading
+                ? (_) {}
+                : (value) {
+                    setState(() {
+                      _selectedCity = value;
+                      _cityController?.text = value ?? '';
+                    });
+                  },
+            options: _cities),
         _buildDropdownField(
             label: 'Posición principal',
             hintText: 'Selecciona tu posición',
@@ -1615,15 +2089,48 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 ? _countryController?.text.trim()
                 : null,
             onChanged: (value) {
-              setState(() => _applySelectedCountryByName(value));
+              final country = normalizeCountryName(value);
+              setState(() => _applySelectedCountryByName(country));
+              _loadStates(country);
             },
             options: _countryOptions),
-        _buildTextField(
+        _buildDropdownField(
+            label: 'Estado / provincia',
+            hintText: _isStatesLoading
+                ? 'Cargando estados...'
+                : 'Selecciona tu estado',
+            value: _states.contains(_selectedState) ? _selectedState : null,
+            onChanged: _isStatesLoading
+                ? (_) {}
+                : (value) {
+                    setState(() {
+                      _selectedState = value;
+                      _stateController?.text = value ?? '';
+                    });
+                    final country =
+                        normalizeCountryName(_countryController?.text);
+                    if (country.isNotEmpty &&
+                        value != null &&
+                        value.isNotEmpty) {
+                      _loadCitiesByState(country, value);
+                    }
+                  },
+            options: _states),
+        _buildDropdownField(
             label: 'Ciudad',
-            controller: _cityController,
-            focusNode: null,
-            hintText: 'Lisboa',
-            textCapitalization: TextCapitalization.words),
+            hintText: _isCitiesLoading
+                ? 'Cargando ciudades...'
+                : 'Selecciona tu ciudad',
+            value: _cities.contains(_selectedCity) ? _selectedCity : null,
+            onChanged: _isCitiesLoading
+                ? (_) {}
+                : (value) {
+                    setState(() {
+                      _selectedCity = value;
+                      _cityController?.text = value ?? '';
+                    });
+                  },
+            options: _cities),
         _buildTextField(
             label: 'Fecha de nacimiento',
             controller: _birthdayController,

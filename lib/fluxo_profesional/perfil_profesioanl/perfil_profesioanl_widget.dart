@@ -6,6 +6,7 @@ import '/fluxo_compartilhado/notificacoes/notificacoes_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/index.dart'; // For EditarPerfilWidget and PerfilProfesionalSolicitarContatoWidget
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -40,6 +41,71 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
   String? _removingSavedVideoId;
   int _followers = 0;
 
+  String _firstNonEmptyText(Iterable<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
+    }
+    return '';
+  }
+
+  Future<String> _resolveCountryNameById(dynamic rawCountryId) async {
+    final countryId = rawCountryId is int
+        ? rawCountryId
+        : int.tryParse(rawCountryId?.toString().trim() ?? '');
+    if (countryId == null) return '';
+
+    try {
+      final row = await SupaFlow.client
+          .from('countrys')
+          .select('name')
+          .eq('id', countryId)
+          .maybeSingle();
+      return row?['name']?.toString().trim() ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _buildLocationText(Map<String, dynamic>? userData) {
+    final country = _firstNonEmptyText([
+      userData?['country'],
+      userData?['pais'],
+      userData?['país'],
+      userData?['country_name'],
+      userData?['country_resolved'],
+    ]);
+    final state = _firstNonEmptyText([
+      userData?['state'],
+      userData?['estado'],
+      userData?['province'],
+      userData?['provincia'],
+      userData?['region'],
+    ]);
+    final city = _firstNonEmptyText([
+      userData?['city'],
+      userData?['ciudad'],
+      userData?['cidade'],
+      userData?['localidad'],
+      userData?['location'],
+      userData?['ubicacion'],
+      userData?['ubicación'],
+    ]);
+
+    final parts = <String>[];
+    if (country.isNotEmpty) parts.add(country);
+    if (state.isNotEmpty &&
+        !parts.any((p) => p.toLowerCase() == state.toLowerCase())) {
+      parts.add(state);
+    }
+    if (city.isNotEmpty &&
+        !parts.any((p) => p.toLowerCase() == city.toLowerCase())) {
+      parts.add(city);
+    }
+
+    return parts.join(' · ');
+  }
+
   @override
   void initState() {
     super.initState();
@@ -64,6 +130,36 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
     if (_tabController.index == 1 && currentUserUid.isNotEmpty) {
       _loadSaved(currentUserUid, refreshUi: true);
     }
+  }
+
+  List<String> _parseCollaborations(dynamic rawValue) {
+    if (rawValue is List) {
+      return rawValue
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+
+    final text = rawValue?.toString().trim() ?? '';
+    if (text.isEmpty) return [];
+
+    if (text.startsWith('[') && text.endsWith(']')) {
+      try {
+        final decoded = jsonDecode(text);
+        if (decoded is List) {
+          return decoded
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .toList();
+        }
+      } catch (_) {}
+    }
+
+    return text
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
   }
 
   Future<void> _loadProfile() async {
@@ -99,14 +195,20 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
         _userData = merged;
         _followers = merged['followers_count'] ?? 0;
         if (merged['colaboraciones'] != null) {
-          if (merged['colaboraciones'] is List) {
-            _colabs = List<String>.from(merged['colaboraciones']);
-          } else if (merged['colaboraciones'] is String)
-            _colabs = (merged['colaboraciones'] as String)
-                .split(',')
-                .map((e) => e.trim())
-                .where((e) => e.isNotEmpty)
-                .toList();
+          _colabs = _parseCollaborations(merged['colaboraciones']);
+        }
+        final hasCountryText = _firstNonEmptyText([
+          merged['country'],
+          merged['pais'],
+          merged['país'],
+          merged['country_name'],
+        ]).isNotEmpty;
+        if (!hasCountryText) {
+          final resolvedCountry =
+              await _resolveCountryNameById(merged['country_id']);
+          if (resolvedCountry.isNotEmpty) {
+            merged['country_resolved'] = resolvedCountry;
+          }
         }
       }
       await _loadHistory(uid);
@@ -373,22 +475,22 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                                   padding:
                                       const EdgeInsets.fromLTRB(16, 8, 16, 0),
                                   child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      _iconBtn(Icons.settings, () {
-                                        showProfileSupportSheet(
-                                          context: context,
-                                          userId: currentUserUid,
-                                          screenName:
-                                              PerfilProfesioanlWidget.routeName,
-                                          onEditProfile: () {
-                                            context.pushNamed(
-                                              EditarPerfilWidget.routeName,
-                                            );
-                                          },
-                                        );
-                                      }),
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        _iconBtn(Icons.settings, () {
+                                          showProfileSupportSheet(
+                                            context: context,
+                                            userId: currentUserUid,
+                                            screenName: PerfilProfesioanlWidget
+                                                .routeName,
+                                            onEditProfile: () {
+                                              context.pushNamed(
+                                                EditarPerfilWidget.routeName,
+                                              );
+                                            },
+                                          );
+                                        }),
                                         Row(children: [
                                           _iconBtn(Icons.notifications, () {
                                             Navigator.push(
@@ -615,7 +717,7 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                 style: GoogleFonts.inter(
                     fontSize: 12,
                     color: const Color(0xFF334155),
-                fontWeight: FontWeight.w600)))
+                    fontWeight: FontWeight.w600)))
       ]));
 
   Widget _buildProfessionalSummaryCard() {
@@ -623,11 +725,10 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
     final phone = _userData?['telephone']?.toString().trim() ?? '';
     final url = _userData?['url_profesional']?.toString().trim() ?? '';
     final dni = _userData?['dni']?.toString().trim() ?? '';
-    final city = _userData?['city']?.toString().trim() ?? '';
-    final country =
-        (_userData?['country'] ?? _userData?['pais'])?.toString().trim() ?? '';
+    final location = _buildLocationText(_userData);
     final bio =
-        (_userData?['bio'] ?? _userData?['descripcion'])?.toString().trim() ?? '';
+        (_userData?['bio'] ?? _userData?['descripcion'])?.toString().trim() ??
+            '';
 
     final entries = <Map<String, dynamic>>[
       if (club.isNotEmpty)
@@ -654,12 +755,11 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
           'label': 'Documento',
           'value': dni,
         },
-      if (city.isNotEmpty || country.isNotEmpty)
+      if (location.isNotEmpty)
         {
           'icon': Icons.location_on_outlined,
           'label': 'Ubicación',
-          'value': [if (city.isNotEmpty) city, if (country.isNotEmpty) country]
-              .join(' · '),
+          'value': location,
         },
     ];
 
