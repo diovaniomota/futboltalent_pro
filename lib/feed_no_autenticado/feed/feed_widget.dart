@@ -40,6 +40,7 @@ class _FeedWidgetState extends State<FeedWidget>
   // Video Feed State
   String _selectedTab = 'todos';
   List<Map<String, dynamic>> _videos = [];
+  List<Map<String, dynamic>> _allPublicVideos = [];
   List<Map<String, dynamic>> _challengeCards = [];
   bool _isLoading = true;
   bool _isFollowingAnyone = true;
@@ -244,8 +245,10 @@ class _FeedWidgetState extends State<FeedWidget>
 
   List<String> _collectVideoFilterOptions(
       String Function(Map<String, dynamic>) resolver) {
+    final sourceVideos =
+        _allPublicVideos.isNotEmpty ? _allPublicVideos : _videos;
     final set = <String>{};
-    for (final video in _videos) {
+    for (final video in sourceVideos) {
       final value = resolver(video).trim();
       if (value.isNotEmpty) {
         set.add(value);
@@ -831,7 +834,7 @@ class _FeedWidgetState extends State<FeedWidget>
           _isFollowingAnyone = false;
         } else {
           final followsResponse = await SupaFlow.client
-              .from('followers')
+              .from('follows')
               .select('following_id')
               .eq('follower_id', userId);
           final followingIds = (followsResponse as List)
@@ -871,7 +874,7 @@ class _FeedWidgetState extends State<FeedWidget>
           try {
             if (userId != null && videoUserId != userId) {
               final followCheck = await SupaFlow.client
-                  .from('followers')
+                  .from('follows')
                   .select('id')
                   .eq('follower_id', userId)
                   .eq('following_id', videoUserId)
@@ -976,6 +979,7 @@ class _FeedWidgetState extends State<FeedWidget>
       if (mounted) {
         setState(() {
           _videos = visibleVideos;
+          if (_selectedTab == 'todos') _allPublicVideos = visibleVideos;
           _challengeCards = challengeFeedCards;
           _isLoading = false;
           _currentIndex = 0;
@@ -2341,14 +2345,14 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
     try {
       if (_isFollowing) {
         await SupaFlow.client
-            .from('followers')
+            .from('follows')
             .delete()
             .eq('follower_id', uid)
             .eq('following_id', ownerId);
         await _updateFollowCounts(ownerId, -1);
       } else {
         await SupaFlow.client
-            .from('followers')
+            .from('follows')
             .insert({'follower_id': uid, 'following_id': ownerId});
         await _updateFollowCounts(ownerId, 1);
       }
