@@ -105,6 +105,10 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
   }
 
+  String _normalizeId(dynamic value) {
+    return value?.toString().trim() ?? '';
+  }
+
   String _tagLabelFromRating(int rating) {
     switch (rating) {
       case 1:
@@ -160,24 +164,19 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
   }
 
   bool get _canUseSensitiveActions =>
-      FFAppState().unlockSensitiveActions ||
-      (_currentPlanId != null && _currentUserVerified);
+      FFAppState().canUseSensitiveActions ||
+      ((_currentPlanId ?? 0) >= 2 && _currentUserVerified);
 
-  bool _resolveVerification(Map<String, dynamic>? user,
-      {required bool defaultIfMissing}) {
-    if (user == null) return defaultIfMissing;
-    final hasInfo = user.containsKey('is_verified') ||
-        user.containsKey('verification_status');
-    if (!hasInfo) return defaultIfMissing;
+  Future<bool> _ensureSensitiveAccess() async {
+    await _loadViewerCapabilities();
+    if (_canUseSensitiveActions) {
+      return true;
+    }
 
-    final direct = user['is_verified'];
-    if (direct is bool) return direct;
-
-    final status = user['verification_status']?.toString().toLowerCase() ?? '';
-    return status == 'verified' ||
-        status == 'verificado' ||
-        status == 'aprovado' ||
-        status == 'aprobado';
+    if (mounted) {
+      _showUpsellDialog();
+    }
+    return false;
   }
 
   Future<void> _initData() async {
@@ -203,18 +202,10 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     if (_currentUserId == null || _currentUserId!.isEmpty) return;
 
     try {
-      final user = await SupaFlow.client
-          .from('users')
-          .select()
-          .eq('user_id', _currentUserId!)
-          .maybeSingle();
-      if (user != null) {
-        _currentPlanId = user['plan_id'] as int?;
-        _currentUserVerified = _resolveVerification(
-          user,
-          defaultIfMissing: true,
-        );
-      }
+      await FFAppState().refreshCurrentUserAccess();
+      final appState = FFAppState();
+      _currentPlanId = appState.currentPlanId;
+      _currentUserVerified = appState.currentUserVerified;
     } catch (_) {
       _currentPlanId = null;
       _currentUserVerified = true;
@@ -358,8 +349,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
   }
 
   Future<void> _addPlayerDirectFromSearch(Map<String, dynamic> player) async {
-    if (!_canUseSensitiveActions) {
-      _showUpsellDialog();
+    if (!await _ensureSensitiveAccess()) {
       return;
     }
     if (_selectedLista == null) return;
@@ -532,19 +522,84 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
           .select()
           .eq('scout_id', _currentUserId!)
           .order('created_at', ascending: false);
-      final guardados = List<Map<String, dynamic>>.from(response);
-      for (var g in guardados) {
-        if (g['jugador_id'] != null) {
-          try {
-            final jugadorResponse = await SupaFlow.client
-                .from('users')
-                .select('user_id, name, lastname, posicion, photo_url, city')
-                .eq('user_id', g['jugador_id'])
-                .maybeSingle();
-            g['jugador_data'] = jugadorResponse;
-          } catch (_) {}
+      final mergedByPlayerId = <String, Map<String, dynamic>>{};
+
+      for (final row in List<Map<String, dynamic>>.from(response)) {
+        final jugadorId = _normalizeId(row['jugador_id']);
+        final rowId = _normalizeId(row['id']);
+        if (jugadorId.isEmpty || rowId.isEmpty) continue;
+        mergedByPlayerId[jugadorId] = {
+          ...row,
+          'source_table': 'jugadores_guardados',
+          'source_row_id': rowId,
+          'id': 'jugadores_guardados:$rowId',
+        };
+      }
+
+      final listasResponse = await SupaFlow.client
+          .from('listas')
+          .select('id')
+          .eq('profesional_id', _currentUserId!);
+      final listaIds = (listasResponse as List)
+          .map((item) => _normalizeId((item as Map)['id']))
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      if (listaIds.isNotEmpty) {
+        final listasJugadoresResponse = await SupaFlow.client
+            .from('listas_jugadores')
+            .select('id, lista_id, jugador_id, nota, created_at, updated_at')
+            .inFilter('lista_id', listaIds)
+            .order('created_at', ascending: false);
+
+        for (final row
+            in List<Map<String, dynamic>>.from(listasJugadoresResponse)) {
+          final jugadorId = _normalizeId(row['jugador_id']);
+          final rowId = _normalizeId(row['id']);
+          if (jugadorId.isEmpty || rowId.isEmpty) continue;
+
+          mergedByPlayerId.putIfAbsent(
+            jugadorId,
+            () => {
+              ...row,
+              'scout_id': _currentUserId,
+              'source_table': 'listas_jugadores',
+              'source_row_id': rowId,
+              'id': 'listas_jugadores:$rowId',
+            },
+          );
         }
       }
+
+      if (mergedByPlayerId.isNotEmpty) {
+        final usersResponse = await SupaFlow.client
+            .from('users')
+            .select('user_id, name, lastname, posicion, photo_url, city')
+            .inFilter('user_id', mergedByPlayerId.keys.toList());
+
+        final usersById = <String, Map<String, dynamic>>{};
+        for (final user in List<Map<String, dynamic>>.from(usersResponse)) {
+          final userId = _normalizeId(user['user_id']);
+          if (userId.isEmpty) continue;
+          usersById[userId] = user;
+        }
+
+        mergedByPlayerId.forEach((jugadorId, row) {
+          row['jugador_data'] = usersById[jugadorId];
+        });
+      }
+
+      final guardados = mergedByPlayerId.values.toList();
+      DateTime _safeCreatedAt(Map<String, dynamic> item) {
+        final raw = item['created_at']?.toString();
+        return DateTime.tryParse(raw ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+      }
+
+      guardados.sort(
+        (a, b) => _safeCreatedAt(b).compareTo(_safeCreatedAt(a)),
+      );
+
       if (mounted) {
         setState(() {
           _jugadoresGuardados = guardados;
@@ -593,26 +648,21 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     );
     if (result != null) {
       try {
-        await SupaFlow.client.from('jugadores_guardados').update({
+        final sourceTable =
+            guardado['source_table']?.toString() ?? 'jugadores_guardados';
+        final rowId = _normalizeId(guardado['source_row_id'] ?? guardado['id']);
+        if (rowId.isEmpty) return;
+
+        await SupaFlow.client.from(sourceTable).update({
           'nota': result,
           'updated_at': DateTime.now().toIso8601String()
-        }).eq('id', guardado['id']);
-        if (mounted) {
-          setState(() {
-            for (final item in _jugadoresGuardados) {
-              if (item['id']?.toString() == guardado['id']?.toString()) {
-                item['nota'] = result;
-                item['updated_at'] = DateTime.now().toIso8601String();
-              }
-            }
-          });
-        }
+        }).eq('id', rowId);
         await _loadJugadoresGuardados();
       } catch (_) {}
     }
   }
 
-  Future<void> _removeGuardado(String id) async {
+  Future<void> _removeGuardado(Map<String, dynamic> guardado) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -632,22 +682,19 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     );
     if (confirm == true) {
       try {
-        await SupaFlow.client.from('jugadores_guardados').delete().eq('id', id);
-        if (mounted) {
-          setState(() {
-            _jugadoresGuardados.removeWhere(
-              (item) => item['id']?.toString() == id.toString(),
-            );
-          });
-        }
+        final sourceTable =
+            guardado['source_table']?.toString() ?? 'jugadores_guardados';
+        final rowId = _normalizeId(guardado['source_row_id'] ?? guardado['id']);
+        if (rowId.isEmpty) return;
+
+        await SupaFlow.client.from(sourceTable).delete().eq('id', rowId);
         await _loadJugadoresGuardados();
       } catch (_) {}
     }
   }
 
   Future<void> _addGuardadoToList(Map<String, dynamic> guardado) async {
-    if (!_canUseSensitiveActions) {
-      _showUpsellDialog();
+    if (!await _ensureSensitiveAccess()) {
       return;
     }
 
@@ -804,8 +851,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
   }
 
   Future<void> _createNewNota() async {
-    if (!_canUseSensitiveActions) {
-      _showUpsellDialog();
+    if (!await _ensureSensitiveAccess()) {
       return;
     }
 
@@ -892,9 +938,8 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                             selected: isSelected,
                             selectedColor: color.withOpacity(0.16),
                             side: BorderSide(
-                              color: isSelected
-                                  ? color
-                                  : const Color(0xFFD0D7DE),
+                              color:
+                                  isSelected ? color : const Color(0xFFD0D7DE),
                             ),
                             labelStyle: GoogleFonts.inter(
                               fontSize: 12,
@@ -1232,7 +1277,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                     }
                     break;
                   case 'eliminar':
-                    _removeGuardado(guardado['id']);
+                    _removeGuardado(guardado);
                     break;
                 }
               },
@@ -1280,7 +1325,9 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
           backgroundColor: const Color(0xFF0D3B66),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-      child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+      child: Text(text,
+          style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -1653,11 +1700,16 @@ class _AddJugadorModal extends StatefulWidget {
 class _AddJugadorModalState extends State<_AddJugadorModal> {
   final _searchCtrl = TextEditingController();
   final _notaCtrl = TextEditingController();
-  List _results = [];
-  Map? _selected;
+  List<Map<String, dynamic>> _results = <Map<String, dynamic>>[];
+  Map<String, dynamic>? _selected;
   bool _searching = false;
+  bool _saving = false;
   String? _errorMsg;
   int _rating = 1;
+
+  String _normalizeId(dynamic value) {
+    return value?.toString().trim() ?? '';
+  }
 
   String _tagLabelFromRating(int rating) {
     switch (rating) {
@@ -1695,14 +1747,32 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
 
   String _resolveSaveError(Object error) {
     final raw = error.toString().toLowerCase();
+    debugPrint('_AddJugadorModal._save error: $error');
     if (raw.contains('listas_jugadores_lista_id_fkey') ||
         raw.contains('foreign key constraint') ||
         raw.contains('23503')) {
       return 'No se pudo vincular esta lista. Reabrí Cuaderno de Campo o creá una lista nueva e intentá otra vez.';
     }
     if (raw.contains('duplicate key') ||
-        raw.contains('already') ||
+        raw.contains('already exists') ||
         raw.contains('unique')) {
+      return 'Este jugador ya está en la lista.';
+    }
+    if (raw.contains('row-level security') ||
+        raw.contains('42501') ||
+        raw.contains('permission denied') ||
+        raw.contains('forbidden')) {
+      return 'Sin permiso para modificar esta lista. Verificá que sea tuya e intentá de nuevo.';
+    }
+    if (raw.contains('jwt') ||
+        raw.contains('not authenticated') ||
+        raw.contains('invalid token') ||
+        raw.contains('401')) {
+      return 'Tu sesión expiró. Cerrá sesión e ingresá de nuevo.';
+    }
+    if (raw.contains('pgrst116') ||
+        raw.contains('multiple') ||
+        raw.contains('json object requested')) {
       return 'Este jugador ya está en la lista.';
     }
     return 'No se pudo guardar. Intentá nuevamente.';
@@ -1741,7 +1811,9 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
       }
       if (mounted) {
         setState(() {
-          _results = List.from(res);
+          _results = List<Map<String, dynamic>>.from(
+            (res as List).map((item) => Map<String, dynamic>.from(item as Map)),
+          );
           if (_results.isEmpty) _errorMsg = 'No se encontraron jugadores';
         });
       }
@@ -1755,205 +1827,263 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
   }
 
   Future<void> _save() async {
-    if (_selected == null) return;
+    if (_saving) return;
+
+    final selected = _selected;
+    final listaId = _normalizeId(widget.listaId);
+
+    if (selected == null) {
+      setState(() {
+        _errorMsg = 'Seleccioná un jugador antes de guardar.';
+      });
+      return;
+    }
+
+    final jugadorId = _normalizeId(selected['user_id']);
+    if (jugadorId.isEmpty) {
+      setState(() {
+        _errorMsg = 'El jugador seleccionado no es válido.';
+      });
+      return;
+    }
+
+    if (listaId.isEmpty) {
+      setState(() {
+        _errorMsg = 'La lista seleccionada no es válida.';
+      });
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _errorMsg = null;
+    });
+
     try {
-      // Check if already in list
-      final existing = await SupaFlow.client
+      // Check if player is already in the list (use limit(1) to avoid
+      // maybeSingle() throwing on duplicate DB rows)
+      final existingRows = await SupaFlow.client
           .from('listas_jugadores')
           .select('id')
-          .eq('lista_id', widget.listaId)
-          .eq('jugador_id', _selected!['user_id'])
-          .maybeSingle();
-      if (existing != null) {
+          .eq('lista_id', listaId)
+          .eq('jugador_id', jugadorId)
+          .limit(1);
+      if (existingRows.isNotEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Jugador ya está en esta lista')));
+          setState(() {
+            _errorMsg = 'Este jugador ya está en la lista.';
+          });
         }
         return;
       }
       await SupaFlow.client.from('listas_jugadores').insert({
-        'lista_id': widget.listaId,
-        'jugador_id': _selected!['user_id'],
-        'nota': _notaCtrl.text,
-        'calificacion': _rating
+        'lista_id': listaId,
+        'jugador_id': jugadorId,
+        'nota': _notaCtrl.text.trim(),
+        'calificacion': _rating,
       });
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) Navigator.pop(context, <String, dynamic>{'saved': true});
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _errorMsg = _resolveSaveError(e);
+        });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(_resolveSaveError(e)),
           backgroundColor: Colors.red[700],
         ));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      padding: const EdgeInsets.all(20),
-      child: Column(children: [
-        Container(
-          width: 40,
-          height: 4,
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: Colors.grey[300],
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const Text('Agregar Jugador',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        TextField(
-            controller: _searchCtrl,
-            onChanged: _search,
-            autofocus: true,
-            decoration: InputDecoration(
-                hintText: 'Buscar por nombre...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searching
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2)))
-                    : _searchCtrl.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              setState(() {
-                                _results = [];
-                                _errorMsg = null;
-                              });
-                            })
-                        : null,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8)))),
-        if (_errorMsg != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(_errorMsg!,
-                style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-          ),
-        if (_results.isNotEmpty && _selected == null)
-          Expanded(
-              child: ListView(
-                  children: _results.map((r) {
-            final fullName = '${r['name'] ?? ''} ${r['lastname'] ?? ''}'.trim();
-            final pos = r['posicion'] ?? '';
-            final city = r['city'] ?? '';
-            final subtitle = [pos, city].where((s) => s.isNotEmpty).join(' - ');
-            return ListTile(
-              leading: CircleAvatar(
-                backgroundImage: r['photo_url'] != null &&
-                        r['photo_url'].toString().isNotEmpty
-                    ? NetworkImage(r['photo_url'])
-                    : null,
-                backgroundColor: const Color(0xFF0D3B66),
-                child: (r['photo_url'] == null ||
-                        r['photo_url'].toString().isEmpty)
-                    ? Text(
-                        fullName.isNotEmpty ? fullName[0].toUpperCase() : 'J',
-                        style: const TextStyle(color: Colors.white))
-                    : null,
-              ),
-              title: Text(fullName.isNotEmpty ? fullName : 'Jugador'),
-              subtitle: subtitle.isNotEmpty
-                  ? Text(subtitle, style: const TextStyle(fontSize: 12))
-                  : null,
-              onTap: () => setState(() => _selected = r),
-            );
-          }).toList())),
-        if (_selected != null) ...[
-          const SizedBox(height: 8),
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        padding: const EdgeInsets.all(20),
+        child: Column(children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
-              color: const Color(0xFFE8F0FE),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFF0D3B66)),
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(2),
             ),
-            child: Row(children: [
-              const Icon(Icons.person, color: Color(0xFF0D3B66)),
-              const SizedBox(width: 8),
-              Expanded(
-                  child: Text(
-                      '${_selected!['name'] ?? ''} ${_selected!['lastname'] ?? ''}'
-                          .trim(),
-                      style: const TextStyle(fontWeight: FontWeight.bold))),
-              IconButton(
-                  icon: const Icon(Icons.close, size: 20),
-                  onPressed: () => setState(() => _selected = null)),
-            ]),
           ),
+          const Text('Agregar Jugador',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Etiqueta',
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF334155),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: List.generate(5, (index) {
-              final current = index + 1;
-              final isSelected = _rating == current;
-              final color = _tagColorFromRating(current);
-              return ChoiceChip(
-                label: Text(_tagLabelFromRating(current)),
-                selected: isSelected,
-                selectedColor: color.withOpacity(0.16),
-                side: BorderSide(
-                  color: isSelected ? color : const Color(0xFFD0D7DE),
-                ),
-                labelStyle: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: isSelected ? color : const Color(0xFF475569),
-                ),
-                onSelected: (_) => setState(() => _rating = current),
-              );
-            }),
-          ),
-          const SizedBox(height: 8),
           TextField(
-              controller: _notaCtrl,
-              maxLines: 3,
+              controller: _searchCtrl,
+              onChanged: _search,
+              autofocus: true,
               decoration: InputDecoration(
-                  hintText: 'Nota sobre el jugador...',
+                  hintText: 'Buscar por nombre...',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searching
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2)))
+                      : _searchCtrl.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() {
+                                  _results = [];
+                                  _errorMsg = null;
+                                });
+                              })
+                          : null,
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8)))),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0D3B66),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-              child: const Text('Guardar',
-                  style: TextStyle(color: Colors.white, fontSize: 16)),
+          if (_errorMsg != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(_errorMsg!,
+                  style: TextStyle(color: Colors.grey[700], fontSize: 13)),
             ),
-          ),
-        ]
-      ]),
+          if (_results.isNotEmpty && _selected == null)
+            Expanded(
+                child: ListView(
+                    children: _results.map((r) {
+              final fullName =
+                  '${r['name'] ?? ''} ${r['lastname'] ?? ''}'.trim();
+              final pos = r['posicion'] ?? '';
+              final city = r['city'] ?? '';
+              final subtitle =
+                  [pos, city].where((s) => s.isNotEmpty).join(' - ');
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundImage: r['photo_url'] != null &&
+                          r['photo_url'].toString().isNotEmpty
+                      ? NetworkImage(r['photo_url'])
+                      : null,
+                  backgroundColor: const Color(0xFF0D3B66),
+                  child: (r['photo_url'] == null ||
+                          r['photo_url'].toString().isEmpty)
+                      ? Text(
+                          fullName.isNotEmpty ? fullName[0].toUpperCase() : 'J',
+                          style: const TextStyle(color: Colors.white))
+                      : null,
+                ),
+                title: Text(fullName.isNotEmpty ? fullName : 'Jugador'),
+                subtitle: subtitle.isNotEmpty
+                    ? Text(subtitle, style: const TextStyle(fontSize: 12))
+                    : null,
+                onTap: () => setState(() => _selected = r),
+              );
+            }).toList())),
+          if (_selected != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F0FE),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF0D3B66)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.person, color: Color(0xFF0D3B66)),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(
+                        '${_selected!['name'] ?? ''} ${_selected!['lastname'] ?? ''}'
+                            .trim(),
+                        style: const TextStyle(fontWeight: FontWeight.bold))),
+                IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => setState(() => _selected = null)),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Etiqueta',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF334155),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: List.generate(5, (index) {
+                final current = index + 1;
+                final isSelected = _rating == current;
+                final color = _tagColorFromRating(current);
+                return ChoiceChip(
+                  label: Text(_tagLabelFromRating(current)),
+                  selected: isSelected,
+                  selectedColor: color.withOpacity(0.16),
+                  side: BorderSide(
+                    color: isSelected ? color : const Color(0xFFD0D7DE),
+                  ),
+                  labelStyle: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: isSelected ? color : const Color(0xFF475569),
+                  ),
+                  onSelected: (_) => setState(() => _rating = current),
+                );
+              }),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+                controller: _notaCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(
+                    hintText: 'Nota sobre el jugador...',
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)))),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D3B66),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                child: _saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Text('Guardar',
+                        style: TextStyle(color: Colors.white, fontSize: 16)),
+              ),
+            ),
+          ],
+        ]),
+      ),
     );
   }
 }

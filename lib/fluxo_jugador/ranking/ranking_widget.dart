@@ -73,7 +73,8 @@ class _RankingWidgetState extends State<RankingWidget> {
       }
 
       if (currentUserUid.isNotEmpty) {
-        await GamificationService.recalculateUserProgress(userId: currentUserUid);
+        await GamificationService.recalculateUserProgress(
+            userId: currentUserUid);
       }
 
       final progressResponse = await SupaFlow.client
@@ -124,10 +125,11 @@ class _RankingWidgetState extends State<RankingWidget> {
       }
 
       _allRankingRows = rankingRows;
-      _currentUserProgress = rankingRows.cast<Map<String, dynamic>?>().firstWhere(
-            (row) => row?['user_id']?.toString() == currentUserUid,
-            orElse: () => null,
-          );
+      _currentUserProgress =
+          rankingRows.cast<Map<String, dynamic>?>().firstWhere(
+                (row) => row?['user_id']?.toString() == currentUserUid,
+                orElse: () => null,
+              );
 
       _currentUserProgress ??= {
         'user_id': currentUserUid,
@@ -214,7 +216,8 @@ class _RankingWidgetState extends State<RankingWidget> {
         : null;
     setState(() {
       _scope = newScope;
-      _scopeValue = GamificationService.rankingScopeValue(currentUser, newScope);
+      _scopeValue =
+          GamificationService.rankingScopeValue(currentUser, newScope);
       _applyRankingFilters();
     });
   }
@@ -236,7 +239,7 @@ class _RankingWidgetState extends State<RankingWidget> {
       },
       child: Scaffold(
         key: scaffoldKey,
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFF7F9FC),
         body: Stack(
           children: [
             _isLoading
@@ -302,117 +305,144 @@ class _RankingWidgetState extends State<RankingWidget> {
     final currentPoints = GamificationService.toInt(
       _currentUserProgress?['total_xp'],
     );
+    final userRankPos = _rankingData.indexWhere(
+      (r) => r['user_id'] == currentUserUid,
+    );
+    final userChallenges = _currentUserProgress != null
+        ? GamificationService.completedChallengesCount(_currentUserProgress!)
+        : 0;
+
     return Column(
       children: [
+        Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF0D3B66),
+            borderRadius: BorderRadius.only(
+              bottomLeft: Radius.circular(24),
+              bottomRight: Radius.circular(24),
+            ),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: const Icon(
+                          Icons.arrow_back,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Ranking',
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.16),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          _scopeSubtitle(),
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildUserBar(currentPoints, userRankPos, userChallenges),
+                ],
+              ),
+            ),
+          ),
+        ),
+        _buildScopeTabs(),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 50, 20, 0),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
           child: Row(
             children: [
-              GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: const Icon(Icons.arrow_back, color: Colors.black, size: 24),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Text(
-                'Ranking',
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF0D3B66),
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+              Expanded(
+                child: _miniSortChip(
+                  'Ordenar por XP',
+                  _sortBy == 'puntos',
+                  () => _changeSortOrder('puntos'),
                 ),
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: [
-                  _buildSummaryBadge(Icons.bolt, '$currentPoints XP'),
-                  _buildSummaryBadge(Icons.workspace_premium, _currentUserLevelName),
-                  _buildSummaryBadge(Icons.filter_alt_outlined, _scopeSubtitle()),
-                ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: _miniSortChip(
+                  'Ordenar por Desafíos',
+                  _sortBy == 'desafios',
+                  () => _changeSortOrder('desafios'),
+                ),
               ),
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildChoiceButton(
-                      text: 'Categoría',
-                      selected: _scope == 'categoria',
-                      onTap: () => _changeScope('categoria'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildChoiceButton(
-                      text: 'País',
-                      selected: _scope == 'pais',
-                      onTap: () => _changeScope('pais'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildChoiceButton(
-                      text: 'Posición',
-                      selected: _scope == 'posicion',
-                      onTap: () => _changeScope('posicion'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildChoiceButton(
-                      text: 'XP',
-                      selected: _sortBy == 'puntos',
-                      onTap: () => _changeSortOrder('puntos'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildChoiceButton(
-                      text: 'Desafíos',
-                      selected: _sortBy == 'desafios',
-                      onTap: () => _changeSortOrder('desafios'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
         Expanded(
           child: _rankingData.isEmpty
               ? _buildEmptyState()
               : RefreshIndicator(
+                  color: const Color(0xFF0D3B66),
                   onRefresh: _loadRankingData,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _rankingData.length,
-                    itemBuilder: (context, index) {
-                      final item = _rankingData[index];
-                      final position = index + 1;
-                      final isCurrentUser = item['user_id'] == currentUserUid;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _buildRankingItem(item, position, isCurrentUser),
-                      );
-                    },
+                  child: CustomScrollView(
+                    slivers: [
+                      if (_rankingData.length >= 3)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                            child: _buildPodium(),
+                          ),
+                        ),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (_, i) {
+                              final startIndex =
+                                  _rankingData.length >= 3 ? 3 : 0;
+                              final dataIndex = startIndex + i;
+                              if (dataIndex >= _rankingData.length) {
+                                return null;
+                              }
+                              final item = _rankingData[dataIndex];
+                              final pos = dataIndex + 1;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _buildListItem(
+                                  item,
+                                  pos,
+                                  item['user_id'] == currentUserUid,
+                                ),
+                              );
+                            },
+                            childCount: _rankingData.length >= 3
+                                ? _rankingData.length - 3
+                                : _rankingData.length,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
         ),
@@ -421,58 +451,474 @@ class _RankingWidgetState extends State<RankingWidget> {
     );
   }
 
-  Widget _buildSummaryBadge(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFD7E0EA)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: const Color(0xFF0D3B66), size: 16),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              color: const Color(0xFF0F172A),
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
+  Widget _buildScopeTabs() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Container(
+        height: 42,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFDCE3EC)),
+        ),
+        child: Row(
+          children: [
+            _scopeTab('Categoría', 'categoria'),
+            _scopeTab('País', 'pais'),
+            _scopeTab('Posición', 'posicion'),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildChoiceButton({
-    required String text,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
+  Widget _scopeTab(String label, String value) {
+    final selected = _scope == value;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _changeScope(value),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF0D3B66) : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                color: selected ? Colors.white : const Color(0xFF64748B),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _miniSortChip(String label, bool selected, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        height: 36,
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF0D3B66) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          color: selected ? const Color(0xFFEAF2FB) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: selected ? const Color(0xFF0D3B66) : const Color(0xFFCBD5E1),
+            color: selected ? const Color(0xFF0D3B66) : const Color(0xFFDCE3EC),
           ),
         ),
         child: Center(
           child: Text(
-            text,
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
-              color: selected ? Colors.white : const Color(0xFF334155),
-              fontSize: 13,
+              color:
+                  selected ? const Color(0xFF0D3B66) : const Color(0xFF475569),
+              fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPodium() {
+    if (_rankingData.length < 3) return const SizedBox.shrink();
+    return Row(
+      children: [
+        Expanded(child: _podiumPlayer(_rankingData[1], 2)),
+        const SizedBox(width: 8),
+        Expanded(child: _podiumPlayer(_rankingData[0], 1)),
+        const SizedBox(width: 8),
+        Expanded(child: _podiumPlayer(_rankingData[2], 3)),
+      ],
+    );
+  }
+
+  Widget _podiumPlayer(Map<String, dynamic> item, int position) {
+    final user = item['users'] is Map
+        ? Map<String, dynamic>.from(item['users'] as Map)
+        : <String, dynamic>{};
+    final userName = GamificationService.resolveDisplayName(user);
+    final totalXp = GamificationService.toInt(item['total_xp']);
+    final photoUrl = user['photo_url']?.toString() ?? '';
+    final isMe = item['user_id'] == currentUserUid;
+
+    final badgeColor = position == 1
+        ? const Color(0xFFF59E0B)
+        : position == 2
+            ? const Color(0xFF94A3B8)
+            : const Color(0xFFB45309);
+
+    return GestureDetector(
+      onTap: () {
+        final uid = item['user_id']?.toString() ?? '';
+        if (uid.isEmpty) return;
+        context.pushNamed(
+          'perfil_profesional_solicitar_Contato',
+          queryParameters: {'userId': uid},
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isMe ? const Color(0xFF3B82F6) : const Color(0xFFDCE3EC),
+            width: isMe ? 1.4 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: badgeColor,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  '$position',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            CircleAvatar(
+              radius: position == 1 ? 26 : 21,
+              backgroundColor: const Color(0xFFE8F0FE),
+              backgroundImage:
+                  photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+              child: photoUrl.isEmpty
+                  ? Text(
+                      userName.isNotEmpty
+                          ? userName.substring(0, 1).toUpperCase()
+                          : '?',
+                      style: const TextStyle(
+                        color: Color(0xFF0D3B66),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(height: 7),
+            Text(
+              userName.split(' ').first,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                color: const Color(0xFF1F2937),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '$totalXp XP',
+              style: GoogleFonts.inter(
+                color: const Color(0xFF0D3B66),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (isMe) ...[
+              const SizedBox(height: 5),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3B82F6),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'TÚ',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListItem(
+    Map<String, dynamic> item,
+    int position,
+    bool isCurrentUser,
+  ) {
+    final user = item['users'] is Map
+        ? Map<String, dynamic>.from(item['users'] as Map)
+        : <String, dynamic>{};
+    final userName = GamificationService.resolveDisplayName(user);
+    final userPosition =
+        GamificationService.resolveUserPosition(user) ?? 'Sin posición';
+    final userCountry =
+        GamificationService.resolveUserCountry(user) ?? 'Sin país';
+    final totalXp = GamificationService.toInt(item['total_xp']);
+    final levelName = GamificationService.levelNameFromPoints(totalXp);
+    final photoUrl = user['photo_url']?.toString() ?? '';
+    final challenges = GamificationService.completedChallengesCount(item);
+
+    return GestureDetector(
+      onTap: () {
+        final uid = item['user_id']?.toString() ?? '';
+        if (uid.isEmpty) return;
+        context.pushNamed(
+          'perfil_profesional_solicitar_Contato',
+          queryParameters: {'userId': uid},
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
+        decoration: BoxDecoration(
+          color: isCurrentUser ? const Color(0xFFEFF6FF) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isCurrentUser
+                ? const Color(0xFF93C5FD)
+                : const Color(0xFFDCE3EC),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 4,
+              height: 58,
+              decoration: BoxDecoration(
+                color: isCurrentUser
+                    ? const Color(0xFF3B82F6)
+                    : const Color(0xFF0D3B66).withOpacity(0.25),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 30,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D3B66).withOpacity(0.09),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(
+                '$position',
+                style: GoogleFonts.inter(
+                  color: const Color(0xFF0D3B66),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: const Color(0xFFE8F0FE),
+              backgroundImage:
+                  photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+              child: photoUrl.isEmpty
+                  ? Text(
+                      userName.isNotEmpty
+                          ? userName.substring(0, 1).toUpperCase()
+                          : '?',
+                      style: const TextStyle(
+                        color: Color(0xFF0D3B66),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          userName,
+                          style: GoogleFonts.inter(
+                            color: const Color(0xFF111827),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isCurrentUser) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF3B82F6),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'TÚ',
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$userPosition · $userCountry',
+                    style: GoogleFonts.inter(
+                      color: const Color(0xFF64748B),
+                      fontSize: 11,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 5),
+                  Wrap(
+                    spacing: 5,
+                    runSpacing: 5,
+                    children: [
+                      _cardTag(levelName, const Color(0xFF0F766E)),
+                      _cardTag(
+                        '$challenges desafíos',
+                        const Color(0xFF7C3AED),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '$totalXp XP',
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF0D3B66),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D3B66).withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Color(0xFF0D3B66),
+                    size: 18,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cardTag(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.24)),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          color: color,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserBar(
+    int currentPoints,
+    int userRankPos,
+    int userChallenges,
+  ) {
+    final rankDisplay = userRankPos >= 0 ? '#${userRankPos + 1}' : '-';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.person_outline, color: Colors.white, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Tu posición $rankDisplay · $currentPoints XP · $userChallenges desafíos',
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              _currentUserLevelName,
+              style: GoogleFonts.inter(
+                color: const Color(0xFF0D3B66),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -484,24 +930,25 @@ class _RankingWidgetState extends State<RankingWidget> {
         children: [
           const Icon(
             Icons.leaderboard_outlined,
-            color: Color(0xFFA0AEC0),
+            color: Color(0xFF94A3B8),
             size: 64,
           ),
           const SizedBox(height: 16),
           Text(
-            'No hay jugadores para este ranking',
+            'No hay jugadores en este ranking',
             style: GoogleFonts.inter(
-              color: const Color(0xFF718096),
-              fontSize: 16,
+              color: const Color(0xFF475569),
+              fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
           Text(
             'Completa desafíos y sube videos para subir en el Top.',
             style: GoogleFonts.inter(
-              color: const Color(0xFFA0AEC0),
-              fontSize: 14,
+              color: const Color(0xFF94A3B8),
+              fontSize: 13,
             ),
             textAlign: TextAlign.center,
           ),
@@ -514,204 +961,15 @@ class _RankingWidgetState extends State<RankingWidget> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text(
+            child: Text(
               'Actualizar',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRankingItem(
-    Map<String, dynamic> item,
-    int position,
-    bool isCurrentUser,
-  ) {
-    final user = item['users'] is Map
-        ? Map<String, dynamic>.from(item['users'] as Map)
-        : <String, dynamic>{};
-
-    final userName = GamificationService.resolveDisplayName(user);
-    final userPosition =
-        GamificationService.resolveUserPosition(user) ?? 'Sin posición';
-    final userCountry =
-        GamificationService.resolveUserCountry(user) ?? 'Sin país';
-    final totalXp = GamificationService.toInt(item['total_xp']);
-    final totalChallenges = GamificationService.completedChallengesCount(item);
-    final levelName = GamificationService.levelNameFromPoints(totalXp);
-    final photoUrl = user['photo_url']?.toString() ?? '';
-
-    Color badgeColor = const Color(0xFFD69E2E);
-    if (position == 1) {
-      badgeColor = const Color(0xFFFFD700);
-    } else if (position == 2) {
-      badgeColor = const Color(0xFFC0C0C0);
-    } else if (position == 3) {
-      badgeColor = const Color(0xFFCD7F32);
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isCurrentUser ? const Color(0xFFE8F4FD) : Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color:
-              isCurrentUser ? const Color(0xFF0D3B66) : const Color(0xFFDBE4EE),
-          width: isCurrentUser ? 2 : 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: position <= 3 ? badgeColor : const Color(0xFF0D3B66),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                '$position',
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: const Color(0xFFE8F0FE),
-            backgroundImage:
-                photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
-            child: photoUrl.isNotEmpty
-                ? null
-                : Text(
-                    userName.substring(0, 1).toUpperCase(),
-                    style: const TextStyle(color: Color(0xFF0D3B66)),
-                  ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        userName,
-                        style: GoogleFonts.inter(
-                          color: Colors.black,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (isCurrentUser) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0D3B66),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'TÚ',
-                          style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontSize: 8,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$userPosition • $userCountry',
-                  style: GoogleFonts.inter(
-                    color: const Color(0xFF64748B),
-                    fontSize: 12,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _buildMiniPill('$totalXp XP', const Color(0xFF0D3B66)),
-                    _buildMiniPill(levelName, const Color(0xFF1D4ED8)),
-                    _buildMiniPill(
-                      '$totalChallenges desafíos',
-                      const Color(0xFF0F766E),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () {
-              final uid = item['user_id']?.toString() ?? '';
-              if (uid.isEmpty) return;
-              context.pushNamed(
-                'perfil_profesional_solicitar_Contato',
-                queryParameters: {'userId': uid},
-              );
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
+              style: GoogleFonts.inter(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Text(
-                'Ver perfil',
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF0D3B66),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildMiniPill(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.22)),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.inter(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
       ),
     );
   }

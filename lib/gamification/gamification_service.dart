@@ -16,6 +16,9 @@ class GamificationService {
     _GamificationTier(levelId: 5, name: 'Élite', minPoints: 1500),
   ];
 
+  /// Todos os níveis do ranking em ordem crescente.
+  static List<String> get allLevelNames => _tiers.map((t) => t.name).toList();
+
   static int toInt(dynamic value, {int fallback = 0}) {
     if (value == null) return fallback;
     if (value is int) return value;

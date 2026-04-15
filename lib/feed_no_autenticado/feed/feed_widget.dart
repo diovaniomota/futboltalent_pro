@@ -1784,8 +1784,6 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
   bool _isLoading = true;
   bool _isPaused = false; // Intenção do usuário
   bool _isPausedBySystem = false; // Gestão automática (navegação/lifecycle)
-  final bool _isPausedByHold = false;
-  final bool _wasPlayingBeforeHold = false;
   bool _showLikeAnimation = false;
   bool _isLiked = false;
   int _likesCount = 0;
@@ -1795,7 +1793,6 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
   bool _isSaved = false;
   bool _isSaveLoading = false;
   DateTime? _lastTapTime;
-  Offset? _lastTapPosition;
   late AnimationController _likeAnimController;
 
   bool get _isOwnVideo {
@@ -1854,60 +1851,6 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
 
   String? _categoryFromBirthday(dynamic birthday) {
     return playerCategoryFromBirthday(birthday);
-  }
-
-  Widget _buildScoutOverlayChip({
-    required IconData icon,
-    required String label,
-    Color? backgroundColor,
-    Color? accentColor,
-  }) {
-    final bg = backgroundColor ?? Colors.white.withOpacity(0.13);
-    final accent = accentColor ?? Colors.white;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.22), width: 0.8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.18),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 18,
-            height: 18,
-            decoration: BoxDecoration(
-              color: accent.withOpacity(0.18),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 11, color: accent),
-          ),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.95),
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.1,
-                height: 1.0,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildChallengeFeedBadge() {

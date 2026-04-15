@@ -30,11 +30,9 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
   String _selectedFilter = 'todos';
   AdminUserManagementCapabilities? _capabilities;
 
-  bool get _canCreateAuthUsers =>
-      _capabilities?.canCreateAuthUsers == true;
+  bool get _canCreateAuthUsers => _capabilities?.canCreateAuthUsers == true;
 
-  bool get _canDeleteAuthUsers =>
-      _capabilities?.canDeleteAuthUsers == true;
+  bool get _canDeleteAuthUsers => _capabilities?.canDeleteAuthUsers == true;
 
   bool get _isAdminValidated =>
       _capabilities?.isAdmin == true || FFAppState().isAdminSession;
@@ -83,7 +81,8 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
     super.dispose();
   }
 
-  Future<void> _loadUsers({bool showLoading = true, bool allowRetry = true}) async {
+  Future<void> _loadUsers(
+      {bool showLoading = true, bool allowRetry = true}) async {
     if (showLoading && mounted) {
       setState(() => _isLoading = true);
     }
@@ -113,8 +112,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
 
   Future<void> _loadCapabilities() async {
     try {
-      final capabilities =
-          await AdminUserManagementService.loadCapabilities();
+      final capabilities = await AdminUserManagementService.loadCapabilities();
       if (!mounted) return;
       setState(() => _capabilities = capabilities);
       if (capabilities.isAdmin && _allUsers.isEmpty) {
@@ -177,7 +175,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
           SnackBar(content: Text('Plan cambiado a $newPlanName')),
         );
         if (currentUserUid == (user['user_id'] ?? '').toString()) {
-          await FFAppState().syncUserType();
+          await FFAppState().refreshCurrentUserAccess();
         }
         _loadUsers();
       }
@@ -327,18 +325,15 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
     );
     final cityController =
         TextEditingController(text: normalizeCityName(user['city']));
-    final countryController =
-        TextEditingController(
-            text: normalizeCountryName(user['country'] ?? user['pais']));
-    final positionController =
-        TextEditingController(
-            text: normalizePlayerPosition(user['posicion'] ?? user['position']));
-    final categoryController =
-        TextEditingController(
-            text: normalizePlayerCategory(
-          user['categoria'] ?? user['category'],
-          birthday: user['birthday'] ?? user['birth_date'],
-        ));
+    final countryController = TextEditingController(
+        text: normalizeCountryName(user['country'] ?? user['pais']));
+    final positionController = TextEditingController(
+        text: normalizePlayerPosition(user['posicion'] ?? user['position']));
+    final categoryController = TextEditingController(
+        text: normalizePlayerCategory(
+      user['categoria'] ?? user['category'],
+      birthday: user['birthday'] ?? user['birth_date'],
+    ));
     final ageController = TextEditingController();
     final currentBirthday = user['birthday'] ?? user['birth_date'];
     if (currentBirthday != null) {
@@ -359,82 +354,82 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-        title: const Text('Editar Usuario'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(labelText: 'Nombre'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: lastnameController,
-                decoration: const InputDecoration(labelText: 'Apellido'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: userTypeController,
-                decoration: const InputDecoration(
-                  labelText: 'Tipo (jugador, profesional, club, admin)',
+          title: const Text('Editar Usuario'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Nombre'),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: planController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Plan ID (1=FREE, 2=PRO)',
+                const SizedBox(height: 8),
+                TextField(
+                  controller: lastnameController,
+                  decoration: const InputDecoration(labelText: 'Apellido'),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: ageController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Edad'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: categoryController,
-                decoration: const InputDecoration(labelText: 'Categoría'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: positionController,
-                decoration: const InputDecoration(labelText: 'Posición'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: countryController,
-                decoration: const InputDecoration(labelText: 'País'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: cityController,
-                decoration: const InputDecoration(labelText: 'Ciudad'),
-              ),
-              const SizedBox(height: 8),
-              CheckboxListTile(
-                value: isVerified,
-                onChanged: (value) =>
-                    setDialogState(() => isVerified = value ?? false),
-                title: const Text('Scout verificado'),
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-              ),
-            ],
+                const SizedBox(height: 8),
+                TextField(
+                  controller: userTypeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo (jugador, profesional, club, admin)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: planController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Plan ID (1=FREE, 2=PRO)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: ageController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Edad'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: categoryController,
+                  decoration: const InputDecoration(labelText: 'Categoría'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: positionController,
+                  decoration: const InputDecoration(labelText: 'Posición'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: countryController,
+                  decoration: const InputDecoration(labelText: 'País'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: cityController,
+                  decoration: const InputDecoration(labelText: 'Ciudad'),
+                ),
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  value: isVerified,
+                  onChanged: (value) =>
+                      setDialogState(() => isVerified = value ?? false),
+                  title: const Text('Scout verificado'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Guardar')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Guardar')),
-        ],
-      ),
       ),
     );
 
@@ -521,7 +516,9 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              nextVerified ? 'Scout marcado como verificado' : 'Scout desverificado',
+              nextVerified
+                  ? 'Scout marcado como verificado'
+                  : 'Scout desverificado',
             ),
           ),
         );
@@ -678,8 +675,8 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
                   TextField(
                     controller: confirmPasswordController,
                     obscureText: true,
-                    decoration:
-                        const InputDecoration(labelText: 'Confirmar contrasena'),
+                    decoration: const InputDecoration(
+                        labelText: 'Confirmar contrasena'),
                   ),
                   const SizedBox(height: 8),
                 ],
@@ -1297,8 +1294,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
             runSpacing: 6,
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: typeColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(4),
@@ -1307,8 +1303,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
                     style: TextStyle(color: typeColor, fontSize: 11)),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: planId == 2
                       ? Colors.amber.withValues(alpha: 0.1)
@@ -1325,8 +1320,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: hasFullCapabilities
                       ? Colors.blue.withValues(alpha: 0.1)
@@ -1412,7 +1406,8 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
             if (userType == 'profesional')
               PopupMenuItem(
                 value: 'verify',
-                child: Text(isVerified ? 'Desverificar scout' : 'Verificar scout'),
+                child:
+                    Text(isVerified ? 'Desverificar scout' : 'Verificar scout'),
               ),
             const PopupMenuItem(
               value: 'delete',

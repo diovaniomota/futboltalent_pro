@@ -35,9 +35,14 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
   int _totalVideos = 0;
   double _promedioPostulaciones = 0;
 
-  // Postulaciones recientes
+  // Postulaciones
   List<Map<String, dynamic>> _postulacionesRecientes = [];
+  List<Map<String, dynamic>> _allPostulaciones = [];
   String? _clubName;
+
+  // Filter y interés
+  String _estadoFilter = 'todos';
+  final Set<String> _markedInterestIds = {};
 
   @override
   void initState() {
@@ -186,9 +191,8 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
   Future<void> _loadPostulacionesRecientes() async {
     try {
       final convocatorias = await _loadConvocatoriasRows();
-      final convocatoriaIds = convocatorias
-          .map((c) => c['id'].toString())
-          .toList();
+      final convocatoriaIds =
+          convocatorias.map((c) => c['id'].toString()).toList();
       final convocatoriasById = <String, Map<String, dynamic>>{};
       for (final row in convocatorias) {
         final id = row['id']?.toString().trim() ?? '';
@@ -198,23 +202,27 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
       }
 
       if (convocatoriaIds.isEmpty) {
+        _allPostulaciones = [];
         _postulacionesRecientes = [];
         return;
       }
 
       final postulaciones = await fetchClubApplicationsForConvocatorias(
         convocatoriaIds: convocatoriaIds,
-        limitPerTable: 40,
+        limitPerTable: 200,
       );
-      _postulacionesRecientes = postulaciones.take(10).toList();
 
-      final playerIds = _postulacionesRecientes
+      final playerIds = postulaciones
           .map(clubApplicationPlayerId)
           .where((id) => id.isNotEmpty)
           .toSet()
           .toList();
 
-      if (playerIds.isEmpty) return;
+      if (playerIds.isEmpty) {
+        _allPostulaciones = postulaciones;
+        _postulacionesRecientes = postulaciones;
+        return;
+      }
 
       final jugadoresResponse = await SupaFlow.client
           .from('users')
@@ -222,20 +230,22 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
           .inFilter('user_id', playerIds);
 
       final jugadoresById = <String, Map<String, dynamic>>{};
-      for (final row in List<Map<String, dynamic>>.from(jugadoresResponse as List)) {
+      for (final row
+          in List<Map<String, dynamic>>.from(jugadoresResponse as List)) {
         final id = row['user_id']?.toString() ?? '';
         if (id.isNotEmpty) {
           jugadoresById[id] = row;
         }
       }
 
-      for (final post in _postulacionesRecientes) {
+      for (final post in postulaciones) {
         final playerId = clubApplicationPlayerId(post);
         if (playerId.isNotEmpty && jugadoresById.containsKey(playerId)) {
           post['jugador'] = jugadoresById[playerId];
         }
         final convocatoriaId = post['convocatoria_id']?.toString().trim() ?? '';
-        if (convocatoriaId.isNotEmpty && convocatoriasById.containsKey(convocatoriaId)) {
+        if (convocatoriaId.isNotEmpty &&
+            convocatoriasById.containsKey(convocatoriaId)) {
           post['convocatoria'] = convocatoriasById[convocatoriaId];
           post['convocatoria_titulo'] =
               convocatoriasById[convocatoriaId]?['titulo'];
@@ -247,13 +257,15 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
         try {
           final videosResponse = await SupaFlow.client
               .from('videos')
-              .select('id, user_id, title, thumbnail_url, video_url, created_at')
+              .select(
+                  'id, user_id, title, thumbnail_url, video_url, created_at')
               .eq('is_public', true)
               .inFilter('user_id', playerIds)
               .order('created_at', ascending: false)
               .limit(200);
 
-          for (final row in List<Map<String, dynamic>>.from(videosResponse as List)) {
+          for (final row
+              in List<Map<String, dynamic>>.from(videosResponse as List)) {
             final playerId = row['user_id']?.toString().trim() ?? '';
             if (playerId.isEmpty) continue;
             latestVideoByPlayer.putIfAbsent(playerId, () => row);
@@ -261,11 +273,14 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
         } catch (_) {}
       }
 
-      for (final post in _postulacionesRecientes) {
+      for (final post in postulaciones) {
         final playerId = clubApplicationPlayerId(post);
         post['latest_video'] = latestVideoByPlayer[playerId];
         post['has_video'] = latestVideoByPlayer[playerId] != null;
       }
+
+      _allPostulaciones = postulaciones;
+      _postulacionesRecientes = postulaciones;
     } catch (e) {
       debugPrint('❌ Error cargando postulaciones: $e');
     }
@@ -306,6 +321,25 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final city = normalizeCityName(jugador?['city'] ?? jugador?['ciudad']);
     if (city.isNotEmpty) return city;
     return normalizeCountryName(jugador?['country'] ?? jugador?['pais']);
+  }
+
+  List<Map<String, dynamic>> get _filteredPostulaciones {
+    if (_estadoFilter == 'todos') return _postulacionesRecientes;
+    return _postulacionesRecientes
+        .where((p) =>
+            (p['estado']?.toString().toLowerCase() ?? 'pendiente') ==
+            _estadoFilter)
+        .toList();
+  }
+
+  void _toggleInterest(String postulacionId) {
+    setState(() {
+      if (_markedInterestIds.contains(postulacionId)) {
+        _markedInterestIds.remove(postulacionId);
+      } else {
+        _markedInterestIds.add(postulacionId);
+      }
+    });
   }
 
   Future<void> _updatePostulacionStatus(
@@ -741,7 +775,8 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                                     GestureDetector(
                                       onTap: () => _showClubMenu(context),
                                       child: Icon(Icons.menu,
-                                          color: Colors.black, size: 24 * scale),
+                                          color: Colors.black,
+                                          size: 24 * scale),
                                     ),
                                     SizedBox(height: 20 * scale),
 
@@ -1070,7 +1105,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Postulaciones recientes',
+                      'Postulaciones',
                       style: GoogleFonts.inter(
                         fontSize: titleSize,
                         fontWeight: FontWeight.w800,
@@ -1079,7 +1114,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                     ),
                     SizedBox(height: 3 * scale),
                     Text(
-                      'Últimos jugadores que se han postulado',
+                      '${_postulacionesRecientes.length} jugadores postulados',
                       style: GoogleFonts.inter(
                         fontSize: subtitleSize,
                         color: const Color(0xFF64748B),
@@ -1091,6 +1126,10 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               ),
             ],
           ),
+          SizedBox(height: 12 * scale),
+
+          // Filter chips by estado
+          _buildEstadoFilterChips(scale),
           SizedBox(height: 16 * scale),
 
           if (_postulacionesRecientes.isEmpty)
@@ -1103,9 +1142,18 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                         size: 48 * scale, color: Colors.grey[300]),
                     SizedBox(height: 8 * scale),
                     Text(
-                      'No hay postulaciones recientes',
+                      'Aún no hay postulaciones',
                       style: GoogleFonts.inter(
                         fontSize: 14 * scale,
+                        color: Colors.grey[400],
+                      ),
+                    ),
+                    SizedBox(height: 4 * scale),
+                    Text(
+                      'Publicá una convocatoria para empezar a recibir jugadores.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 12 * scale,
                         color: Colors.grey[400],
                       ),
                     ),
@@ -1113,11 +1161,76 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                 ),
               ),
             )
+          else if (_filteredPostulaciones.isEmpty)
+            Center(
+              child: Padding(
+                padding: EdgeInsets.all(32 * scale),
+                child: Text(
+                  'Sin postulaciones con estado "${_getStatusLabel(_estadoFilter)}".',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 13 * scale,
+                    color: Colors.grey[400],
+                  ),
+                ),
+              ),
+            )
           else
-            ..._postulacionesRecientes
+            ..._filteredPostulaciones
                 .map((post) => _buildPostulacionItem(context, post))
                 .toList(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEstadoFilterChips(double scale) {
+    final filters = [
+      ('todos', 'Todos'),
+      ('pendiente', 'Nuevo'),
+      ('revisado', 'Revisado'),
+      ('aceptado', 'Aceptado'),
+      ('rechazado', 'Rechazado'),
+    ];
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: filters.map((entry) {
+          final key = entry.$1;
+          final label = entry.$2;
+          final isSelected = _estadoFilter == key;
+          return Padding(
+            padding: EdgeInsets.only(right: 8 * scale),
+            child: GestureDetector(
+              onTap: () => setState(() => _estadoFilter = key),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: EdgeInsets.symmetric(
+                    horizontal: 14 * scale, vertical: 8 * scale),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? const Color(0xFF0D3B66)
+                      : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: isSelected
+                        ? const Color(0xFF0D3B66)
+                        : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 12.5 * scale,
+                    fontWeight: FontWeight.w600,
+                    color: isSelected ? Colors.white : const Color(0xFF475569),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -1128,7 +1241,8 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final jugador = postulacion['jugador'] as Map<String, dynamic>?;
     final name = jugador?['name'] ?? '';
     final lastname = jugador?['lastname'] ?? '';
-    final fullName = '$name ${lastname.isNotEmpty ? lastname[0] + '.' : ''}'.trim();
+    final fullName =
+        '$name ${lastname.isNotEmpty ? lastname[0] + '.' : ''}'.trim();
     final position = _playerPosition(jugador);
     final location = _playerLocation(jugador);
     final age = _calculateAge(jugador?['birthday']);
@@ -1138,7 +1252,8 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final latestVideoUrl = latestVideo?['video_url']?.toString().trim() ?? '';
     final latestVideoThumb =
         latestVideo?['thumbnail_url']?.toString().trim() ?? '';
-    final hasVideo = latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
+    final hasVideo =
+        latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
     final convocatoria = postulacion['convocatoria'] as Map<String, dynamic>?;
     final convocatoriaTitle = (postulacion['convocatoria_titulo'] ??
             convocatoria?['titulo'] ??
@@ -1153,6 +1268,8 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final photoUrl = jugador?['photo_url']?.toString().trim() ?? '';
     final borderRadius =
         _responsive(context, mobile: 16, tablet: 18, desktop: 20);
+    final postulacionId = postulacion['id']?.toString() ?? '';
+    final isMarked = _markedInterestIds.contains(postulacionId);
 
     return Container(
       margin: EdgeInsets.only(bottom: 12 * scale),
@@ -1265,10 +1382,14 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                             onSelected: (value) =>
                                 _updatePostulacionStatus(postulacion, value),
                             itemBuilder: (_) => const [
-                              PopupMenuItem(value: 'pendiente', child: Text('Nuevo')),
-                              PopupMenuItem(value: 'revisado', child: Text('Revisado')),
-                              PopupMenuItem(value: 'aceptado', child: Text('Aceptado')),
-                              PopupMenuItem(value: 'rechazado', child: Text('Rechazado')),
+                              PopupMenuItem(
+                                  value: 'pendiente', child: Text('Nuevo')),
+                              PopupMenuItem(
+                                  value: 'revisado', child: Text('Revisado')),
+                              PopupMenuItem(
+                                  value: 'aceptado', child: Text('Aceptado')),
+                              PopupMenuItem(
+                                  value: 'rechazado', child: Text('Rechazado')),
                             ],
                           ),
                         ),
@@ -1341,8 +1462,33 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                   context: context,
                   label: 'Ver video',
                   icon: Icons.play_circle_outline_rounded,
-                  onPressed:
-                      hasVideo ? () => _openVideo(latestVideoUrl) : null,
+                  onPressed: hasVideo ? () => _openVideo(latestVideoUrl) : null,
+                ),
+              ),
+              SizedBox(width: 8 * scale),
+              GestureDetector(
+                onTap: () => _toggleInterest(postulacionId),
+                child: Container(
+                  width: 42 * scale,
+                  height: 42 * scale,
+                  decoration: BoxDecoration(
+                    color: isMarked
+                        ? const Color(0xFFFFF7ED)
+                        : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isMarked
+                          ? const Color(0xFFF59E0B)
+                          : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Icon(
+                    isMarked ? Icons.star_rounded : Icons.star_outline_rounded,
+                    size: 20 * scale,
+                    color: isMarked
+                        ? const Color(0xFFF59E0B)
+                        : const Color(0xFF94A3B8),
+                  ),
                 ),
               ),
             ],
@@ -1370,7 +1516,8 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
   ) {
     final latestVideoUrl =
         postulacion['latest_video']?['video_url']?.toString().trim() ?? '';
-    final hasVideo = latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
+    final hasVideo =
+        latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
 
     return Row(
       children: [
@@ -1425,7 +1572,9 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
 
         if (hasVideo) ...[
           GestureDetector(
-            onTap: latestVideoUrl.isEmpty ? null : () => _openVideo(latestVideoUrl),
+            onTap: latestVideoUrl.isEmpty
+                ? null
+                : () => _openVideo(latestVideoUrl),
             child: Container(
               padding: EdgeInsets.symmetric(
                 horizontal: 12 * scale,
@@ -1500,7 +1649,8 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
   ) {
     final latestVideoUrl =
         postulacion['latest_video']?['video_url']?.toString().trim() ?? '';
-    final hasVideo = latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
+    final hasVideo =
+        latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1583,8 +1733,9 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
             ),
             if (hasVideo)
               GestureDetector(
-                onTap:
-                    latestVideoUrl.isEmpty ? null : () => _openVideo(latestVideoUrl),
+                onTap: latestVideoUrl.isEmpty
+                    ? null
+                    : () => _openVideo(latestVideoUrl),
                 child: Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: 12 * scale,
@@ -1610,8 +1761,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     );
   }
 
-  void _showStatusMenu(
-      Map<String, dynamic> postulacion, String currentStatus) {
+  void _showStatusMenu(Map<String, dynamic> postulacion, String currentStatus) {
     final scale = _scaleFactor(context);
 
     showModalBottomSheet(
@@ -1643,14 +1793,13 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               ),
             ),
             SizedBox(height: 20 * scale),
-            _buildStatusOption(
-                'pendiente', 'Nuevo', Colors.black, postulacion),
+            _buildStatusOption('pendiente', 'Nuevo', Colors.black, postulacion),
             _buildStatusOption(
                 'revisado', 'Revisado', const Color(0xFF6B7280), postulacion),
             _buildStatusOption(
                 'aceptado', 'Aceptado', const Color(0xFF22C55E), postulacion),
-            _buildStatusOption('rechazado', 'Rechazado',
-                const Color(0xFFEF4444), postulacion),
+            _buildStatusOption(
+                'rechazado', 'Rechazado', const Color(0xFFEF4444), postulacion),
             SizedBox(height: MediaQuery.of(context).padding.bottom + 10),
           ],
         ),
@@ -1658,8 +1807,8 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     );
   }
 
-  Widget _buildStatusOption(
-      String status, String label, Color color, Map<String, dynamic> postulacion) {
+  Widget _buildStatusOption(String status, String label, Color color,
+      Map<String, dynamic> postulacion) {
     final scale = _scaleFactor(context);
 
     return ListTile(

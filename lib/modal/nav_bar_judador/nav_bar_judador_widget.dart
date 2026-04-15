@@ -168,7 +168,7 @@ class _NavBarJudadorWidgetState extends State<NavBarJudadorWidget> {
                                   size: iconSize,
                                   onPressed: () async {
                                     context.pushNamed(
-                                      CursosEjerciciosWidget.routeName,
+                                      RankingWidget.routeName,
                                     );
                                   },
                                 ),

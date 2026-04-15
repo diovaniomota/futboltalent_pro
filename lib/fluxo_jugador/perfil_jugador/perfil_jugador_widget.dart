@@ -736,7 +736,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'Não foi possível atualizar. Verifique permissões no banco.',
+                'No se pudo actualizar. Verificá permisos en la base de datos.',
               ),
             ),
           );
@@ -756,8 +756,8 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           SnackBar(
             content: Text(
               status == 'accepted'
-                  ? 'Solicitação aprovada'
-                  : 'Solicitação recusada',
+                  ? 'Solicitud aprobada'
+                  : 'Solicitud rechazada',
             ),
             backgroundColor: status == 'accepted'
                 ? const Color(0xFF15803D)
@@ -770,7 +770,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Não foi possível atualizar a solicitação'),
+            content: Text('No se pudo actualizar la solicitud'),
           ),
         );
       }
@@ -1053,7 +1053,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                   queryParameters: {'userId': requesterId},
                                 );
                               },
-                        child: const Text('Ver perfil de quem solicitou'),
+                        child: const Text('Ver perfil de quien solicitó'),
                       ),
                     ),
                   ],
@@ -1160,7 +1160,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                 child: Padding(
                                   padding: const EdgeInsets.all(24),
                                   child: Text(
-                                    'Você ainda não recebeu solicitações de contato.',
+                                    'Todavía no recibiste solicitudes de contacto.',
                                     textAlign: TextAlign.center,
                                     style: GoogleFonts.inter(
                                       fontSize: 14,
@@ -1949,7 +1949,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Não há vídeos guardados',
+                    'No hay videos guardados',
                     style: GoogleFonts.inter(
                       color: Colors.grey[600],
                       fontSize: 14,
@@ -2254,11 +2254,11 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                // Configurações
+                                // Configuración
                                 GestureDetector(
                                   behavior: HitTestBehavior.opaque,
                                   onTap: () {
-                                    debugPrint('🔵 Configurações clicado!');
+                                    debugPrint('🔵 Configuración clicada!');
                                     showProfileSupportSheet(
                                       context: context,
                                       userId: currentUserUid,

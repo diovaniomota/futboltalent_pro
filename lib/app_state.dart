@@ -186,6 +186,11 @@ class FFAppState extends ChangeNotifier {
     }
   }
 
+  Future<void> refreshCurrentUserAccess() async {
+    await syncUserType();
+    await refreshAdminRuntimeSettings();
+  }
+
   void update(VoidCallback callback) {
     callback();
     notifyListeners();
@@ -284,6 +289,11 @@ class FFAppState extends ChangeNotifier {
   bool get unlockSensitiveActions =>
       disablePaywalls ||
       (_userFeatureOverrides['unlock_sensitive_actions'] ?? false);
+
+  bool get canUseSensitiveActions =>
+      unlockSensitiveActions ||
+      _currentUserFullAccess ||
+      (hasProPlan && _currentUserVerified);
 
   bool get unlockVideoExplorer =>
       disablePaywalls ||

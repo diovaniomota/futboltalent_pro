@@ -128,8 +128,39 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }
 
   bool get _canUseSensitiveActions =>
-      FFAppState().unlockSensitiveActions ||
-      (_currentPlanId != null && _currentUserVerified);
+      FFAppState().canUseSensitiveActions ||
+      ((_currentPlanId ?? 0) >= 2 && _currentUserVerified);
+
+  Future<bool> _ensureSensitiveAccess() async {
+    await _loadViewerCapabilities();
+    if (_canUseSensitiveActions) {
+      return true;
+    }
+
+    if (mounted) {
+      _showUpsellDialog();
+    }
+    return false;
+  }
+
+  Future<bool> _ensureConvocatoriaSendAccess() async {
+    await _loadViewerCapabilities();
+    if (!FFAppState().canSendConvocatoria) {
+      if (mounted) {
+        _showPlanRequiredForConvocatoriaSend();
+      }
+      return false;
+    }
+
+    if (_canUseSensitiveActions) {
+      return true;
+    }
+
+    if (mounted) {
+      _showUpsellDialog();
+    }
+    return false;
+  }
 
   Future<void> _loadData() async {
     if (currentUserUid.isEmpty) {
@@ -216,20 +247,10 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
   Future<void> _loadViewerCapabilities() async {
     try {
-      final user = await SupaFlow.client
-          .from('users')
-          .select()
-          .eq('user_id', currentUserUid)
-          .maybeSingle();
-
-      if (user != null) {
-        _currentPlanId = user['plan_id'] as int?;
-        _currentUserVerified =
-            _resolveVerification(user, defaultIfMissing: true);
-      } else {
-        _currentPlanId = null;
-        _currentUserVerified = true;
-      }
+      await FFAppState().refreshCurrentUserAccess();
+      final appState = FFAppState();
+      _currentPlanId = appState.currentPlanId;
+      _currentUserVerified = appState.currentUserVerified;
     } catch (_) {
       _currentPlanId = null;
       _currentUserVerified = true;
@@ -1592,8 +1613,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
   Future<void> _toggleSavePlayer(Map<String, dynamic> player) async {
     if (_savingPlayerId != null) return;
-    if (!_canUseSensitiveActions) {
-      _showUpsellDialog();
+    if (!await _ensureSensitiveAccess()) {
       return;
     }
 
@@ -1662,12 +1682,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     required Map<String, dynamic> convocatoria,
   }) async {
     if (_invitingPlayerId != null) return;
-    if (!FFAppState().canSendConvocatoria) {
-      _showPlanRequiredForConvocatoriaSend();
-      return;
-    }
-    if (!_canUseSensitiveActions) {
-      _showUpsellDialog();
+    if (!await _ensureConvocatoriaSendAccess()) {
       return;
     }
 
@@ -1753,9 +1768,9 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     }
   }
 
-  void _showInviteToConvocatoriaSheet(Map<String, dynamic> player) {
-    if (!FFAppState().canSendConvocatoria) {
-      _showPlanRequiredForConvocatoriaSend();
+  Future<void> _showInviteToConvocatoriaSheet(
+      Map<String, dynamic> player) async {
+    if (!await _ensureConvocatoriaSendAccess()) {
       return;
     }
 
@@ -1941,8 +1956,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
   }) async {
     if (postulacionId.isEmpty) return;
 
-    if (!_canUseSensitiveActions) {
-      _showUpsellDialog();
+    if (!await _ensureSensitiveAccess()) {
       return;
     }
 
@@ -1978,9 +1992,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     }
   }
 
-  void _openPlayerVideo(Map<String, dynamic>? videoData) {
-    if (!_canUseSensitiveActions) {
-      _showUpsellDialog();
+  Future<void> _openPlayerVideo(Map<String, dynamic>? videoData) async {
+    if (!await _ensureSensitiveAccess()) {
       return;
     }
 
@@ -2359,7 +2372,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                         minimumSize: const Size.fromHeight(44),
                         side: const BorderSide(color: Color(0xFFD1D5DB)),
                       ),
-                      child: const Text('Agora não'),
+                      child: const Text('Ahora no'),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -2662,7 +2675,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         Padding(
           padding: const EdgeInsets.only(left: 12, bottom: 14),
           child: Text(
-            'Convocatorias y candidatos de ${_clubName ?? 'tu club'}.',
+            'Publicá una convocatoria y empezá a recibir jugadores para ${_clubName ?? 'tu club'}.',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
@@ -2754,8 +2767,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           _buildInlineStatus(
             icon: Icons.search_rounded,
             title: 'Empezá a explorar',
-            subtitle:
-                'Escribí 2 letras o usá filtros para ver resultados.',
+            subtitle: 'Escribí 2 letras o usá filtros para ver resultados.',
           ),
         ],
       ],
@@ -2802,8 +2814,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       padding: const EdgeInsets.only(bottom: 8),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final shouldStack =
-              trailing != null && (constraints.maxWidth < 330 || _isCompactDashboard(context));
+          final shouldStack = trailing != null &&
+              (constraints.maxWidth < 330 || _isCompactDashboard(context));
 
           final titleWidget = Text(
             title,
@@ -2851,6 +2863,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             : _homeScope == 'tryouts'
                 ? 'Buscar convocatoria o posición'
                 : 'Buscar jugador o ciudad';
+    final isNarrowSearch = _screenWidth(context) < 390;
+    final searchHintFontSize = isNarrowSearch ? 12.5 : 14.0;
+    final searchIconBox = isNarrowSearch ? 30.0 : 34.0;
+    final searchIconSize = isNarrowSearch ? 18.0 : 20.0;
+    final searchGap = isNarrowSearch ? 8.0 : 10.0;
+    final searchArrowSize = isNarrowSearch ? 14.0 : 16.0;
 
     if (!widget.searchOnly) {
       return InkWell(
@@ -2873,19 +2891,19 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           child: Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: searchIconBox,
+                height: searchIconBox,
                 decoration: BoxDecoration(
                   color: const Color(0xFFEFF4FB),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.search,
                   color: Color(0xFF4F6788),
-                  size: 20,
+                  size: searchIconSize,
                 ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: searchGap),
               Expanded(
                 child: Text(
                   hintText,
@@ -2893,13 +2911,13 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
                     color: const Color(0xFF94A3B8),
-                    fontSize: 14,
+                    fontSize: searchHintFontSize,
                   ),
                 ),
               ),
-              const Icon(
+              Icon(
                 Icons.arrow_forward_ios_rounded,
-                size: 16,
+                size: searchArrowSize,
                 color: Color(0xFF64748B),
               ),
             ],
@@ -2925,19 +2943,19 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       child: Row(
         children: [
           Container(
-            width: 34,
-            height: 34,
+            width: searchIconBox,
+            height: searchIconBox,
             decoration: BoxDecoration(
               color: const Color(0xFFEFF4FB),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.search,
               color: Color(0xFF4F6788),
-              size: 20,
+              size: searchIconSize,
             ),
           ),
-          const SizedBox(width: 10),
+          SizedBox(width: searchGap),
           Expanded(
             child: TextField(
               controller: _searchController,
@@ -2947,7 +2965,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                 hintText: hintText,
                 hintStyle: GoogleFonts.inter(
                   color: const Color(0xFF94A3B8),
-                  fontSize: 14,
+                  fontSize: searchHintFontSize,
                 ),
               ),
             ),
@@ -3679,8 +3697,10 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (_activeConvocatorias.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.campaign_outlined,
-        title: 'Sin resultados',
-        subtitle: 'Crea tu primera convocatoria en el módulo Convocatorias.',
+        title: 'Todavía no publicaste convocatorias',
+        subtitle:
+            'Publicá una convocatoria y empezá a recibir jugadores para seguimiento.',
+        onRetry: () => context.pushNamed(ConvocatoriasClubWidget.routeName),
       );
     }
 
@@ -3693,14 +3713,13 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         final maxWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : MediaQuery.of(context).size.width - 32;
-        final cardWidth = compact
-            ? (maxWidth - 4).clamp(248.0, 320.0).toDouble()
-            : 286.0;
+        final cardWidth =
+            compact ? (maxWidth - 4).clamp(248.0, 320.0).toDouble() : 286.0;
         final sectionHeight = stackedActions
-            ? 288.0
+            ? 340.0
             : compact
-                ? 250.0
-                : 208.0;
+                ? 290.0
+                : 240.0;
 
         return SizedBox(
           height: sectionHeight,
@@ -3771,7 +3790,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                         fontSize: compact ? 15 : 16,
                         color: const Color(0xFF1A202C),
                       ),
-                      maxLines: compact ? 3 : 2,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
@@ -3781,7 +3800,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                       children: [
                         _metaChip('Zona: $zone'),
                         _metaChip('Categoría: $category'),
-                        if (position.isNotEmpty) _metaChip('Posición: $position'),
+                        if (position.isNotEmpty)
+                          _metaChip('Posición: $position'),
                         _metaChip('Postulaciones: $postulaciones'),
                         _metaChip('En seguimiento: $saved'),
                       ],
@@ -3866,8 +3886,9 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (_recentPostulaciones.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.people_outline,
-        title: 'Sin resultados',
-        subtitle: 'No hay postulaciones nuevas.',
+        title: 'Aún no hay postulaciones',
+        subtitle:
+            'Cuando publiques convocatorias activas, las postulaciones aparecerán acá automáticamente.',
       );
     }
 
@@ -3910,33 +3931,27 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     final palette = _pipelineBadgeStyle(stage);
 
     return Container(
-      margin: EdgeInsets.only(bottom: compact ? 10 : 12),
-      padding: EdgeInsets.all(compact ? 14 : 16),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x120D3B66),
-            blurRadius: 16,
-            offset: Offset(0, 8),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              // Avatar
               Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(10),
                     child: Container(
-                      width: compact ? 64 : 72,
-                      height: compact ? 64 : 72,
+                      width: 52,
+                      height: 52,
                       color: const Color(0xFFE8F0FE),
                       child: thumb.isNotEmpty
                           ? Image.network(
@@ -3962,106 +3977,107 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                   ),
                   if (hasVideo)
                     Positioned(
-                      right: 4,
-                      bottom: 4,
+                      right: 3,
+                      bottom: 3,
                       child: Container(
-                        width: 24,
-                        height: 24,
+                        width: 18,
+                        height: 18,
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.72),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
                           Icons.play_arrow_rounded,
-                          size: 16,
+                          size: 12,
                           color: Colors.white,
                         ),
                       ),
                     ),
                 ],
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
+              // Name + subtitle + badges
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
                           child: Text(
                             name.isNotEmpty ? name : 'Jugador',
                             style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w800,
-                              fontSize: compact ? 15 : 16,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
                               color: const Color(0xFF0F172A),
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                        PopupMenuButton<String>(
+                          splashRadius: 16,
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(
+                            Icons.more_horiz_rounded,
+                            size: 20,
+                            color: Color(0xFF94A3B8),
                           ),
-                          child: PopupMenuButton<String>(
-                            splashRadius: 18,
-                            icon: const Icon(Icons.more_horiz_rounded),
-                            onSelected: (value) {
-                              _updatePipelineStatus(
-                                post['id']?.toString() ?? '',
-                                value,
-                                sourceTable: post['_source_table']?.toString(),
-                              );
-                            },
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
-                                value: 'guardado',
-                                child: Text('Guardado'),
-                              ),
-                              PopupMenuItem(
-                                value: 'preseleccionado',
-                                child: Text('Preseleccionado'),
-                              ),
-                              PopupMenuItem(
-                                value: 'invitar_prueba',
-                                child: Text('Invitar a prueba'),
-                              ),
-                              PopupMenuItem(
-                                value: 'en_prueba',
-                                child: Text('En prueba'),
-                              ),
-                              PopupMenuItem(
-                                value: 'descartado',
-                                child: Text('Descartado'),
-                              ),
-                              PopupMenuItem(
-                                value: 'contratado',
-                                child: Text('Contratado/Seguimiento'),
-                              ),
-                            ],
-                          ),
+                          onSelected: (value) {
+                            _updatePipelineStatus(
+                              post['id']?.toString() ?? '',
+                              value,
+                              sourceTable: post['_source_table']?.toString(),
+                            );
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                              value: 'guardado',
+                              child: Text('Guardado'),
+                            ),
+                            PopupMenuItem(
+                              value: 'preseleccionado',
+                              child: Text('Preseleccionado'),
+                            ),
+                            PopupMenuItem(
+                              value: 'invitar_prueba',
+                              child: Text('Invitar a prueba'),
+                            ),
+                            PopupMenuItem(
+                              value: 'en_prueba',
+                              child: Text('En prueba'),
+                            ),
+                            PopupMenuItem(
+                              value: 'descartado',
+                              child: Text('Descartado'),
+                            ),
+                            PopupMenuItem(
+                              value: 'contratado',
+                              child: Text('Contratado/Seguimiento'),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    if (subtitleParts.isNotEmpty)
+                    if (subtitleParts.isNotEmpty) ...[
+                      const SizedBox(height: 2),
                       Text(
                         subtitleParts.join(' • '),
                         style: GoogleFonts.inter(
                           color: const Color(0xFF64748B),
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w500,
-                          height: 1.3,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
                         ),
-                        maxLines: 2,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    const SizedBox(height: 8),
+                    ],
+                    const SizedBox(height: 5),
+                    // Badges + convocatoria in one wrap
                     Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                      spacing: 6,
+                      runSpacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         _buildPipelineBadge(stage),
@@ -4069,115 +4085,80 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                           _metaChip('Verificado'),
                         if (hasVideo) _metaChip('Video'),
                         if (clubLabel.isNotEmpty) _metaChip(clubLabel),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 9,
-                      ),
-                      decoration: BoxDecoration(
-                        color: palette.background.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: palette.background,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.campaign_outlined,
-                            size: 16,
-                            color: palette.foreground,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              convocatoriaTitle,
-                              style: GoogleFonts.inter(
-                                color: const Color(0xFF334155),
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+                        // Convocatoria inline chip
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.campaign_outlined,
+                              size: 13,
+                              color: palette.foreground,
                             ),
-                          ),
-                        ],
-                      ),
+                            const SizedBox(width: 4),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 160),
+                              child: Text(
+                                convocatoriaTitle,
+                                style: GoogleFonts.inter(
+                                  color: const Color(0xFF334155),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final stackActions = constraints.maxWidth < 300 ||
-                  _shouldStackDashboardActions(context);
-
-              final profileAction = _buildRecentCardAction(
-                label: 'Ver perfil',
-                icon: Icons.person_outline_rounded,
-                onPressed: userId.isEmpty
-                    ? null
-                    : () {
-                        context.pushNamed(
-                          'perfil_profesional_solicitar_Contato',
-                          queryParameters: {'userId': userId},
-                        );
-                      },
-              );
-
-              final videoAction = _buildRecentCardAction(
-                label: 'Ver video',
-                icon: Icons.play_circle_outline_rounded,
-                onPressed: hasVideo ? () => _openPlayerVideo(videoData) : null,
-              );
-
-              final pipelineAction = _buildRecentCardAction(
-                label: 'Agregar al pipeline',
-                icon: Icons.playlist_add_rounded,
-                primary: true,
-                onPressed: () => _updatePipelineStatus(
-                  post['id']?.toString() ?? '',
-                  'guardado',
-                  sourceTable: post['_source_table']?.toString(),
+          const SizedBox(height: 9),
+          // Action buttons
+          Row(
+            children: [
+              Expanded(
+                child: _buildRecentCardAction(
+                  label: 'Ver perfil',
+                  icon: Icons.person_outline_rounded,
+                  onPressed: userId.isEmpty
+                      ? null
+                      : () {
+                          context.pushNamed(
+                            'perfil_profesional_solicitar_Contato',
+                            queryParameters: {'userId': userId},
+                          );
+                        },
                 ),
-              );
-
-              if (stackActions) {
-                return Column(
-                  children: [
-                    SizedBox(width: double.infinity, child: profileAction),
-                    const SizedBox(height: 8),
-                    SizedBox(width: double.infinity, child: videoAction),
-                    const SizedBox(height: 8),
-                    SizedBox(width: double.infinity, child: pipelineAction),
-                  ],
-                );
-              }
-
-              return Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: profileAction),
-                      const SizedBox(width: 8),
-                      Expanded(child: videoAction),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: pipelineAction,
-                  ),
-                ],
-              );
-            },
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _buildRecentCardAction(
+                  label: 'Ver video',
+                  icon: Icons.play_circle_outline_rounded,
+                  onPressed:
+                      hasVideo ? () => _openPlayerVideo(videoData) : null,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: _buildRecentCardAction(
+              label: 'Agregar al pipeline',
+              icon: Icons.playlist_add_rounded,
+              primary: true,
+              onPressed: () => _updatePipelineStatus(
+                post['id']?.toString() ?? '',
+                'guardado',
+                sourceTable: post['_source_table']?.toString(),
+              ),
+            ),
           ),
         ],
       ),

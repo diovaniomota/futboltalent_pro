@@ -78,9 +78,12 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
 
   bool _isLoading = true;
   List<Map<String, dynamic>> _convocatorias = [];
+  List<Map<String, dynamic>> _filteredConvocatorias = [];
   String? _clubId;
   String? _clubName;
   Set<String> _clubRefs = <String>{};
+  final _searchController = TextEditingController();
+  String _statusFilter = 'todas';
 
   // Stats
   int _convocatoriasActivas = 0;
@@ -92,6 +95,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
   void initState() {
     super.initState();
     _model = createModel(context, () => ConvocatoriasClubModel());
+    _searchController.addListener(_applyFilters);
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
     _loadData();
   }
@@ -99,7 +103,27 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
   @override
   void dispose() {
     _model.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  void _applyFilters() {
+    final q = _searchController.text.trim().toLowerCase();
+    setState(() {
+      _filteredConvocatorias = _convocatorias.where((conv) {
+        final titulo = (conv['titulo'] ?? conv['categoria'] ?? '')
+            .toString()
+            .toLowerCase();
+        final posicion = (conv['posicion'] ?? '').toString().toLowerCase();
+        final estado = (conv['estado'] ?? '').toString().toLowerCase();
+        final matchesQuery =
+            q.isEmpty || titulo.contains(q) || posicion.contains(q);
+        final matchesStatus = _statusFilter == 'todas' ||
+            (_statusFilter == 'activa' && estado == 'activa') ||
+            (_statusFilter == 'cerrada' && estado != 'activa');
+        return matchesQuery && matchesStatus;
+      }).toList();
+    });
   }
 
   void _openCurrentClubPublicProfile(BuildContext context) {
@@ -128,6 +152,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
     }
 
     if (mounted) {
+      _applyFilters();
       setState(() => _isLoading = false);
     }
   }
@@ -480,245 +505,224 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
       },
       child: Scaffold(
         key: scaffoldKey,
-        body: SafeArea(
-          top: true,
-          child: _isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(color: Color(0xFF0D3B66)),
-                )
-              : Container(
-                  width: double.infinity,
-                  height: MediaQuery.sizeOf(context).height * 1.0,
-                  color: Colors.white,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Header
-                        _buildHeader(),
-                        if (_clubName != null) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            'Club: $_clubName',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 24),
-
-                        // Botón Nueva Convocatoria
-                        _buildNewButton(),
-                        const SizedBox(height: 24),
-
-                        // Stats Cards
-                        _buildStatsRow1(),
-                        const SizedBox(height: 16),
-                        _buildStatsRow2(),
-                        const SizedBox(height: 24),
-
-                        // Lista de Convocatorias
-                        _buildConvocatoriasList(),
-                        const SizedBox(height: 32),
-                      ],
-                    ),
-                  ),
-                ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            GestureDetector(
-              onTap: () => _showClubMenu(context),
-              child: const Icon(Icons.menu, color: Colors.black, size: 24),
+        backgroundColor: const Color(0xFFF7F9FC),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF0D3B66),
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.menu, color: Colors.white),
+            onPressed: () => _showClubMenu(context),
+          ),
+          title: Text(
+            'Convocatorias',
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.add, color: Colors.white, size: 26),
+              tooltip: 'Nueva convocatoria',
+              onPressed: _showCreateConvocatoriaModal,
             ),
           ],
         ),
-        const SizedBox(height: 16),
-        Text(
-          'Convocatorias',
-          style: GoogleFonts.inter(
-            fontSize: 28,
-            fontWeight: FontWeight.w600,
-            color: Colors.black,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Crea y gestiona las convocatorias para diferentes categorías y posiciones.',
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            color: Colors.grey[600],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNewButton() {
-    return Center(
-      child: ElevatedButton.icon(
-        onPressed: _showCreateConvocatoriaModal,
-        icon: const Icon(Icons.add, size: 18, color: Colors.white),
-        label: Text(
-          'Nueva Convocatoria',
-          style: GoogleFonts.inter(color: Colors.white),
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF818181),
-          minimumSize: const Size(200, 44),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-          elevation: 0,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatsRow1() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatCard(
-            title: 'Convocatorias\nActivas',
-            value: _convocatoriasActivas.toString(),
-            icon: Icons.people,
-            subtitle: 'En curso',
-            trend: '+12%',
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildStatCard(
-            title: 'Promedio por\nConvocatoria',
-            value: _promedioPostulaciones.toStringAsFixed(0),
-            icon: Icons.calendar_month,
-            subtitle: 'Postulaciones',
-            trend: '+8%',
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatsRow2() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatCard(
-            title: 'Total\nPostulaciones',
-            value: _totalPostulaciones.toString(),
-            icon: Icons.people,
-            subtitle: 'Todas las convocatorias',
-            trend: '+15%',
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildStatCard(
-            title: 'Total videos\nSubidos',
-            value: _totalVideos.toString(),
-            icon: Icons.videocam,
-            subtitle: 'En convocatorias',
-            trend: '+20%',
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required IconData icon,
-    required String subtitle,
-    String? trend,
-  }) {
-    return Container(
-      height: 152,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF928F8F), width: 1),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-              Icon(icon, color: Colors.grey, size: 16),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                value,
-                style: GoogleFonts.inter(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black,
-                ),
-              ),
-              if (trend != null) ...[
-                const SizedBox(width: 12),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFECEEF2),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+        body: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(color: Color(0xFF0D3B66)),
+              )
+            : RefreshIndicator(
+                color: const Color(0xFF0D3B66),
+                onRefresh: _loadData,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.trending_up,
-                          color: Colors.black, size: 14),
-                      const SizedBox(width: 4),
-                      Text(
-                        trend,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: Colors.black,
-                        ),
-                      ),
+                      _buildSearchAndFilter(),
+                      _buildStatsStrip(),
+                      _buildStatusFilterChips(),
+                      _buildConvocatoriasList(),
+                      const SizedBox(height: 80),
                     ],
                   ),
                 ),
-              ],
-            ],
+              ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _showCreateConvocatoriaModal,
+          backgroundColor: const Color(0xFF0D3B66),
+          icon: const Icon(Icons.add, color: Colors.white),
+          label: Text(
+            'Nueva',
+            style: GoogleFonts.inter(
+                color: Colors.white, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchAndFilter() {
+    return Container(
+      color: const Color(0xFF0D3B66),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Container(
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withOpacity(0.3)),
+        ),
+        child: TextField(
+          controller: _searchController,
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: 'Buscar convocatoria...',
+            hintStyle:
+                TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 14),
+            prefixIcon: Icon(Icons.search,
+                color: Colors.white.withOpacity(0.7), size: 20),
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(vertical: 12),
+            suffixIcon: _searchController.text.isNotEmpty
+                ? IconButton(
+                    icon: Icon(Icons.close,
+                        color: Colors.white.withOpacity(0.7), size: 18),
+                    onPressed: () {
+                      _searchController.clear();
+                    },
+                  )
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsStrip() {
+    final total = _convocatorias.length;
+    final stats = [
+      {
+        'icon': Icons.campaign_outlined,
+        'label': 'Total',
+        'value': total.toString(),
+        'color': const Color(0xFF0D3B66)
+      },
+      {
+        'icon': Icons.play_circle_outline,
+        'label': 'Activas',
+        'value': _convocatoriasActivas.toString(),
+        'color': const Color(0xFF16A34A)
+      },
+      {
+        'icon': Icons.people_outline,
+        'label': 'Postulaciones',
+        'value': _totalPostulaciones.toString(),
+        'color': const Color(0xFF7C3AED)
+      },
+      {
+        'icon': Icons.bar_chart,
+        'label': 'Promedio',
+        'value': _promedioPostulaciones.toStringAsFixed(1),
+        'color': const Color(0xFFD97706)
+      },
+    ];
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: stats.map<Widget>((s) {
+          return Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              decoration: BoxDecoration(
+                border: Border(
+                    right: s != stats.last
+                        ? const BorderSide(color: Color(0xFFE2E8F0))
+                        : BorderSide.none),
+              ),
+              child: Column(
+                children: [
+                  Icon(s['icon'] as IconData,
+                      color: s['color'] as Color, size: 20),
+                  const SizedBox(height: 4),
+                  Text(
+                    s['value'] as String,
+                    style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1A202C)),
+                  ),
+                  Text(
+                    s['label'] as String,
+                    style: GoogleFonts.inter(
+                        fontSize: 10, color: const Color(0xFF718096)),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildStatusFilterChips() {
+    final options = [
+      {'key': 'todas', 'label': 'Todas'},
+      {'key': 'activa', 'label': 'Activas'},
+      {'key': 'cerrada', 'label': 'Cerradas'},
+    ];
+    return Container(
+      color: const Color(0xFFF7F9FC),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Row(
+        children: [
+          Text(
+            '${_filteredConvocatorias.length} convocatoria${_filteredConvocatorias.length != 1 ? 's' : ''}',
+            style:
+                GoogleFonts.inter(fontSize: 13, color: const Color(0xFF718096)),
           ),
           const Spacer(),
-          Text(
-            subtitle,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: Colors.black,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+          ...options.map((o) {
+            final isSelected = _statusFilter == o['key'];
+            return Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: GestureDetector(
+                onTap: () {
+                  setState(() => _statusFilter = o['key']!);
+                  _applyFilters();
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFF0D3B66) : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected
+                          ? const Color(0xFF0D3B66)
+                          : const Color(0xFFCBD5E0),
+                    ),
+                  ),
+                  child: Text(
+                    o['label']!,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w400,
+                      color:
+                          isSelected ? Colors.white : const Color(0xFF4A5568),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -726,51 +730,70 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
 
   Widget _buildConvocatoriasList() {
     if (_convocatorias.isEmpty) {
-      return Container(
+      return Padding(
         padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: Colors.grey[50],
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[300]!),
-        ),
         child: Column(
           children: [
-            Icon(Icons.campaign_outlined, size: 64, color: Colors.grey[400]),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D3B66).withOpacity(0.08),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.campaign_outlined,
+                  size: 40, color: Color(0xFF0D3B66)),
+            ),
             const SizedBox(height: 16),
             Text(
-              'No hay convocatorias',
+              'Aún no hay convocatorias',
               style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey[600],
-              ),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF2D3748)),
             ),
             const SizedBox(height: 8),
             Text(
-              'Crea tu primera convocatoria para\nempezar a recibir postulaciones',
+              'Publica tu primera convocatoria para\nempezar a recibir postulaciones.',
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
-                fontSize: 14,
-                color: Colors.grey[500],
-              ),
+                  fontSize: 13, color: const Color(0xFF718096), height: 1.4),
             ),
           ],
         ),
       );
     }
 
-    return Column(
-      children:
-          _convocatorias.map((conv) => _buildConvocatoriaCard(conv)).toList(),
+    if (_filteredConvocatorias.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Center(
+          child: Text(
+            'No hay convocatorias que coincidan con la búsqueda.',
+            textAlign: TextAlign.center,
+            style:
+                GoogleFonts.inter(fontSize: 14, color: const Color(0xFF718096)),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Column(
+        children: _filteredConvocatorias
+            .map((conv) => _buildConvocatoriaCard(conv))
+            .toList(),
+      ),
     );
   }
 
   Widget _buildConvocatoriaCard(Map<String, dynamic> conv) {
     final titulo = conv['titulo'] ?? conv['categoria'] ?? 'Sin título';
-    final posicion = conv['posicion'] ?? '';
-    final descripcion = conv['descripcion'] ?? '';
+    final posicion = (conv['posicion'] ?? '').toString();
+    final descripcion = (conv['descripcion'] ?? '').toString();
     final estado = conv['estado']?.toString().toLowerCase() ?? 'activa';
-    final categoria = conv['tipo'] ?? conv['categoria'] ?? 'Abierta';
+    final categoria = (conv['categoria'] ?? conv['tipo'] ?? '').toString();
     final postulaciones = conv['postulaciones_count'] ?? 0;
     final fechaCierre = _formatDate(conv['fecha_cierre']);
     final requiredChallenges =
@@ -778,197 +801,231 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
     final challengeLabels = requiredChallenges.isNotEmpty
         ? requiredChallenges.map(_convocatoriaChallengeTitle).toList()
         : (conv['ejercicios'] as List? ?? [])
-            .map((item) => item.toString())
-            .where((item) => item.trim().isNotEmpty)
+            .map((e) => e.toString())
+            .where((e) => e.trim().isNotEmpty)
             .toList();
+
+    final isActive = estado == 'activa';
+    final accentColor =
+        isActive ? const Color(0xFF16A34A) : const Color(0xFF9CA3AF);
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF928F8F)),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 6,
+              offset: const Offset(0, 2)),
+        ],
       ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Colored left accent bar
+            Container(
+              width: 5,
+              decoration: BoxDecoration(
+                color: accentColor,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(14),
+                  bottomLeft: Radius.circular(14),
+                ),
+              ),
+            ),
+            // Card content
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title row + menu
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            titulo,
+                            style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF1A202C)),
+                          ),
+                        ),
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert,
+                              size: 20, color: Color(0xFF718096)),
+                          padding: const EdgeInsets.all(0),
+                          onSelected: (value) {
+                            if (value == 'ver')
+                              _showViewConvocatoriaModal(conv);
+                            if (value == 'editar')
+                              _showEditConvocatoriaModal(conv);
+                          },
+                          itemBuilder: (_) => [
+                            PopupMenuItem(
+                              value: 'ver',
+                              child: Row(children: [
+                                const Icon(Icons.visibility_outlined,
+                                    size: 16, color: Color(0xFF0D3B66)),
+                                const SizedBox(width: 10),
+                                Text('Ver detalles',
+                                    style: GoogleFonts.inter(fontSize: 13)),
+                              ]),
+                            ),
+                            PopupMenuItem(
+                              value: 'editar',
+                              child: Row(children: [
+                                const Icon(Icons.edit_outlined,
+                                    size: 16, color: Color(0xFF0D3B66)),
+                                const SizedBox(width: 10),
+                                Text('Editar',
+                                    style: GoogleFonts.inter(fontSize: 13)),
+                              ]),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    // Meta row: categoria · posicion · status badge
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (categoria.isNotEmpty)
+                          _metaChip(categoria, const Color(0xFFEBF4FF),
+                              const Color(0xFF3B82F6)),
+                        if (posicion.isNotEmpty)
+                          _metaChip(posicion, const Color(0xFFF3F4F6),
+                              const Color(0xFF6B7280)),
+                        _statusBadge(isActive),
+                      ],
+                    ),
+                    if (descripcion.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        descripcion,
+                        style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFF718096),
+                            height: 1.4),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    // Stats inline
+                    Row(
+                      children: [
+                        _inlineStat(Icons.people_outline,
+                            '$postulaciones postulacion${postulaciones != 1 ? 'es' : ''}'),
+                        const SizedBox(width: 14),
+                        if (fechaCierre != '-')
+                          _inlineStat(Icons.calendar_today_outlined,
+                              'Cierra $fechaCierre'),
+                        if (challengeLabels.isNotEmpty) ...[
+                          const SizedBox(width: 14),
+                          _inlineStat(Icons.flag_outlined,
+                              '${challengeLabels.length} desafío${challengeLabels.length != 1 ? 's' : ''}'),
+                        ],
+                      ],
+                    ),
+                    if (challengeLabels.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: challengeLabels
+                            .map<Widget>((c) => _buildExerciseTag(c))
+                            .toList(),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _metaChip(String text, Color bg, Color textColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
+      child: Text(text,
+          style: GoogleFonts.inter(
+              fontSize: 11, fontWeight: FontWeight.w500, color: textColor)),
+    );
+  }
+
+  Widget _statusBadge(bool isActive) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0xFFDCFCE7) : const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Header con título y botones
-          Row(
-            children: [
-              Text(
-                titulo,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black,
-                ),
-              ),
-              const Spacer(),
-              _buildSmallButton('Ver', Icons.visibility, () {
-                _showViewConvocatoriaModal(conv);
-              }),
-              const SizedBox(width: 8),
-              _buildSmallButton('Editar', FontAwesomeIcons.edit, () {
-                _showEditConvocatoriaModal(conv);
-              }),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          // Posición y Estado
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                posicion.isNotEmpty ? posicion : 'Sin posición',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black,
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: estado == 'activa' ? Colors.black : Colors.grey,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  estado == 'activa' ? 'Activa' : 'Cerrada',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          // Descripción
-          if (descripcion.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              descripcion,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: const Color(0xFFB5BECA),
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color:
+                  isActive ? const Color(0xFF16A34A) : const Color(0xFF9CA3AF),
             ),
-          ],
-          const SizedBox(height: 12),
-
-          // Stats Row 1
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildInfoColumn('Categoría', categoria),
-              _buildInfoColumn('Postulaciones', postulaciones.toString()),
-            ],
           ),
-          const SizedBox(height: 12),
-
-          // Stats Row 2
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildInfoColumn(
-                  'Desafíos req.', challengeLabels.length.toString()),
-              _buildInfoColumn('Cierra', fechaCierre),
-            ],
+          const SizedBox(width: 4),
+          Text(
+            isActive ? 'Activa' : 'Cerrada',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color:
+                  isActive ? const Color(0xFF15803D) : const Color(0xFF6B7280),
+            ),
           ),
-
-          // Desafíos requeridos
-          if (challengeLabels.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Desafíos requeridos:',
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: const Color(0xFF818181),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: challengeLabels
-                  .map<Widget>((challenge) => _buildExerciseTag(challenge))
-                  .toList(),
-            ),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildSmallButton(String text, IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(5),
-          border: Border.all(color: const Color(0xFFB5BECA)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: Colors.black),
-            const SizedBox(width: 4),
-            Text(
-              text,
-              style: GoogleFonts.inter(fontSize: 12, color: Colors.black),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoColumn(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _inlineStat(IconData icon, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            color: const Color(0xFF818181),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Colors.black,
-          ),
-        ),
+        Icon(icon, size: 13, color: const Color(0xFF9CA3AF)),
+        const SizedBox(width: 4),
+        Text(label,
+            style: GoogleFonts.inter(
+                fontSize: 12, color: const Color(0xFF718096))),
       ],
     );
   }
 
   Widget _buildExerciseTag(String name) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF818181)),
+        color: const Color(0xFFF0F4FF),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFBFD0FF)),
       ),
-      child: Text(
-        name,
-        style: GoogleFonts.inter(
-          fontSize: 12,
-          color: Colors.grey[600],
-        ),
-      ),
+      child: Text(name,
+          style:
+              GoogleFonts.inter(fontSize: 11, color: const Color(0xFF3730A3))),
     );
   }
 }

@@ -1,5 +1,4 @@
-import 'package:supabase_flutter/supabase_flutter.dart' hide Provider;
-import '/flutter_flow/flutter_flow_util.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 export 'database/database.dart';
 

@@ -695,16 +695,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _buildHeader(context),
-                              if (_clubName != null) ...[
-                                const SizedBox(height: 8),
-                                Text('Club: $_clubName',
-                                    style: GoogleFonts.inter(
-                                        fontSize: 14, color: Colors.grey[600])),
-                              ],
                               SizedBox(height: 16 * scale),
                               _buildActionButtons(context),
-                              SizedBox(height: 24 * scale),
-                              _buildQuickGuideCard(context),
                               SizedBox(height: 20 * scale),
                               if (_isLargeScreen(context))
                                 Row(
@@ -749,16 +741,37 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         GestureDetector(
-            onTap: () => _showClubMenu(context),
-            child: Icon(Icons.menu, color: Colors.black, size: 24 * scale)),
-        SizedBox(height: 16 * scale),
-        Text('Listas',
+          onTap: () => _showClubMenu(context),
+          child: Icon(Icons.menu, color: Colors.black, size: 24 * scale),
+        ),
+        SizedBox(height: 14 * scale),
+        Text('Cuaderno de Campo',
             style: GoogleFonts.inter(
                 fontSize:
-                    _responsive(context, mobile: 20, tablet: 24, desktop: 28) *
+                    _responsive(context, mobile: 23, tablet: 26, desktop: 30) *
                         scale,
                 fontWeight: FontWeight.bold,
-                color: const Color(0xFF444444))),
+                color: const Color(0xFF111827))),
+        SizedBox(height: 4 * scale),
+        Text(
+          'Organizá y etiquetá jugadores para seguimiento',
+          style: GoogleFonts.inter(
+            fontSize: 13 * scale,
+            color: const Color(0xFF64748B),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        if (_clubName != null && _clubName!.trim().isNotEmpty) ...[
+          SizedBox(height: 3 * scale),
+          Text(
+            'Club: $_clubName',
+            style: GoogleFonts.inter(
+              fontSize: 12 * scale,
+              color: const Color(0xFF94A3B8),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -855,29 +868,17 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     final height = _responsive(context, mobile: 40, tablet: 44, desktop: 48);
     final fontSize =
         _responsive(context, mobile: 13, tablet: 14, desktop: 15) * scale;
-    final compact = MediaQuery.of(context).size.width < 380;
 
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: 12 * scale,
-      runSpacing: 12 * scale,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _buildActionButton(
-          compact ? 'Nueva lista' : '+ Nueva lista',
+          '+ Nueva lista',
           () => _showCreateListaModal(),
           null,
           height,
           fontSize,
           icon: Icons.playlist_add_rounded,
-        ),
-        _buildActionButton(
-          compact ? 'Agregar jugador' : '+ Agregar jugador',
-          () => _showAddJugadorModal(),
-          null,
-          height,
-          fontSize,
-          icon: Icons.person_add_alt_1_rounded,
-          enabled: _selectedLista != null,
         ),
       ],
     );
@@ -1089,7 +1090,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   Widget _buildSelectedListaCard(BuildContext context) {
     final scale = _scaleFactor(context);
     final nombre = _selectedLista!['nombre'] ?? 'Sin nombre';
-    final descripcion = (_selectedLista!['descripcion'] ?? '').toString().trim();
+    final descripcion =
+        (_selectedLista!['descripcion'] ?? '').toString().trim();
     final count = _selectedLista!['jugadores_count'] ?? 0;
     final summaryText = descripcion.isNotEmpty
         ? '$descripcion • $count jugador(es)'
@@ -1226,24 +1228,23 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                Row(
-                    children: [
-                      Expanded(
-                          child: Text(name,
-                              style: GoogleFonts.inter(
-                                  fontSize: 14 * scale,
-                                  fontWeight: FontWeight.w600))),
-                      TextButton.icon(
-                        onPressed: () => _showEditJugadorModal(item),
-                        icon: const Icon(Icons.edit_outlined, size: 16),
-                        label: const Text('Editar'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF0D3B66),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      )
-                    ]),
+                Row(children: [
+                  Expanded(
+                      child: Text(name,
+                          style: GoogleFonts.inter(
+                              fontSize: 14 * scale,
+                              fontWeight: FontWeight.w600))),
+                  TextButton.icon(
+                    onPressed: () => _showEditJugadorModal(item),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Editar'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF0D3B66),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  )
+                ]),
                 Text('$positionLabel • $age años',
                     style: GoogleFonts.inter(
                         fontSize: 12 * scale, color: Colors.grey)),

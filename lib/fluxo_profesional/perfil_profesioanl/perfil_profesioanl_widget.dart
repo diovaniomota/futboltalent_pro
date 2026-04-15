@@ -722,6 +722,28 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
 
   Widget _buildProfessionalSummaryCard() {
     final club = _userData?['club']?.toString().trim() ?? '';
+    final organizationType = _firstNonEmptyText([
+      _userData?['organization_type'],
+      _userData?['tipo_organizacion'],
+    ]);
+    final currentRole = _firstNonEmptyText([
+      _userData?['current_role'],
+      _userData?['rol_actual'],
+      _userData?['role'],
+    ]);
+    final workZone = _firstNonEmptyText([
+      _userData?['work_zone'],
+      _userData?['zona_trabajo'],
+      _userData?['work_area'],
+    ]);
+    final interestCategories = _firstNonEmptyText([
+      _userData?['interest_categories'],
+      _userData?['categorias_interes'],
+    ]);
+    final interestPositions = _firstNonEmptyText([
+      _userData?['interest_positions'],
+      _userData?['posiciones_interes'],
+    ]);
     final phone = _userData?['telephone']?.toString().trim() ?? '';
     final url = _userData?['url_profesional']?.toString().trim() ?? '';
     final dni = _userData?['dni']?.toString().trim() ?? '';
@@ -736,6 +758,36 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
           'icon': Icons.apartment_rounded,
           'label': 'Organización',
           'value': club,
+        },
+      if (organizationType.isNotEmpty)
+        {
+          'icon': Icons.badge_outlined,
+          'label': 'Tipo de perfil',
+          'value': organizationType,
+        },
+      if (currentRole.isNotEmpty)
+        {
+          'icon': Icons.work_outline_rounded,
+          'label': 'Rol actual',
+          'value': currentRole,
+        },
+      if (workZone.isNotEmpty)
+        {
+          'icon': Icons.public_rounded,
+          'label': 'Zona de trabajo',
+          'value': workZone,
+        },
+      if (interestCategories.isNotEmpty)
+        {
+          'icon': Icons.sports_soccer_rounded,
+          'label': 'Categorías de interés',
+          'value': interestCategories,
+        },
+      if (interestPositions.isNotEmpty)
+        {
+          'icon': Icons.shield_outlined,
+          'label': 'Posiciones de interés',
+          'value': interestPositions,
         },
       if (phone.isNotEmpty)
         {

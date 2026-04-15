@@ -53,7 +53,7 @@ void main() async {
           child: Padding(
             padding: const EdgeInsets.all(20.0),
             child: Text(
-              'Erro ao iniciar o app:\n$e\n\nVerifique os logs do console para mais detalhes.',
+              'Error al iniciar la app:\n$e\n\nRevisá los registros de consola para más detalles.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.red),
             ),
@@ -169,6 +169,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (currentUserUid.isEmpty) return;
     _isCheckingAccountGuard = true;
     try {
+      await FFAppState().syncUserType();
       final userData = await SupaFlow.client
           .from('users')
           .select('banned_until, is_minor, has_guardian')

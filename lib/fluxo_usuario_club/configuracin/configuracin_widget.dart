@@ -39,6 +39,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
   Map<String, dynamic>? _currentUserData;
   List<Map<String, dynamic>> _staffMembers = [];
   String? _logoUrl;
+  String? _bannerUrl;
   String? _clubId;
   String? _currentUserId;
   Set<String> _clubRefs = <String>{};
@@ -213,6 +214,11 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       clubData?['avatar_url'],
     ]);
     _logoUrl = logoUrl.isEmpty ? null : logoUrl;
+    final bannerUrl = _firstNonEmptyText([
+      clubData?['cover_url'],
+      clubData?['banner_url'],
+    ]);
+    _bannerUrl = bannerUrl.isEmpty ? null : bannerUrl;
   }
 
   // ============ DATA LOADING ============
@@ -264,7 +270,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         }
       }
 
-      final mergedClub = _mergeClubWithUserFallback(clubResponse, _currentUserData);
+      final mergedClub =
+          _mergeClubWithUserFallback(clubResponse, _currentUserData);
       if (mergedClub.isNotEmpty) {
         _clubData = mergedClub;
         _clubId = _firstNonEmptyText([
@@ -314,10 +321,14 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
 
   Future<void> _loadStats() async {
     try {
-      if (_clubRefs.isEmpty && _currentUserId != null && _currentUserId!.isNotEmpty) {
+      if (_clubRefs.isEmpty &&
+          _currentUserId != null &&
+          _currentUserId!.isNotEmpty) {
         _clubRefs = await resolveClubRefsForUser(_currentUserId!);
       }
-      if (_clubRefs.isEmpty && _currentUserId != null && _currentUserId!.isNotEmpty) {
+      if (_clubRefs.isEmpty &&
+          _currentUserId != null &&
+          _currentUserId!.isNotEmpty) {
         _clubRefs = {_currentUserId!};
       }
 
@@ -357,8 +368,20 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     setState(() => _isSaving = true);
     try {
       final updatedAt = DateTime.now().toIso8601String();
-      final normalizedCountry = normalizeCountryName(_paisController.text.trim());
+      final normalizedCountry =
+          normalizeCountryName(_paisController.text.trim());
       final normalizedLeague = normalizeLeagueName(_ligaController.text.trim());
+
+      if (normalizedCountry.isEmpty) {
+        throw 'Debes indicar una ubicación real (País).';
+      }
+      if (_clubLogoUrl() == null) {
+        throw 'Debes cargar el escudo del club antes de guardar.';
+      }
+      if (_clubCoverUrl() == null) {
+        throw 'Debes cargar banner/portada del club antes de guardar.';
+      }
+
       final payload = {
         'nombre': _nombreController.text.trim(),
         'nombre_corto': _nombreCortoController.text.trim(),
@@ -373,26 +396,33 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
 
       Map<String, dynamic>? persistedClub;
       if (currentClubId.isNotEmpty) {
-        await SupaFlow.client.from('clubs').update(payload).eq('id', currentClubId);
+        await SupaFlow.client
+            .from('clubs')
+            .update(payload)
+            .eq('id', currentClubId);
         persistedClub = {
           ...?_clubData,
           ...payload,
           'id': currentClubId,
         };
       } else {
-        final inserted = await SupaFlow.client.from('clubs').insert({
-          ...payload,
-          'owner_id': _firstNonEmptyText([
-            _clubData?['owner_id'],
-            _currentUserId,
-          ]),
-          'user_id': _firstNonEmptyText([
-            _clubData?['user_id'],
-            _currentUserId,
-          ]),
-          'is_active': true,
-          'created_at': updatedAt,
-        }).select().maybeSingle();
+        final inserted = await SupaFlow.client
+            .from('clubs')
+            .insert({
+              ...payload,
+              'owner_id': _firstNonEmptyText([
+                _clubData?['owner_id'],
+                _currentUserId,
+              ]),
+              'user_id': _firstNonEmptyText([
+                _clubData?['user_id'],
+                _currentUserId,
+              ]),
+              'is_active': true,
+              'created_at': updatedAt,
+            })
+            .select()
+            .maybeSingle();
         persistedClub = inserted == null
             ? {
                 ...?_clubData,
@@ -459,6 +489,48 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Error al subir logo: $e'),
+            backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  Future<void> _uploadBanner() async {
+    try {
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 1600,
+          maxHeight: 900,
+          imageQuality: 85);
+      if (image == null || _clubData == null) return;
+      setState(() => _isSaving = true);
+      final bytes = await image.readAsBytes();
+      final fileName =
+          'club_banner_${_clubData!['id']}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      await SupaFlow.client.storage.from('Fotos').uploadBinary(fileName, bytes,
+          fileOptions: const FileOptions(contentType: 'image/jpeg'));
+      final publicUrl =
+          SupaFlow.client.storage.from('Fotos').getPublicUrl(fileName);
+      await SupaFlow.client.from('clubs').update(
+        {
+          'cover_url': publicUrl,
+          'banner_url': publicUrl,
+        },
+      ).eq('id', _clubData!['id']);
+      setState(() {
+        _bannerUrl = publicUrl;
+        _isSaving = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Banner actualizado'),
+            backgroundColor: Colors.green));
+      }
+    } catch (e) {
+      setState(() => _isSaving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error al subir banner: $e'),
             backgroundColor: Colors.red));
       }
     }
@@ -812,6 +884,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
 
   String? _clubCoverUrl() {
     final cover = _firstNonEmptyText([
+      _bannerUrl,
       _clubData?['cover_url'],
       _clubData?['banner_url'],
       _currentUserData?['cover_url'],
@@ -989,9 +1062,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: selected
-                        ? const Color(0xFF1473E6)
-                        : Colors.transparent,
+                    color:
+                        selected ? const Color(0xFF1473E6) : Colors.transparent,
                     width: 2.5,
                   ),
                 ),
@@ -1218,9 +1290,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
           );
         }
         return Column(
-          children: _clubConvocatoriasPreview
-              .map(_buildOwnConvocatoriaTile)
-              .toList(),
+          children:
+              _clubConvocatoriasPreview.map(_buildOwnConvocatoriaTile).toList(),
         );
     }
   }
@@ -1433,7 +1504,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                                     if (_isEditingClubProfile) {
                                       _populateClubControllers(_clubData);
                                     }
-                                    _isEditingClubProfile = !_isEditingClubProfile;
+                                    _isEditingClubProfile =
+                                        !_isEditingClubProfile;
                                   });
                                 },
                               ),
@@ -1842,6 +1914,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         SizedBox(height: 16 * scale),
         _buildLogoUpload(context),
         SizedBox(height: 16 * scale),
+        _buildBannerUpload(context),
+        SizedBox(height: 16 * scale),
         _buildTextField(context, 'Nombre', _nombreController),
         SizedBox(height: 16 * scale),
         _buildTextField(context, 'Nombre Corto', _nombreCortoController),
@@ -1884,6 +1958,45 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                 style: TextStyle(fontSize: 12, color: Colors.grey))
           ])
         ]));
+  }
+
+  Widget _buildBannerUpload(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final bannerUrl = _clubCoverUrl();
+    return GestureDetector(
+      onTap: _uploadBanner,
+      child: Row(
+        children: [
+          Container(
+            width: 100 * scale,
+            height: 60 * scale,
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(12),
+              image: bannerUrl != null
+                  ? DecorationImage(
+                      image: NetworkImage(bannerUrl),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
+            ),
+            child: bannerUrl == null
+                ? const Icon(Icons.image_outlined, color: Colors.grey)
+                : null,
+          ),
+          SizedBox(width: 12 * scale),
+          const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Banner del Club',
+                  style: TextStyle(fontWeight: FontWeight.w500)),
+              Text('Toca para subir',
+                  style: TextStyle(fontSize: 12, color: Colors.grey))
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTextField(
@@ -2056,24 +2169,23 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
   Widget _buildStatusRow(BuildContext context, String label, String value) {
     return Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                label,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: const Color(0xFF64748B),
-                ),
-              ),
-              Text(
-                value,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: const Color(0xFF0F172A),
-                  fontWeight: FontWeight.w700,
-                ),
-              )
-            ]));
+        child:
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: const Color(0xFF64748B),
+            ),
+          ),
+          Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: const Color(0xFF0F172A),
+              fontWeight: FontWeight.w700,
+            ),
+          )
+        ]));
   }
 }

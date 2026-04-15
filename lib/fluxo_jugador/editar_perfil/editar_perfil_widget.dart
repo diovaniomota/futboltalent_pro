@@ -45,6 +45,10 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   TextEditingController? _professionalUrlController;
   TextEditingController? _dniController;
   TextEditingController? _collaborationsController;
+  TextEditingController? _currentRoleController;
+  TextEditingController? _workZoneController;
+  TextEditingController? _interestCategoriesController;
+  TextEditingController? _interestPositionsController;
 
   // Focus nodes
   FocusNode? _nomeFocusNode;
@@ -60,6 +64,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   String _currentUserType = 'jugador';
   bool _hasPlayerRecord = false;
   bool _hasScoutRecord = false;
+  String? _selectedOrganizationType;
   List<Map<String, dynamic>> _countries = [];
   String? _selectedCountryId;
   List<String> _states = [];
@@ -84,6 +89,11 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     'Federado',
     'En prueba',
     'En inferiores',
+  ];
+
+  static const List<String> _organizationTypeOptions = [
+    'Organización / club',
+    'Independiente',
   ];
 
   List<String> get _historyYearOptions {
@@ -136,6 +146,10 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     _professionalUrlController?.dispose();
     _dniController?.dispose();
     _collaborationsController?.dispose();
+    _currentRoleController?.dispose();
+    _workZoneController?.dispose();
+    _interestCategoriesController?.dispose();
+    _interestPositionsController?.dispose();
     for (final controller in _historyClubControllers) {
       controller.dispose();
     }
@@ -283,7 +297,15 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               '',
         ),
       );
-      _clubController = TextEditingController(text: currentHistoryClub);
+      _clubController = TextEditingController(
+        text: _firstNonEmptyValue([
+              merged['club'],
+              merged['organization'],
+              merged['organizacion'],
+              currentHistoryClub,
+            ]) ??
+            '',
+      );
       _experienceController =
           TextEditingController(text: _stringValue(merged['experience']));
       _heightController =
@@ -305,6 +327,45 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       _collaborationsController = TextEditingController(
         text: _parseCollaborations(merged['colaboraciones']).join(', '),
       );
+      _currentRoleController = TextEditingController(
+        text: _firstNonEmptyValue([
+              merged['current_role'],
+              merged['rol_actual'],
+              merged['role'],
+            ]) ??
+            '',
+      );
+      _workZoneController = TextEditingController(
+        text: _firstNonEmptyValue([
+              merged['work_zone'],
+              merged['zona_trabajo'],
+              merged['work_area'],
+            ]) ??
+            '',
+      );
+      _interestCategoriesController = TextEditingController(
+        text: _firstNonEmptyValue([
+              merged['interest_categories'],
+              merged['categorias_interes'],
+            ]) ??
+            '',
+      );
+      _interestPositionsController = TextEditingController(
+        text: _firstNonEmptyValue([
+              merged['interest_positions'],
+              merged['posiciones_interes'],
+            ]) ??
+            '',
+      );
+      final organizationRaw = _firstNonEmptyValue([
+            merged['organization_type'],
+            merged['tipo_organizacion'],
+          ]) ??
+          '';
+      final normalizedOrg = organizationRaw.toLowerCase();
+      _selectedOrganizationType = normalizedOrg.contains('independ')
+          ? 'Independiente'
+          : _organizationTypeOptions.first;
       _selectedPlayerStatus = _normalizePlayerStatus(merged['player_status']);
       _selectedBirthday = _parseDate(
         merged['birthday'] ??
@@ -1162,6 +1223,18 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               _collaborationsController?.text.trim().isEmpty == true
                   ? null
                   : _collaborationsController?.text.trim(),
+          'current_role': _currentRoleController?.text.trim() ?? '',
+          'rol_actual': _currentRoleController?.text.trim() ?? '',
+          'organization_type': _selectedOrganizationType ?? '',
+          'tipo_organizacion': _selectedOrganizationType ?? '',
+          'work_zone': _workZoneController?.text.trim() ?? '',
+          'zona_trabajo': _workZoneController?.text.trim() ?? '',
+          'interest_categories':
+              _interestCategoriesController?.text.trim() ?? '',
+          'categorias_interes':
+              _interestCategoriesController?.text.trim() ?? '',
+          'interest_positions': _interestPositionsController?.text.trim() ?? '',
+          'posiciones_interes': _interestPositionsController?.text.trim() ?? '',
         });
       } else {
         userPayload.addAll({
@@ -1190,6 +1263,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           'biography': _bioController?.text.trim() ?? '',
           'telephone': _phoneController?.text.trim() ?? '',
           'club': _clubController?.text.trim() ?? '',
+          'organization_type': _selectedOrganizationType ?? '',
+          'current_role': _currentRoleController?.text.trim() ?? '',
+          'work_zone': _workZoneController?.text.trim() ?? '',
+          'interest_categories':
+              _interestCategoriesController?.text.trim() ?? '',
+          'interest_positions': _interestPositionsController?.text.trim() ?? '',
           'url_profesional': _professionalUrlController?.text.trim() ?? '',
           'dni': _tryParseInt(_dniController?.text),
           'city': city,
@@ -1211,6 +1290,13 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             'biography': _bioController?.text.trim() ?? '',
             'telephone': _phoneController?.text.trim() ?? '',
             'club': _clubController?.text.trim() ?? '',
+            'organization_type': _selectedOrganizationType ?? '',
+            'current_role': _currentRoleController?.text.trim() ?? '',
+            'work_zone': _workZoneController?.text.trim() ?? '',
+            'interest_categories':
+                _interestCategoriesController?.text.trim() ?? '',
+            'interest_positions':
+                _interestPositionsController?.text.trim() ?? '',
             'url_profesional': _professionalUrlController?.text.trim() ?? '',
             'dni': _tryParseInt(_dniController?.text),
           };
@@ -2144,11 +2230,29 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           'Perfil profesional',
           subtitle: 'Completá tus datos de contacto y tu enfoque de scouting.',
         ),
+        _buildDropdownField(
+            label: 'Tipo de perfil profesional',
+            hintText: 'Selecciona una opción',
+            value: _selectedOrganizationType,
+            onChanged: (value) {
+              setState(() => _selectedOrganizationType = value);
+            },
+            options: _organizationTypeOptions),
+        _buildTextField(
+            label: 'Rol actual',
+            controller: _currentRoleController,
+            focusNode: null,
+            hintText: 'Scout senior, analista de talento...'),
         _buildTextField(
             label: 'Club / organización',
             controller: _clubController,
             focusNode: null,
             hintText: 'Rede Iberica de Scouts'),
+        _buildTextField(
+            label: 'Zona de trabajo',
+            controller: _workZoneController,
+            focusNode: null,
+            hintText: 'Buenos Aires, LATAM, España norte...'),
         _buildTextField(
             label: 'Teléfono',
             controller: _phoneController,
@@ -2180,6 +2284,18 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             controller: _collaborationsController,
             focusNode: null,
             hintText: 'Separá por coma: Club A, Torneo B, Red Scout C',
+            maxLines: 2),
+        _buildTextField(
+            label: 'Categorías de interés',
+            controller: _interestCategoriesController,
+            focusNode: null,
+            hintText: 'Sub-15, Sub-17, Senior (separá por coma)',
+            maxLines: 2),
+        _buildTextField(
+            label: 'Posiciones de interés',
+            controller: _interestPositionsController,
+            focusNode: null,
+            hintText: 'Extremo, central, mediocentro (separá por coma)',
             maxLines: 2),
       ],
     );
@@ -2236,7 +2352,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           ),
           centerTitle: true,
           title: Text(
-            'Editar Perfil',
+            _currentUserType == 'profesional'
+                ? 'Editar Perfil Scout'
+                : 'Editar Perfil',
             style: GoogleFonts.inter(
               color: const Color(0xFF1A202C),
               fontSize: 18,

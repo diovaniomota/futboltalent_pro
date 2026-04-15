@@ -343,23 +343,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     if (currentUserUid.isEmpty) return;
 
     try {
-      final user = await SupaFlow.client
-          .from('users')
-          .select()
-          .eq('user_id', currentUserUid)
-          .maybeSingle();
-
-      if (user != null) {
-        _currentPlanId = user['plan_id'] as int?;
-        _currentUserVerified = _resolveViewerVerification(user);
-        _currentUserFullAccess = user['full_profile'] == true ||
-            user['is_test_account'] == true ||
-            user['is_admin'] == true;
-      } else {
-        _currentUserVerified = true;
-        _currentUserFullAccess = false;
-      }
+      await FFAppState().refreshCurrentUserAccess();
+      final appState = FFAppState();
+      _currentPlanId = appState.currentPlanId;
+      _currentUserVerified = appState.currentUserVerified;
+      _currentUserFullAccess = appState.currentUserFullAccess;
     } catch (_) {
+      _currentPlanId = null;
       _currentUserVerified = true;
       _currentUserFullAccess = false;
     }
@@ -735,23 +725,23 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   bool get _canUseSensitiveActions =>
-      FFAppState().unlockSensitiveActions ||
+      FFAppState().canUseSensitiveActions ||
       _currentUserFullAccess ||
-      (_currentPlanId != null && _currentUserVerified);
+      ((_currentPlanId ?? 0) >= 2 && _currentUserVerified);
 
-  bool _resolveViewerVerification(Map<String, dynamic> user) {
-    final hasVerificationField = user.containsKey('is_verified') ||
-        user.containsKey('verification_status');
-    if (!hasVerificationField) return true;
+  Future<bool> _ensureSensitiveAccess({required String message}) async {
+    await _loadViewerContext();
+    if (_canUseSensitiveActions) {
+      return true;
+    }
 
-    final direct = user['is_verified'];
-    if (direct is bool) return direct;
-
-    final status = user['verification_status']?.toString().toLowerCase() ?? '';
-    return status == 'verified' ||
-        status == 'verificado' ||
-        status == 'aprovado' ||
-        status == 'aprobado';
+    if (mounted) {
+      _showUpsellDialog(
+        title: 'Acción bloqueada',
+        message: message,
+      );
+    }
+    return false;
   }
 
   bool _isVerified(Map<String, dynamic> user) {
@@ -1740,12 +1730,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   bool _isPlayerSaved(String playerId) => _savedPlayerIds.contains(playerId);
 
   Future<void> _toggleSavePlayerForScout(Map<String, dynamic> player) async {
-    if (!_canUseSensitiveActions) {
-      _showUpsellDialog(
-        title: 'Acción bloqueada',
-        message:
-            'Para guardar jugadores en listas necesitas verificación o un plan activo.',
-      );
+    if (!await _ensureSensitiveAccess(
+      message:
+          'Para guardar jugadores en listas necesitas verificación o un plan activo.',
+    )) {
       return;
     }
 
@@ -1811,13 +1799,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     }
   }
 
-  void _openPlayerVideos(Map<String, dynamic> player) {
-    if (!_canUseSensitiveActions) {
-      _showUpsellDialog(
-        title: 'Acción bloqueada',
-        message:
-            'Para ver videos desde Explorer necesitás verificación o un plan activo.',
-      );
+  Future<void> _openPlayerVideos(Map<String, dynamic> player) async {
+    if (!await _ensureSensitiveAccess(
+      message:
+          'Para ver videos desde Explorer necesitás verificación o un plan activo.',
+    )) {
       return;
     }
 
@@ -2096,7 +2082,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     final playerCategoryOptions = _realPlayerCategories;
     final playerCountryOptions = _realPlayerCountries;
     final playerCityOptions = _realPlayerCities;
-    final playerLevelOptions = _realPlayerLevels;
+    final playerLevelOptions = GamificationService.allLevelNames;
 
     final clubCountryOptions = _realClubCountries;
     final clubCityOptions = _realClubCities;
@@ -2722,7 +2708,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     final playerPositionOptions = _realPlayerPositions;
     final playerCountryOptions = _realPlayerCountries;
     final playerCityOptions = _realPlayerCities;
-    final playerLevelOptions = _realPlayerLevels;
+    final playerLevelOptions = GamificationService.allLevelNames;
 
     final convocatoriaCategoryOptions = _realConvocatoriaCategories;
     final convocatoriaPositionOptions = _realConvocatoriaPositions;
@@ -3975,7 +3961,6 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             '${player['name'] ?? ''} ${player['lastname'] ?? ''}'.trim();
         final position = _resolvePlayerPosition(player);
         final city = player['city']?.toString() ?? 'Sin ubicación';
-        final club = player['club']?.toString() ?? '';
         final uid = player['user_id']?.toString() ?? '';
         final isSaved = _isPlayerSaved(uid);
         final isSaving = _savingPlayerId == uid;
@@ -3986,20 +3971,47 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         final levelName = player['level_name']?.toString() ??
             GamificationService.levelNameFromPoints(totalXp);
         final rankingPosition = player['category_ranking'];
+        final subtitle = [
+          if (year != null) year.toString(),
+          if (category.isNotEmpty) category,
+          position,
+          city,
+        ].where((v) => v.toString().isNotEmpty).join(' • ');
 
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color:
+                  isSaved ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
+                  Container(
+                    width: 4,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: isSaved
+                          ? const Color(0xFF0D3B66)
+                          : const Color(0xFF0D3B66).withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   InkWell(
                     onTap: () => _openPublicPlayerProfile(player),
                     borderRadius: BorderRadius.circular(999),
@@ -4023,80 +4035,57 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          fullName.isNotEmpty ? fullName : 'Jugador',
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          ),
+                    child: InkWell(
+                      onTap: () => _openPublicPlayerProfile(player),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              fullName.isNotEmpty ? fullName : 'Jugador',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 15,
+                                color: const Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              subtitle,
+                              style: GoogleFonts.inter(
+                                color: const Color(0xFF718096),
+                                fontSize: 12,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          [
-                            if (year != null) year.toString(),
-                            if (category != null) category,
-                            position,
-                            club,
-                            city
-                          ].where((v) => v.toString().isNotEmpty).join(' • '),
-                          style: GoogleFonts.inter(
-                            color: const Color(0xFF718096),
-                            fontSize: 12,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Column(
-                    children: [
-                      _buildPlayerCardActionButton(
-                        icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
-                        tooltip: isSaved ? 'Guardado' : 'Guardar',
-                        onPressed: isSaving
-                            ? null
-                            : () => _toggleSavePlayerForScout(player),
-                        backgroundColor:
-                            isSaved ? const Color(0xFF0F9D58) : Colors.white,
-                        foregroundColor:
-                            isSaved ? Colors.white : const Color(0xFF0D3B66),
-                        borderColor: isSaved
-                            ? const Color(0xFF0F9D58)
-                            : const Color(0xFFD6DEE8),
-                        isLoading: isSaving,
-                      ),
-                      const SizedBox(height: 8),
-                      _buildPlayerCardActionButton(
-                        icon: Icons.smart_display_rounded,
-                        tooltip: hasVideo ? 'Ver video' : 'Sin video',
-                        onPressed:
-                            hasVideo ? () => _openPlayerVideos(player) : null,
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF0D3B66),
-                        borderColor: const Color(0xFFD6DEE8),
-                      ),
-                      const SizedBox(height: 8),
-                      _buildPlayerCardActionButton(
-                        icon: Icons.person_search_rounded,
-                        tooltip: 'Ver perfil',
-                        onPressed: () => _openPublicPlayerProfile(player),
-                        backgroundColor: const Color(0xFF0D3B66),
-                        foregroundColor: Colors.white,
-                        borderColor: const Color(0xFF0D3B66),
-                      ),
-                    ],
+                  const SizedBox(width: 8),
+                  _buildPlayerCardActionButton(
+                    icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
+                    tooltip: isSaved ? 'Guardado' : 'Guardar',
+                    onPressed: () => _toggleSavePlayerForScout(player),
+                    backgroundColor:
+                        isSaved ? const Color(0xFF0F9D58) : Colors.white,
+                    foregroundColor:
+                        isSaved ? Colors.white : const Color(0xFF0D3B66),
+                    borderColor: isSaved
+                        ? const Color(0xFF0F9D58)
+                        : const Color(0xFFD6DEE8),
+                    isLoading: isSaving,
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: 6,
+                runSpacing: 6,
                 children: [
                   _simpleBadge(
                     _isVerified(player) ? 'Verificado' : 'No verificado',
@@ -4123,6 +4112,56 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       'Ranking #$rankingPosition',
                       color: const Color(0xFF7C3AED),
                     ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed:
+                          hasVideo ? () => _openPlayerVideos(player) : null,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF0D3B66),
+                        side: const BorderSide(color: Color(0xFFD6DEE8)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      icon: const Icon(Icons.smart_display_rounded, size: 16),
+                      label: Text(
+                        hasVideo ? 'Ver video' : 'Sin video',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _openPublicPlayerProfile(player),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0D3B66),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        elevation: 0,
+                      ),
+                      icon: const Icon(Icons.person_search_rounded, size: 16),
+                      label: Text(
+                        'Ver perfil',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -4212,70 +4251,105 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
-          child: ListTile(
-            leading: const CircleAvatar(
-              backgroundColor: Color(0xFFE8F0FE),
-              child: Icon(Icons.campaign_outlined, color: Color(0xFF0D3B66)),
-            ),
-            title: Text(
-              conv['titulo']?.toString() ?? 'Convocatoria',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Column(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
               children: [
-                if (clubName.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  GestureDetector(
-                    onTap: () => _openPublicClubProfile(
-                      context,
-                      conv['club_data'] is Map<String, dynamic>
-                          ? Map<String, dynamic>.from(conv['club_data'] as Map)
-                          : {
-                              'id': conv['club_id'],
-                              'club_name': clubName,
-                            },
-                    ),
-                    child: Text(
-                      clubName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF0D3B66),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const CircleAvatar(
+                      backgroundColor: Color(0xFFE8F0FE),
+                      child: Icon(
+                        Icons.campaign_outlined,
+                        color: Color(0xFF0D3B66),
                       ),
                     ),
-                  ),
-                ],
-                const SizedBox(height: 2),
-                Text(
-                  details.isNotEmpty ? details : 'Sin detalles',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            conv['titulo']?.toString() ?? 'Convocatoria',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                          if (clubName.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            GestureDetector(
+                              onTap: () => _openPublicClubProfile(
+                                context,
+                                conv['club_data'] is Map<String, dynamic>
+                                    ? Map<String, dynamic>.from(
+                                        conv['club_data'] as Map,
+                                      )
+                                    : {
+                                        'id': conv['club_id'],
+                                        'club_name': clubName,
+                                      },
+                              ),
+                              child: Text(
+                                clubName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF0D3B66),
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 4),
+                          Text(
+                            details.isNotEmpty ? details : 'Sin detalles',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 _buildConvocatoriaInsightChips(conv),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: id.isEmpty
+                        ? null
+                        : () {
+                            context.pushNamed(
+                              DetallesDeLaConvocatoriaProfesionalWidget
+                                  .routeName,
+                              queryParameters: {'convocatoriasID': id},
+                            );
+                          },
+                    style: _explorerPrimaryButtonStyle(),
+                    icon: const Icon(
+                      Icons.visibility_rounded,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'Ver convocatoria',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
               ],
-            ),
-            trailing: ElevatedButton.icon(
-              onPressed: id.isEmpty
-                  ? null
-                  : () {
-                      context.pushNamed(
-                        DetallesDeLaConvocatoriaProfesionalWidget.routeName,
-                        queryParameters: {'convocatoriasID': id},
-                      );
-                    },
-              style: _explorerPrimaryButtonStyle(),
-              icon: const Icon(
-                Icons.visibility_rounded,
-                size: 16,
-                color: Colors.white,
-              ),
-              label: const Text('Ver', style: TextStyle(color: Colors.white)),
             ),
           ),
         );
