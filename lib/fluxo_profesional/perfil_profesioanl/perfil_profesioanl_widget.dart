@@ -583,13 +583,6 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                     if (bio.isNotEmpty) ...[
                       Padding(
                           padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-                          child: Text('Resumen',
-                              style: GoogleFonts.inter(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFF1A1A1A)))),
-                      Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
                           child: Text(bio,
                               style: GoogleFonts.inter(
                                   fontSize: 15,
@@ -630,13 +623,6 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                         scoutDni.isNotEmpty) ...[
                       Padding(
                           padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                          child: Text('Perfil profesional',
-                              style: GoogleFonts.inter(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFF1A1A1A)))),
-                      Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
                           child: Wrap(spacing: 8, runSpacing: 8, children: [
                             if (scoutClub.isNotEmpty)
                               _profileChip(Icons.apartment_rounded, scoutClub),
@@ -660,7 +646,7 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                             unselectedLabelColor: const Color(0xFF888888),
                             indicatorColor: const Color(0xFF0D3B66),
                             tabs: const [
-                              Tab(text: 'Historial de Scouting'),
+                              Tab(text: 'Ficha profesional'),
                               Tab(text: 'Guardados')
                             ])),
                     AnimatedSwitcher(

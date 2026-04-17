@@ -26,6 +26,8 @@ class CursosEjerciciosWidget extends StatefulWidget {
     super.key,
     this.initialChallengeId,
     this.initialChallengeType,
+    this.returnTo,
+    this.returnConvocatoriaId,
   });
 
   static String routeName = 'cursos_ejercicios';
@@ -33,21 +35,21 @@ class CursosEjerciciosWidget extends StatefulWidget {
 
   final String? initialChallengeId;
   final String? initialChallengeType;
+  final String? returnTo;
+  final String? returnConvocatoriaId;
 
   @override
   State<CursosEjerciciosWidget> createState() => _CursosEjerciciosWidgetState();
 }
 
 class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
-  static const String _categoriesFilterLabel = 'Categorías';
-
   late CursosEjerciciosModel _model;
   final scaffoldKey = GlobalKey<ScaffoldState>();
 
   // State
   bool _isLoading = true;
   String? _errorMessage;
-  String _selectedFilter = _categoriesFilterLabel;
+  String _selectedFilter = 'Todos';
   int _currentPage = 0;
   final PageController _pageController = PageController(viewportFraction: 0.92);
 
@@ -55,18 +57,40 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   Map<String, dynamic>? _userProgress;
   List<Map<String, dynamic>> _courses = [];
   List<Map<String, dynamic>> _exercises = [];
-  List<Map<String, dynamic>> _challengeCategories = [];
   List<Map<String, dynamic>> _allItems = [];
   List<Map<String, dynamic>> _filteredItems = [];
   final Map<String, String> _userCourseStatus = {};
   final Map<String, String> _userExerciseStatus = {};
-  final Map<String, String> _categoryNameById = {};
-  final Map<String, Map<String, dynamic>> _categoryDataById = {};
   final Map<String, _ChallengeAttempt> _attemptByItemKey = {};
   bool _didHandleInitialChallenge = false;
-  String? _selectedExerciseCategoryKey;
-  String? _selectedCourseCategoryKey;
-  String? _selectedAllCategoryKey;
+
+  bool get _shouldReturnToConvocatoria {
+    final returnTo = widget.returnTo?.trim().toLowerCase() ?? '';
+    final convId = widget.returnConvocatoriaId?.trim() ?? '';
+    return returnTo == 'convocatoria' && convId.isNotEmpty;
+  }
+
+  void _handleChallengeDismissed() {
+    if (!_shouldReturnToConvocatoria || !mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+    final convId = widget.returnConvocatoriaId?.trim() ?? '';
+    if (convId.isEmpty) return;
+    context.pushNamed(
+      'Detalles_de_la_convocatoria',
+      queryParameters: {'convocatoriaId': convId},
+    );
+  }
+
+  void _handleChallengeCompleted() {
+    if (_shouldReturnToConvocatoria) {
+      _handleChallengeDismissed();
+      return;
+    }
+    _loadData();
+  }
 
   bool get _coursesEnabled => FFAppState().isFeatureEnabled('cursos');
   bool get _exercisesEnabled => FFAppState().isFeatureEnabled('desafios');
@@ -74,24 +98,30 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   bool get _hasExerciseAccess => FFAppState().canAccessFeature('desafios');
 
   String get _defaultCatalogFilter {
-    if (_exercisesEnabled && _hasExerciseAccess) return _categoriesFilterLabel;
+    if (_coursesEnabled &&
+        _hasCourseAccess &&
+        _exercisesEnabled &&
+        _hasExerciseAccess) {
+      return 'Todos';
+    }
+    if (_exercisesEnabled && _hasExerciseAccess) return 'Desafíos';
     if (_coursesEnabled && _hasCourseAccess) return 'Cursos';
     return 'Completados';
   }
 
   List<String> get _availableFilters {
     final filters = <String>[];
-    if (_exercisesEnabled && _hasExerciseAccess) {
-      filters.add(_categoriesFilterLabel);
-    }
-    if (_coursesEnabled && _hasCourseAccess) {
-      filters.add('Cursos');
-    }
     if (_coursesEnabled &&
         _hasCourseAccess &&
         _exercisesEnabled &&
         _hasExerciseAccess) {
       filters.add('Todos');
+    }
+    if (_exercisesEnabled && _hasExerciseAccess) {
+      filters.add('Desafíos');
+    }
+    if (_coursesEnabled && _hasCourseAccess) {
+      filters.add('Cursos');
     }
     filters.add('Completados');
     return filters;
@@ -171,7 +201,6 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
 
       await Future.wait([
         _loadUserProgress(),
-        _loadChallengeCategories(),
         _loadCourses(),
         _loadExercises(),
         _loadSavedAttempts(),
@@ -237,276 +266,9 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     }
   }
 
-  Future<void> _loadChallengeCategories() async {
-    try {
-      final response = await SupaFlow.client
-          .from('challenge_categories')
-          .select()
-          .order('name');
-      _challengeCategories = List<Map<String, dynamic>>.from(response as List);
-      _categoryNameById.clear();
-      _categoryDataById.clear();
-      for (final row in _challengeCategories) {
-        final id = row['id']?.toString().trim() ?? '';
-        final name = row['name']?.toString().trim() ?? '';
-        if (id.isNotEmpty) {
-          _categoryNameById[id] = name.isEmpty ? id : name;
-          _categoryDataById[id] = Map<String, dynamic>.from(row);
-        }
-      }
-    } catch (_) {
-      _challengeCategories = [];
-      _categoryNameById.clear();
-      _categoryDataById.clear();
-    }
-  }
+  List<Map<String, dynamic>> get _visibleCatalogItems => _filteredItems;
 
-  String _resolveCategoryLabel(Map<String, dynamic> item) {
-    final categoryId = item['category_id']?.toString().trim() ?? '';
-    if (categoryId.isNotEmpty && _categoryNameById.containsKey(categoryId)) {
-      return _categoryNameById[categoryId]!;
-    }
-
-    final fallback = (item['category_label'] ??
-            item['category'] ??
-            item['categoria'] ??
-            item['categoría'] ??
-            '')
-        .toString()
-        .trim();
-    return fallback.isEmpty ? 'Sin categoría' : fallback;
-  }
-
-  String _categoryKeyForItem(Map<String, dynamic> item) {
-    final categoryId = item['category_id']?.toString().trim() ?? '';
-    if (categoryId.isNotEmpty) return categoryId;
-    final label = _resolveCategoryLabel(item);
-    return label.isEmpty ? 'sin_categoria' : 'label:$label';
-  }
-
-  String _categoryCoverUrlForId(String categoryId) {
-    final category = _categoryDataById[categoryId];
-    if (category == null) return '';
-    final candidates = [
-      category['cover_url'],
-      category['image_url'],
-      category['thumbnail_url'],
-      category['banner_url'],
-    ];
-    for (final candidate in candidates) {
-      final value = candidate?.toString().trim() ?? '';
-      if (value.isNotEmpty) return value;
-    }
-    return '';
-  }
-
-  String _exerciseCategoryKey(Map<String, dynamic> item) =>
-      _categoryKeyForItem(item);
-
-  String _courseCategoryKey(Map<String, dynamic> item) =>
-      _categoryKeyForItem(item);
-
-  List<Map<String, dynamic>> get _courseItems => _allItems
-      .where((item) => item['type'] == 'course')
-      .map((item) => Map<String, dynamic>.from(item))
-      .toList();
-
-  List<Map<String, dynamic>> get _exerciseItems => _allItems
-      .where((item) => item['type'] == 'exercise')
-      .map((item) => Map<String, dynamic>.from(item))
-      .toList();
-
-  List<Map<String, dynamic>> _buildCategorySummaries(
-    List<Map<String, dynamic>> sourceItems,
-  ) {
-    final grouped = <String, Map<String, dynamic>>{};
-    for (final item in sourceItems) {
-      final key = _categoryKeyForItem(item);
-      final label = _resolveCategoryLabel(item);
-      final current = grouped[key];
-      if (current == null) {
-        grouped[key] = {
-          'key': key,
-          'label': label,
-          'count': 1,
-          'category_id': item['category_id']?.toString().trim(),
-          'course_count': item['type'] == 'course' ? 1 : 0,
-          'exercise_count': item['type'] == 'exercise' ? 1 : 0,
-          'cover_item': item,
-          'cover_url': null,
-          'image_url': null,
-        };
-      } else {
-        current['count'] = (current['count'] as int? ?? 0) + 1;
-        current['course_count'] = (current['course_count'] as int? ?? 0) +
-            (item['type'] == 'course' ? 1 : 0);
-        current['exercise_count'] = (current['exercise_count'] as int? ?? 0) +
-            (item['type'] == 'exercise' ? 1 : 0);
-      }
-    }
-
-    // Mostrar todas las categorías configuradas en el admin, incluso las que no tienen ítems.
-    for (final category in _challengeCategories) {
-      final categoryId = category['id']?.toString().trim() ?? '';
-      if (categoryId.isEmpty) continue;
-
-      final existing = grouped[categoryId];
-      final categoryName = category['name']?.toString().trim() ?? '';
-      final resolvedLabel = categoryName.isEmpty ? categoryId : categoryName;
-
-      if (existing == null) {
-        grouped[categoryId] = {
-          'key': categoryId,
-          'label': resolvedLabel,
-          'count': 0,
-          'category_id': categoryId,
-          'course_count': 0,
-          'exercise_count': 0,
-          'cover_item': <String, dynamic>{},
-          'cover_url': category['cover_url'],
-          'image_url': category['image_url'],
-        };
-      } else {
-        existing['category_id'] = categoryId;
-        existing['label'] = resolvedLabel;
-        existing['cover_url'] = category['cover_url'];
-        existing['image_url'] = category['image_url'];
-      }
-    }
-
-    final summaries = grouped.values.toList();
-    summaries.sort((a, b) => (a['label']?.toString() ?? '')
-        .toLowerCase()
-        .compareTo((b['label']?.toString() ?? '').toLowerCase()));
-    return summaries;
-  }
-
-  List<Map<String, dynamic>> get _courseCategorySummaries =>
-      _buildCategorySummaries(_courseItems);
-
-  List<Map<String, dynamic>> get _exerciseCategorySummaries =>
-      _buildCategorySummaries(_exerciseItems);
-
-  List<Map<String, dynamic>> get _allCategorySummaries =>
-      _buildCategorySummaries(_allItems);
-
-  bool get _supportsCategoryHubForCurrentFilter =>
-      _selectedFilter == _categoriesFilterLabel ||
-      _selectedFilter == 'Cursos' ||
-      _selectedFilter == 'Todos';
-
-  String? get _selectedCategoryKeyForCurrentFilter {
-    switch (_selectedFilter) {
-      case 'Cursos':
-        return _selectedCourseCategoryKey;
-      case 'Todos':
-        return _selectedAllCategoryKey;
-      case _categoriesFilterLabel:
-        return _selectedExerciseCategoryKey;
-      default:
-        return null;
-    }
-  }
-
-  List<Map<String, dynamic>> get _currentCategorySummaries {
-    switch (_selectedFilter) {
-      case 'Cursos':
-        return _courseCategorySummaries;
-      case 'Todos':
-        return _allCategorySummaries;
-      case _categoriesFilterLabel:
-        return _exerciseCategorySummaries;
-      default:
-        return const [];
-    }
-  }
-
-  bool get _shouldShowExerciseCategoryHub =>
-      _supportsCategoryHubForCurrentFilter &&
-      _selectedCategoryKeyForCurrentFilter == null;
-
-  List<Map<String, dynamic>> get _visibleCatalogItems {
-    final selectedCategoryKey = _selectedCategoryKeyForCurrentFilter;
-    if (_supportsCategoryHubForCurrentFilter && selectedCategoryKey != null) {
-      return _filteredItems
-          .where((item) => _categoryKeyForItem(item) == selectedCategoryKey)
-          .toList();
-    }
-    return _filteredItems;
-  }
-
-  int get _currentPagedItemCount => _shouldShowExerciseCategoryHub
-      ? _currentCategorySummaries.length
-      : _visibleCatalogItems.length;
-
-  void _resetCategorySelections() {
-    _selectedExerciseCategoryKey = null;
-    _selectedCourseCategoryKey = null;
-    _selectedAllCategoryKey = null;
-  }
-
-  void _selectCurrentCategory(String? key) {
-    switch (_selectedFilter) {
-      case 'Cursos':
-        _selectedCourseCategoryKey = key;
-        break;
-      case 'Todos':
-        _selectedAllCategoryKey = key;
-        break;
-      case _categoriesFilterLabel:
-        _selectedExerciseCategoryKey = key;
-        break;
-    }
-  }
-
-  String get _categoryPromptTextForCurrentFilter {
-    switch (_selectedFilter) {
-      case 'Cursos':
-        return 'Elegí una categoría para ver los cursos';
-      case 'Todos':
-        return 'Elegí una categoría para ver todos los contenidos';
-      case _categoriesFilterLabel:
-      default:
-        return 'Elegí una categoría para ver los desafíos';
-    }
-  }
-
-  String get _categoryActionTextForCurrentFilter {
-    switch (_selectedFilter) {
-      case 'Cursos':
-        return 'Ver cursos de esta categoría';
-      case 'Todos':
-        return 'Ver contenidos de esta categoría';
-      case _categoriesFilterLabel:
-      default:
-        return 'Ver desafíos de esta categoría';
-    }
-  }
-
-  IconData get _categoryIconForCurrentFilter {
-    switch (_selectedFilter) {
-      case 'Cursos':
-        return Icons.auto_stories_rounded;
-      case 'Todos':
-        return Icons.dashboard_customize_rounded;
-      case _categoriesFilterLabel:
-      default:
-        return Icons.sports_score_rounded;
-    }
-  }
-
-  String _summaryCountLabel(Map<String, dynamic> summary) {
-    final totalCount = summary['count'] as int? ?? 0;
-    switch (_selectedFilter) {
-      case 'Cursos':
-        return '$totalCount curso(s)';
-      case 'Todos':
-        return '$totalCount contenido(s)';
-      case _categoriesFilterLabel:
-      default:
-        return '$totalCount desafío(s)';
-    }
-  }
+  int get _currentPagedItemCount => _visibleCatalogItems.length;
 
   Future<void> _loadExercises() async {
     try {
@@ -992,7 +754,6 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           ...course,
           'type': 'course',
           'status': _userCourseStatus[course['id'].toString()] ?? 'not_started',
-          'category_label': _resolveCategoryLabel(course),
           'placeholder_image': _placeholderImages[i % _placeholderImages.length]
         });
       }
@@ -1005,7 +766,6 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           'type': 'exercise',
           'status':
               _userExerciseStatus[exercise['id'].toString()] ?? 'not_started',
-          'category_label': _resolveCategoryLabel(exercise),
           'placeholder_image':
               _placeholderImages[(i + 3) % _placeholderImages.length]
         });
@@ -1025,7 +785,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           _filteredItems =
               _allItems.where((item) => item['type'] == 'course').toList();
           break;
-        case _categoriesFilterLabel:
+        case 'Desafíos':
           _filteredItems =
               _allItems.where((item) => item['type'] == 'exercise').toList();
           break;
@@ -1042,10 +802,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   }
 
   void _onFilterSelected(String filter) {
-    setState(() {
-      _selectedFilter = filter;
-      _resetCategorySelections();
-    });
+    setState(() => _selectedFilter = filter);
     _applyFilter();
   }
 
@@ -1080,21 +837,12 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       if (!mounted) return;
 
       final targetType = targetItem!['type']?.toString() ?? '';
-      if (targetType == 'exercise' &&
-          _availableFilters.contains(_categoriesFilterLabel)) {
-        setState(() {
-          _selectedFilter = _categoriesFilterLabel;
-          _resetCategorySelections();
-          _selectedExerciseCategoryKey = _exerciseCategoryKey(targetItem!);
-        });
+      if (targetType == 'exercise' && _availableFilters.contains('Desafíos')) {
+        setState(() => _selectedFilter = 'Desafíos');
         _applyFilter();
       } else if (targetType == 'course' &&
           _availableFilters.contains('Cursos')) {
-        setState(() {
-          _selectedFilter = 'Cursos';
-          _resetCategorySelections();
-          _selectedCourseCategoryKey = _courseCategoryKey(targetItem!);
-        });
+        setState(() => _selectedFilter = 'Cursos');
         _applyFilter();
       }
 
@@ -1261,7 +1009,10 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                             Align(
                               alignment: Alignment.topRight,
                               child: GestureDetector(
-                                onTap: () => Navigator.pop(ctx),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  _handleChallengeDismissed();
+                                },
                                 child: Container(
                                   padding: EdgeInsets.all(8 * scale),
                                   decoration: BoxDecoration(
@@ -1585,7 +1336,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                               canComplete: modalAttempt != null,
                               onComplete: () {
                                 Navigator.pop(ctx);
-                                _loadData();
+                                _handleChallengeCompleted();
                               },
                             ),
                           ],
@@ -1665,17 +1416,13 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                             _buildHeader(context),
                             SizedBox(height: 20 * scale),
                             _buildFilters(context),
-                            if (_supportsCategoryHubForCurrentFilter)
-                              _buildExerciseCategoryHeader(context),
                             SizedBox(height: 24 * scale),
                             Expanded(
-                              child: _shouldShowExerciseCategoryHub
-                                  ? _buildExerciseCategoryHub(context)
-                                  : _visibleCatalogItems.isEmpty
-                                      ? _buildEmptyState(context)
-                                      : _isLargeScreen(context)
-                                          ? _buildGridView(context)
-                                          : _buildCarousel(context),
+                              child: _visibleCatalogItems.isEmpty
+                                  ? _buildEmptyState(context)
+                                  : _isLargeScreen(context)
+                                      ? _buildGridView(context)
+                                      : _buildCarousel(context),
                             ),
                             if (!_isLargeScreen(context) &&
                                 _currentPagedItemCount > 0)
@@ -1861,112 +1608,6 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     );
   }
 
-  Widget _buildExerciseCategoryHeader(BuildContext context) {
-    final scale = _scaleFactor(context);
-    final horizontalPadding =
-        _responsive(context, mobile: 16, tablet: 24, desktop: 32);
-
-    final selectedCategoryKey = _selectedCategoryKeyForCurrentFilter;
-    if (selectedCategoryKey == null) {
-      return Padding(
-        padding: EdgeInsets.fromLTRB(
-            horizontalPadding, 14 * scale, horizontalPadding, 0),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            _categoryPromptTextForCurrentFilter,
-            style: GoogleFonts.inter(
-              fontSize: 13 * scale,
-              color: const Color(0xFF64748B),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      );
-    }
-
-    final selectedSummary = _currentCategorySummaries.firstWhere(
-      (item) => item['key'] == selectedCategoryKey,
-      orElse: () => <String, dynamic>{},
-    );
-    final label = selectedSummary['label']?.toString() ?? 'Categoría';
-    final countLabel = _summaryCountLabel(selectedSummary);
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          horizontalPadding, 14 * scale, horizontalPadding, 0),
-      child: Row(
-        children: [
-          TextButton.icon(
-            onPressed: () {
-              setState(() {
-                _selectCurrentCategory(null);
-                _currentPage = 0;
-              });
-              if (_pageController.hasClients) {
-                _pageController.jumpToPage(0);
-              }
-            },
-            icon: const Icon(Icons.arrow_back_rounded, size: 18),
-            label: const Text('Categorías'),
-            style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF0D3B66),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '$label · $countLabel',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                fontSize: 13 * scale,
-                color: const Color(0xFF475569),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExerciseCategoryHub(BuildContext context) {
-    final scale = _scaleFactor(context);
-    final summaries = _currentCategorySummaries;
-    final horizontalPadding =
-        _responsive(context, mobile: 16, tablet: 24, desktop: 32);
-
-    if (summaries.isEmpty) {
-      return _buildEmptyState(context);
-    }
-
-    if (_isLargeScreen(context)) {
-      return GridView.builder(
-        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          crossAxisSpacing: 16 * scale,
-          mainAxisSpacing: 16 * scale,
-          childAspectRatio: 0.75,
-        ),
-        itemCount: summaries.length,
-        itemBuilder: (context, index) =>
-            _buildCategoryCard(context, summaries[index]),
-      );
-    }
-
-    return PageView.builder(
-      controller: _pageController,
-      itemCount: summaries.length,
-      onPageChanged: (index) => setState(() => _currentPage = index),
-      itemBuilder: (context, index) => Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8 * scale),
-        child: _buildCategoryCard(context, summaries[index]),
-      ),
-    );
-  }
-
   Widget _buildFilters(BuildContext context) {
     final scale = _scaleFactor(context);
     final horizontalPadding =
@@ -2011,28 +1652,21 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
 
   Widget _buildEmptyState(BuildContext context) {
     final scale = _scaleFactor(context);
-    final isCategoriesView = _supportsCategoryHubForCurrentFilter;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-              isCategoriesView
-                  ? Icons.category_outlined
-                  : Icons.school_outlined,
-              size: 64 * scale,
-              color: Colors.grey[400]),
+          Icon(Icons.school_outlined,
+              size: 64 * scale, color: Colors.grey[400]),
           SizedBox(height: 16 * scale),
           Text(
               _selectedFilter == 'Completados'
                   ? 'No has completado ningún contenido aún'
                   : (_selectedFilter == 'Cursos'
-                      ? 'No hay categorías con cursos disponibles'
+                      ? 'No hay cursos disponibles'
                       : (_selectedFilter == 'Todos'
-                          ? 'No hay categorías con contenido disponible'
-                          : (isCategoriesView
-                              ? 'No hay categorías con desafíos disponibles'
-                              : 'No hay contenido disponible'))),
+                          ? 'No hay contenido disponible'
+                          : 'No hay desafíos disponibles')),
               style: GoogleFonts.inter(
                   fontSize: 16 * scale, color: Colors.grey[600]),
               textAlign: TextAlign.center),
@@ -2103,181 +1737,6 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       itemCount: _visibleCatalogItems.length,
       itemBuilder: (context, index) =>
           _buildCard(context, _visibleCatalogItems[index]),
-    );
-  }
-
-  Widget _buildCategoryCard(
-      BuildContext context, Map<String, dynamic> summary) {
-    final scale = _scaleFactor(context);
-    final coverItem =
-        summary['cover_item'] as Map<String, dynamic>? ?? <String, dynamic>{};
-    final categoryId = summary['category_id']?.toString().trim() ?? '';
-    final categoryCoverUrl =
-        (summary['cover_url']?.toString().trim().isNotEmpty ?? false)
-            ? summary['cover_url']!.toString().trim()
-            : ((summary['image_url']?.toString().trim().isNotEmpty ?? false)
-                ? summary['image_url']!.toString().trim()
-                : _categoryCoverUrlForId(categoryId));
-    final imageUrl = _cacheBustedMediaUrl(
-      coverItem,
-      categoryCoverUrl.isNotEmpty
-          ? categoryCoverUrl
-          : (coverItem['thumbnail_url'] ??
-              coverItem['image_url'] ??
-              coverItem['placeholder_image'] ??
-              ''),
-    );
-    final label = summary['label']?.toString() ?? 'Categoría';
-    final countLabel = _summaryCountLabel(summary);
-    final icon = _categoryIconForCurrentFilter;
-
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectCurrentCategory(summary['key']?.toString());
-          _currentPage = 0;
-        });
-        if (_pageController.hasClients) {
-          _pageController.jumpToPage(0);
-        }
-      },
-      child: Container(
-        decoration:
-            BoxDecoration(borderRadius: BorderRadius.circular(24), boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.15),
-              blurRadius: 20,
-              offset: const Offset(0, 10))
-        ]),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (imageUrl.isNotEmpty)
-                CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: Colors.grey[300]),
-                    errorWidget: (_, __, ___) =>
-                        Container(color: const Color(0xFF0D3B66)))
-              else
-                Container(color: const Color(0xFF0D3B66)),
-              Container(
-                  decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.3),
-                    Colors.black.withOpacity(0.8)
-                  ],
-                          stops: const [
-                    0.3,
-                    0.6,
-                    1.0
-                  ]))),
-              Positioned.fill(
-                child: Center(
-                  child: Icon(
-                    icon,
-                    color: Colors.white.withOpacity(0.35),
-                    size: 88 * scale,
-                  ),
-                ),
-              ),
-              Positioned(
-                  top: 16 * scale,
-                  left: 16 * scale,
-                  child: Container(
-                      width: 40 * scale,
-                      height: 40 * scale,
-                      decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          boxShadow: [
-                            BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 8)
-                          ]),
-                      child: Icon(icon,
-                          color: const Color(0xFF0D3B66), size: 22 * scale))),
-              Positioned(
-                top: 16 * scale,
-                right: 16 * scale,
-                child: Container(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: 12 * scale, vertical: 6 * scale),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.18),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(0.18)),
-                  ),
-                  child: Text(
-                    countLabel,
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 11 * scale,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                  bottom: 24 * scale,
-                  left: 20 * scale,
-                  right: 20 * scale,
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(label,
-                            style: GoogleFonts.inter(
-                                color: Colors.white,
-                                fontSize: _responsive(context,
-                                        mobile: 24, tablet: 26, desktop: 28) *
-                                    scale,
-                                fontWeight: FontWeight.bold,
-                                height: 1.1),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis),
-                        SizedBox(height: 8 * scale),
-                        Container(
-                          padding: EdgeInsets.symmetric(
-                              horizontal: 12 * scale, vertical: 8 * scale),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.14),
-                            ),
-                          ),
-                          child: Text(
-                            _categoryActionTextForCurrentFilter,
-                            style: GoogleFonts.inter(
-                              color: Colors.white.withValues(alpha: 0.88),
-                              fontSize: 12 * scale,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: 10 * scale),
-                        Row(children: [
-                          Text('Abrir categoría',
-                              style: GoogleFonts.inter(
-                                  color: Colors.white70,
-                                  fontSize: 14 * scale,
-                                  fontWeight: FontWeight.w500)),
-                          const Spacer(),
-                          Icon(Icons.arrow_forward_rounded,
-                              color: Colors.white, size: 18 * scale),
-                        ])
-                      ])),
-            ],
-          ),
-        ),
-      ),
     );
   }
 

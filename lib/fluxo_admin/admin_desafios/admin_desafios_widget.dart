@@ -30,16 +30,13 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
   bool _hasAttemptTable = true;
   String _typeFilter = 'todos';
   bool _onlyActive = false;
-  String? _categoryFilterId;
 
   List<Map<String, dynamic>> _challenges = [];
   List<Map<String, dynamic>> _filteredChallenges = [];
   List<Map<String, dynamic>> _attempts = [];
-  List<Map<String, dynamic>> _categories = [];
 
   final Map<String, int> _attemptCountByChallengeKey = {};
   final Map<String, String> _userNameById = {};
-  final Map<String, String> _categoryNameById = {};
 
   @override
   void initState() {
@@ -56,25 +53,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
   }
 
   String _challengeKey(String type, String id) => '$type:$id';
-
-  String? _normalizeCategoryId(dynamic value) {
-    final categoryId = value?.toString().trim() ?? '';
-    if (categoryId.isEmpty) return null;
-    return categoryId;
-  }
-
-  bool _categoryExists(String categoryId) {
-    return _categories.any(
-      (category) => category['id']?.toString().trim() == categoryId,
-    );
-  }
-
-  String? _sanitizeCategoryId(dynamic value) {
-    final categoryId = _normalizeCategoryId(value);
-    if (categoryId == null) return null;
-    if (_categories.isEmpty) return categoryId;
-    return _categoryExists(categoryId) ? categoryId : null;
-  }
 
   int _toInt(dynamic value, {int fallback = 0}) {
     if (value is int) return value;
@@ -205,24 +183,30 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                     borderRadius: BorderRadius.circular(10),
                     child: Image.network(
                       url,
-                      height: 84,
+                      height: 120,
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Container(
-                        height: 84,
+                        height: 120,
                         width: double.infinity,
-                        color: const Color(0xFFE2E8F0),
+                        color: const Color(0xFFF1F5F9),
                         alignment: Alignment.center,
-                        child: const Text(
-                          'No se pudo cargar la portada',
-                          style:
-                              TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        child: const Icon(
+                          Icons.broken_image_outlined,
+                          color: Color(0xFF64748B),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
+                  const SizedBox(height: 10),
+                ],
+              ),
+            Row(
+              children: [
+                Icon(icon, size: 16, color: const Color(0xFF475569)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
                     _assetDisplayName(url),
                     style: const TextStyle(
                       fontSize: 12,
@@ -230,29 +214,9 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                ],
-              )
-            else
-              Row(
-                children: [
-                  const Icon(
-                    Icons.play_circle_outline_rounded,
-                    size: 18,
-                    color: Color(0xFF0D3B66),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _assetDisplayName(url),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF334155),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
+            ),
           ],
         ],
       ),
@@ -320,27 +284,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       final courses = List<Map<String, dynamic>>.from(results[0] as List);
       final exercises = List<Map<String, dynamic>>.from(results[1] as List);
       final users = List<Map<String, dynamic>>.from(results[2] as List);
-
-      _categories = [];
-      _categoryNameById.clear();
-      try {
-        final categoriesResponse = await SupaFlow.client
-            .from('challenge_categories')
-            .select('id, name')
-            .order('name', ascending: true);
-        final categories =
-            List<Map<String, dynamic>>.from(categoriesResponse as List);
-        _categories = categories;
-        for (final row in categories) {
-          final id = row['id']?.toString() ?? '';
-          final name = row['name']?.toString() ?? '';
-          if (id.isNotEmpty) {
-            _categoryNameById[id] = name.isEmpty ? id : name;
-          }
-        }
-      } catch (_) {
-        _categories = [];
-      }
 
       for (final row in users) {
         final userId = (row['user_id'] ?? '').toString();
@@ -425,14 +368,11 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       final isActive = item['is_active'] == true;
       final title = (item['title'] ?? '').toString().toLowerCase();
       final description = (item['description'] ?? '').toString().toLowerCase();
-      final categoryId = (item['category_id'] ?? '').toString();
       final matchesType = _typeFilter == 'todos' || _typeFilter == type;
       final matchesActive = !_onlyActive || isActive;
-      final matchesCategory =
-          _categoryFilterId == null || _categoryFilterId == categoryId;
       final matchesQuery =
           query.isEmpty || title.contains(query) || description.contains(query);
-      return matchesType && matchesActive && matchesCategory && matchesQuery;
+      return matchesType && matchesActive && matchesQuery;
     }).toList();
   }
 
@@ -510,7 +450,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     final table = type == 'course' ? 'courses' : 'exercises';
     final rawId = challenge['id'];
     final isActive = challenge['is_active'] == true;
-    final sanitizedCategoryId = _sanitizeCategoryId(challenge['category_id']);
     if (rawId == null || rawId.toString().trim().isEmpty) {
       _showSnack('No se encontró el identificador del desafío.',
           color: Colors.red);
@@ -520,7 +459,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       final updatedRows = await SupaFlow.client
           .from(table)
           .update({
-            'category_id': sanitizedCategoryId,
             'is_active': !isActive,
             'updated_at': DateTime.now().toIso8601String(),
           })
@@ -560,7 +498,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
 
     final formKey = GlobalKey<FormState>();
     String selectedType = 'exercise';
-    String? selectedCategoryId;
     bool isPremium = false;
     bool isActive = true;
     bool isSaving = false;
@@ -621,9 +558,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                 return;
               }
 
-              final sanitizedCategoryId =
-                  _sanitizeCategoryId(selectedCategoryId);
-
               final payload = <String, dynamic>{
                 'title': titleController.text.trim(),
                 'description': descriptionController.text.trim().isEmpty
@@ -631,7 +565,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                     : descriptionController.text.trim(),
                 'video_url': finalVideoUrl,
                 'thumbnail_url': finalThumbnailUrl,
-                'category_id': sanitizedCategoryId,
                 'difficulty': difficultyController.text.trim().isEmpty
                     ? null
                     : difficultyController.text.trim(),
@@ -801,32 +734,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      DropdownButtonFormField<String?>(
-                        value: selectedCategoryId,
-                        decoration: const InputDecoration(
-                          labelText: 'Categoría',
-                        ),
-                        items: [
-                          const DropdownMenuItem<String?>(
-                            value: null,
-                            child: Text('Sin categoría'),
-                          ),
-                          ..._categories.map(
-                            (cat) => DropdownMenuItem<String?>(
-                              value: cat['id']?.toString(),
-                              child: Text(cat['name']?.toString() ?? ''),
-                            ),
-                          ),
-                        ],
-                        onChanged: isSaving
-                            ? null
-                            : (value) {
-                                setDialogState(() {
-                                  selectedCategoryId = value;
-                                });
-                              },
-                      ),
-                      const SizedBox(height: 10),
                       TextFormField(
                         controller: validityController,
                         enabled: !isSaving,
@@ -986,7 +893,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
   }
 
   Future<void> _openEditChallengeDialog(Map<String, dynamic> challenge) async {
-    String? selectedCategoryId = _sanitizeCategoryId(challenge['category_id']);
     final titleController =
         TextEditingController(text: challenge['title'] ?? '');
     final descriptionController =
@@ -1141,25 +1047,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  DropdownButtonFormField<String?>(
-                    value: selectedCategoryId,
-                    decoration: const InputDecoration(labelText: 'Categoría'),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('Sin categoría'),
-                      ),
-                      ..._categories.map(
-                        (cat) => DropdownMenuItem<String?>(
-                          value: cat['id']?.toString(),
-                          child: Text(cat['name']?.toString() ?? ''),
-                        ),
-                      ),
-                    ],
-                    onChanged: (value) =>
-                        setDialogState(() => selectedCategoryId = value),
-                  ),
-                  const SizedBox(height: 10),
                   TextFormField(
                     controller: validityController,
                     keyboardType: TextInputType.number,
@@ -1292,8 +1179,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
         );
       }
 
-      final sanitizedCategoryId = _sanitizeCategoryId(selectedCategoryId);
-
       final payload = <String, dynamic>{
         'title': titleController.text.trim(),
         'description': descriptionController.text.trim().isEmpty
@@ -1301,7 +1186,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
             : descriptionController.text.trim(),
         'video_url': finalVideoUrl.isEmpty ? null : finalVideoUrl,
         'thumbnail_url': finalThumbnailUrl.isEmpty ? null : finalThumbnailUrl,
-        'category_id': sanitizedCategoryId,
         'validity_days': maybeInt(validityController.text) ?? 60,
         'difficulty': difficultyController.text.trim().isEmpty
             ? null
@@ -1485,10 +1369,13 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (ctx, index) {
                         final attempt = list[index];
-                        final userId = (attempt['user_id'] ?? '').toString();
+                        final userId =
+                            (attempt['user_id'] ?? '').toString().trim();
                         final status =
-                            (attempt['status'] ?? 'submitted').toString();
-                        final date = _toDate(attempt['submitted_at']);
+                            (attempt['status'] ?? 'pendiente').toString();
+                        final date = _toDate(
+                          attempt['submitted_at'] ?? attempt['updated_at'],
+                        );
                         final dateLabel = date != null
                             ? dateTimeFormat('d/M/y H:mm', date)
                             : 'Sin fecha';
@@ -1648,11 +1535,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
-            tooltip: 'Categorías',
-            onPressed: () => context.pushNamed(AdminCategoriesWidget.routeName),
-            icon: const Icon(Icons.category_outlined, color: Colors.white),
-          ),
-          IconButton(
             tooltip: 'Actualizar',
             onPressed: _loadData,
             icon: const Icon(Icons.refresh, color: Colors.white),
@@ -1742,32 +1624,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      DropdownButtonFormField<String?>(
-                        value: _categoryFilterId,
-                        decoration: const InputDecoration(
-                          labelText: 'Filtrar por categoría',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        items: [
-                          const DropdownMenuItem<String?>(
-                            value: null,
-                            child: Text('Todas las categorías'),
-                          ),
-                          ..._categories.map(
-                            (category) => DropdownMenuItem<String?>(
-                              value: category['id']?.toString(),
-                              child: Text(category['name']?.toString() ?? ''),
-                            ),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          setState(() {
-                            _categoryFilterId = value;
-                            _applyFilters();
-                          });
-                        },
-                      ),
                       SwitchListTile(
                         value: _onlyActive,
                         dense: true,
@@ -1817,8 +1673,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
     final attempts = _attemptCountByChallengeKey[key] ?? 0;
     final typeLabel = type == 'course' ? 'Curso' : 'Ejercicio';
     final typeIcon = type == 'course' ? Icons.school : Icons.fitness_center;
-    final categoryId = (challenge['category_id'] ?? '').toString();
-    final categoryLabel = _categoryNameById[categoryId] ?? '';
     final validityDays = _toInt(challenge['validity_days']);
 
     return Card(
@@ -1900,7 +1754,6 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
               children: [
                 _infoTag('Orden $orderIndex'),
                 _infoTag('+$xpReward XP'),
-                if (categoryLabel.isNotEmpty) _infoTag(categoryLabel),
                 if (difficulty.isNotEmpty) _infoTag(difficulty),
                 if (validityDays > 0) _infoTag('$validityDays días'),
                 _infoTag('$attempts envío(s)'),

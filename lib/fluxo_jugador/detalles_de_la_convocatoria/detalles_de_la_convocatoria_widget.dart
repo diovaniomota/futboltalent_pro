@@ -245,12 +245,16 @@ class _DetallesDeLaConvocatoriaWidgetState
     final challengeType =
         challenge['type']?.toString().trim().toLowerCase() ?? '';
     if (challengeId.isEmpty || challengeType.isEmpty) return;
+    final convId = widget.convocatoriaId?.trim() ?? '';
 
     context.pushNamed(
       'cursos_ejercicios',
       queryParameters: {
         'challengeId': serializeParam(challengeId, ParamType.String),
         'challengeType': serializeParam(challengeType, ParamType.String),
+        if (convId.isNotEmpty) 'returnTo': 'convocatoria',
+        if (convId.isNotEmpty)
+          'returnConvocatoriaId': serializeParam(convId, ParamType.String),
       }.withoutNulls,
     );
   }

@@ -1799,32 +1799,12 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         : screenWidth >= 520
             ? 4
             : 3;
-    final challengeCount = _playerVideos.where(_isChallengeVideo).length;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Videos',
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF0D3B66),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _playerVideos.isEmpty
-                ? 'Este jugador todavía no subió videos.'
-                : '${_playerVideos.length} video(s) públicos · $challengeCount desafío(s)',
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              color: const Color(0xFF6B7280),
-            ),
-          ),
-          const SizedBox(height: 10),
           if (_playerVideos.isEmpty)
             Container(
               width: double.infinity,

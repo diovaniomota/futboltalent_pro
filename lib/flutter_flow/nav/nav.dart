@@ -155,8 +155,7 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
           name: CursosEjerciciosWidget.routeName,
           path: CursosEjerciciosWidget.routePath,
           builder: (context, params) => CursosEjerciciosWidget(
-            initialChallengeId:
-                params.getParam(
+            initialChallengeId: params.getParam(
                   'challengeId',
                   ParamType.String,
                 ) ??
@@ -164,8 +163,7 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
                   'initialChallengeId',
                   ParamType.String,
                 ),
-            initialChallengeType:
-                params.getParam(
+            initialChallengeType: params.getParam(
                   'challengeType',
                   ParamType.String,
                 ) ??
@@ -173,6 +171,14 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
                   'initialChallengeType',
                   ParamType.String,
                 ),
+            returnTo: params.getParam(
+              'returnTo',
+              ParamType.String,
+            ),
+            returnConvocatoriaId: params.getParam(
+              'returnConvocatoriaId',
+              ParamType.String,
+            ),
           ),
         ),
         FFRoute(
@@ -308,12 +314,6 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
           path: AdminSettingsWidget.routePath,
           requireAdmin: true,
           builder: (context, params) => AdminSettingsWidget(),
-        ),
-        FFRoute(
-          name: AdminCategoriesWidget.routeName,
-          path: AdminCategoriesWidget.routePath,
-          requireAdmin: true,
-          builder: (context, params) => AdminCategoriesWidget(),
         )
       ].map((r) => r.toRoute(appStateNotifier)).toList(),
     );

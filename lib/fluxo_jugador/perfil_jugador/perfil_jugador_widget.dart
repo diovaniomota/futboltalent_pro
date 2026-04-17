@@ -1531,33 +1531,12 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
         : screenWidth >= 520
             ? 4
             : 3;
-    final challengeCount = orderedVideos.where((video) {
-      final description = video['description']?.toString() ?? '';
-      return _parseChallengeRef(description) != null;
-    }).length;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Videos públicos',
-            style: GoogleFonts.inter(
-              color: const Color(0xFF0D3B66),
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${orderedVideos.length} video(s) en tu perfil · $challengeCount desafío(s)',
-            style: GoogleFonts.inter(
-              color: const Color(0xFF6B7280),
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 12),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),

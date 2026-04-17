@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
@@ -1280,15 +1282,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     final daysLeft = target.difference(today).inDays;
 
     if (daysLeft < 0) {
-      return 'Fecha de cierre vencida';
+      return 'Cierre vencido';
     }
     if (daysLeft == 0) {
-      return 'Fecha de cierre hoy';
+      return 'Cierra hoy';
     }
     if (daysLeft == 1) {
-      return 'Fecha de cierre en 1 dia';
+      return 'Cierra en 1d';
     }
-    return 'Fecha de cierre en $daysLeft dias';
+    return 'Cierra en ${daysLeft}d';
   }
 
   int? _convocatoriaApplicationsCount(Map<String, dynamic> convocatoria) {
@@ -1303,11 +1305,111 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   String? _convocatoriaApplicationsLabel(Map<String, dynamic> convocatoria) {
     final applicationsCount = _convocatoriaApplicationsCount(convocatoria);
     if (applicationsCount == null) return null;
-    if (applicationsCount == 1) {
-      return '1 candidato aplicado';
-    }
-    return '$applicationsCount candidatos aplicados';
+    return '$applicationsCount aplic.';
   }
+
+  String _resolveExplorerClubLogo(Map<String, dynamic>? clubData) {
+    return _firstNonEmpty([
+          clubData?['photo_url'],
+          clubData?['logo_url'],
+          clubData?['avatar_url'],
+          clubData?['escudo_url'],
+        ]) ??
+        '';
+  }
+
+  String _resolveExplorerConvocatoriaMode(Map<String, dynamic> convocatoria) {
+    final virtualFlag = convocatoria['is_virtual'] == true ||
+        (convocatoria['virtual']?.toString().toLowerCase() == 'true');
+    final presentialFlag = convocatoria['is_presencial'] == true ||
+        convocatoria['is_in_person'] == true ||
+        (convocatoria['presencial']?.toString().toLowerCase() == 'true');
+    if (virtualFlag && presentialFlag) return 'Híbrida';
+    if (virtualFlag) return 'Virtual';
+    if (presentialFlag) return 'Presencial';
+
+    final raw = (_firstNonEmpty([
+              convocatoria['modalidad'],
+              convocatoria['modality'],
+              convocatoria['tipo_modalidad'],
+              convocatoria['formato'],
+              convocatoria['format'],
+              convocatoria['tipo'],
+            ]) ??
+            'Presencial')
+        .toLowerCase();
+
+    if (raw.contains('hibr')) return 'Híbrida';
+    if (raw.contains('virtual') ||
+        raw.contains('online') ||
+        raw.contains('remote') ||
+        raw.contains('remot')) {
+      return 'Virtual';
+    }
+    return 'Presencial';
+  }
+
+  Color _explorerConvocatoriaModeColor(String mode) {
+    switch (mode) {
+      case 'Virtual':
+        return const Color(0xFF0284C7);
+      case 'Híbrida':
+        return const Color(0xFF7C3AED);
+      default:
+        return const Color(0xFF15803D);
+    }
+  }
+
+  int _explorerRequiredChallengesCount(Map<String, dynamic> convocatoria) {
+    dynamic raw = convocatoria['required_challenges'];
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return 0;
+      try {
+        raw = jsonDecode(trimmed);
+      } catch (_) {
+        return 0;
+      }
+    }
+    if (raw is! List) return 0;
+
+    var count = 0;
+    for (final entry in raw) {
+      final map = entry is Map<String, dynamic>
+          ? entry
+          : entry is Map
+              ? Map<String, dynamic>.from(entry)
+              : null;
+      if (map == null) continue;
+      final id = map['id']?.toString().trim() ?? '';
+      if (id.isNotEmpty) count++;
+    }
+    return count;
+  }
+
+  Widget _buildExplorerConvocatoriaPlaceholderImage() => Container(
+        width: double.infinity,
+        height: 156,
+        color: const Color(0xFFE0E0E0),
+        child: const Center(
+          child: Icon(
+            Icons.sports_soccer,
+            size: 50,
+            color: Color(0xFF0D3B66),
+          ),
+        ),
+      );
+
+  Widget _buildExplorerClubPlaceholderIcon({double size = 24}) => Container(
+        width: size,
+        height: size,
+        color: const Color(0xFF0D3B66),
+        child: Icon(
+          Icons.shield_outlined,
+          size: size * 0.58,
+          color: Colors.white,
+        ),
+      );
 
   String _resolvePlayerPosition(Map<String, dynamic> player) {
     return normalizePlayerPosition(
@@ -2043,7 +2145,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Buscá clubes, scouts y convocatorias desde un solo lugar.',
+              'Buscá jugadores y convocatorias desde un solo lugar.',
               style: GoogleFonts.inter(
                 color: const Color(0xFF4A5568),
                 fontSize: 13,
@@ -2411,16 +2513,6 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         onTap: () => context.pushNamed(ConvocatoriaJugador1Widget.routeName),
       ),
       (
-        icon: Icons.shield_rounded,
-        label: 'Clubes',
-        onTap: _openClubShortcuts,
-      ),
-      (
-        icon: Icons.manage_search_rounded,
-        label: 'Scouts',
-        onTap: _openVerifiedScoutsResults,
-      ),
-      (
         icon: Icons.local_fire_department_rounded,
         label: 'Desafíos',
         onTap: () => context.pushNamed(CursosEjerciciosWidget.routeName),
@@ -2736,6 +2828,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     final currentResults = _jugadorCurrentResults;
     final hasActiveCriteria = _searchQuery.trim().length >= 2 ||
         _jugadorCurrentTabHasActiveFilters ||
+        _jugadorSearchTab == _JugadorSearchTab.convocatorias ||
         _jugadorSearchTab == _JugadorSearchTab.clubes ||
         _jugadorSearchTab == _JugadorSearchTab.scouts;
     final resultLabel = currentResults.length == 1 ? 'resultado' : 'resultados';
@@ -2766,14 +2859,6 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Usá una sola búsqueda para encontrar jugadores, clubes, scouts y convocatorias sin abrir pantallas paralelas.',
-              style: GoogleFonts.inter(
-                color: const Color(0xFF4A5568),
-                fontSize: 13,
-              ),
             ),
             const SizedBox(height: 14),
             _buildSearchBar(
@@ -3429,7 +3514,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Clubes, scouts, jugadores y convocatorias',
+                    'Jugadores y convocatorias',
                     style: GoogleFonts.inter(
                       color: const Color(0xFF64748B),
                       fontSize: 13,
@@ -3769,85 +3854,258 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     }
 
     return Column(
-      children: convocatorias.map(
-        (conv) {
-          final clubName = _resolveConvocatoriaClubName(conv);
-          final details = [
-            _resolveConvocatoriaPosition(conv),
-            _resolveConvocatoriaCategory(conv),
-            _resolveConvocatoriaCity(conv),
-          ].where((value) => value.trim().isNotEmpty).join(' • ');
+      children: convocatorias.map((conv) {
+        final id = conv['id']?.toString() ?? '';
+        final clubData = conv['club_data'] is Map<String, dynamic>
+            ? Map<String, dynamic>.from(conv['club_data'] as Map)
+            : conv['club_data'] is Map
+                ? Map<String, dynamic>.from(conv['club_data'] as Map)
+                : null;
+        final clubName = _resolveConvocatoriaClubName(conv);
+        final titulo = conv['titulo']?.toString() ?? 'Convocatoria';
+        final categoria = _resolveConvocatoriaCategory(conv);
+        final ubicacion = _resolveConvocatoriaLocationLabel(conv);
+        final posicion = _resolveConvocatoriaPosition(conv);
+        final imagenUrl = (_firstNonEmpty([
+              conv['imagen_url'],
+              conv['image_url'],
+              conv['thumbnail_url'],
+              conv['banner_url'],
+              conv['cover_url'],
+            ]) ??
+            '');
+        final clubImageUrl = _resolveExplorerClubLogo(clubData);
+        final clubLeague = clubData != null ? _resolveClubLeague(clubData) : '';
+        final clubCountry =
+            clubData != null ? _resolveCountryFromClub(clubData) : '';
+        final clubSecondary = clubLeague.isNotEmpty ? clubLeague : clubCountry;
+        final mode = _resolveExplorerConvocatoriaMode(conv);
+        final requiredChallengesCount = _explorerRequiredChallengesCount(conv);
+        final clubRef = _clubRefFromMap({
+          ...?clubData,
+          'id': clubData?['id'] ?? conv['club_id'],
+          'club_id': conv['club_id'],
+        });
+        final activeCount = _convocatorias.where((item) {
+          final itemClubData = item['club_data'];
+          if (itemClubData is Map) {
+            return _clubRefFromMap(Map<String, dynamic>.from(itemClubData)) ==
+                clubRef;
+          }
+          return (item['club_id']?.toString().trim() ?? '') == clubRef;
+        }).length;
 
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
+        return GestureDetector(
+          onTap: () {
+            if (id.isEmpty) return;
+            context.pushNamed(
+              DetallesDeLaConvocatoriaWidget.routeName,
+              queryParameters: {'convocatoriaId': id},
+            );
+          },
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 20),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x120D3B66),
+                  blurRadius: 14,
+                  offset: Offset(0, 5),
+                ),
+              ],
             ),
-            child: ListTile(
-              leading: const CircleAvatar(
-                backgroundColor: Color(0xFFE8F0FE),
-                child: Icon(Icons.campaign_outlined,
-                    color: Color(0xFF0D3B66), size: 18),
-              ),
-              title: Text(
-                conv['titulo']?.toString() ?? 'Convocatoria',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (clubName.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    GestureDetector(
-                      onTap: () => _openPublicClubProfile(
-                        context,
-                        conv['club_data'] is Map<String, dynamic>
-                            ? Map<String, dynamic>.from(
-                                conv['club_data'] as Map)
-                            : {
-                                'id': conv['club_id'],
-                                'club_name': clubName,
-                              },
-                      ),
-                      child: Text(
-                        clubName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF0D3B66),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                  child: Stack(
+                    children: [
+                      imagenUrl.isNotEmpty
+                          ? Image.network(
+                              imagenUrl,
+                              width: double.infinity,
+                              height: 156,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  _buildExplorerConvocatoriaPlaceholderImage(),
+                            )
+                          : _buildExplorerConvocatoriaPlaceholderImage(),
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _explorerConvocatoriaModeColor(mode)
+                                .withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            mode,
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: _explorerConvocatoriaModeColor(mode),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                  const SizedBox(height: 2),
-                  Text(
-                    details.isNotEmpty ? details : 'Sin detalles',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  _buildConvocatoriaInsightChips(conv),
-                ],
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                final id = conv['id']?.toString() ?? '';
-                if (id.isEmpty) return;
-                context.pushNamed(
-                  DetallesDeLaConvocatoriaWidget.routeName,
-                  queryParameters: {'convocatoriaId': id},
-                );
-              },
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GestureDetector(
+                        onTap: clubRef.isEmpty
+                            ? null
+                            : () => _openPublicClubProfile(
+                                  context,
+                                  clubData ??
+                                      {
+                                        'id': conv['club_id'],
+                                        'club_name': clubName,
+                                      },
+                                ),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FBFF),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFD9E6F5)),
+                          ),
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: clubImageUrl.isNotEmpty
+                                    ? Image.network(
+                                        clubImageUrl,
+                                        width: 42,
+                                        height: 42,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            _buildExplorerClubPlaceholderIcon(),
+                                      )
+                                    : _buildExplorerClubPlaceholderIcon(
+                                        size: 42,
+                                      ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      clubName,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                        color: const Color(0xFF0D3B66),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      clubSecondary.isNotEmpty
+                                          ? clubSecondary
+                                          : 'Club verificado en plataforma',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF64748B),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE8F0FE),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  activeCount > 0
+                                      ? '$activeCount activas'
+                                      : 'Sin activas',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF0D3B66),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        titulo,
+                        style: GoogleFonts.inter(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F172A),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _buildInfoTag(
+                            Icons.badge_outlined,
+                            'Club: $clubName',
+                          ),
+                          _buildInfoTag(
+                            Icons.category_outlined,
+                            'Categoría: ${categoria.isNotEmpty ? categoria : 'N/A'}',
+                          ),
+                          _buildInfoTag(
+                            Icons.sports_soccer,
+                            'Posición: ${posicion.isNotEmpty ? posicion : 'Todas'}',
+                          ),
+                          _buildInfoTag(
+                            Icons.location_on_outlined,
+                            'Ubicación: $ubicacion',
+                          ),
+                          if (requiredChallengesCount > 0)
+                            _buildInfoTag(
+                              Icons.task_alt_rounded,
+                              'Desafíos requeridos: $requiredChallengesCount',
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          );
-        },
-      ).toList(),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -4118,7 +4376,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: OutlinedButton(
                       onPressed:
                           hasVideo ? () => _openPlayerVideos(player) : null,
                       style: OutlinedButton.styleFrom(
@@ -4127,21 +4385,21 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        minimumSize: const Size.fromHeight(36),
+                        padding: EdgeInsets.zero,
                       ),
-                      icon: const Icon(Icons.smart_display_rounded, size: 16),
-                      label: Text(
-                        hasVideo ? 'Ver video' : 'Sin video',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      child: Icon(
+                        Icons.smart_display_rounded,
+                        size: 16,
+                        color: hasVideo
+                            ? const Color(0xFF0D3B66)
+                            : const Color(0xFF9CA3AF),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: ElevatedButton(
                       onPressed: () => _openPublicPlayerProfile(player),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0D3B66),
@@ -4149,16 +4407,14 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        minimumSize: const Size.fromHeight(36),
+                        padding: EdgeInsets.zero,
                         elevation: 0,
                       ),
-                      icon: const Icon(Icons.person_search_rounded, size: 16),
-                      label: Text(
-                        'Ver perfil',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      child: const Icon(
+                        Icons.person_search_rounded,
+                        size: 16,
+                        color: Colors.white,
                       ),
                     ),
                   ),
@@ -4185,36 +4441,139 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     return Column(
       children: clubs.map((club) {
         final name = club['nombre']?.toString() ?? 'Club';
-        final league = club['liga']?.toString() ?? '';
-        final country = club['pais']?.toString() ?? '';
+        final league = _resolveClubLeague(club);
+        final country = _resolveCountryFromClub(club);
+        final city = _resolveCity(club);
         final short = club['nombre_corto']?.toString() ?? '';
+        final logoUrl =
+            (club['logo_url'] ?? club['escudo_url'] ?? club['shield_url'] ?? '')
+                .toString()
+                .trim();
+        final activeCount = _convocatorias.where((conv) {
+          final clubData = conv['club_data'];
+          if (clubData is Map) {
+            return _clubRefFromMap(Map<String, dynamic>.from(clubData)) ==
+                _clubRefFromMap(club);
+          }
+          return (conv['club_id']?.toString().trim() ?? '') ==
+              _clubRefFromMap(club);
+        }).length;
+        final subtitle = [
+          if (short.isNotEmpty) short,
+          if (league.isNotEmpty) league,
+          if (city.isNotEmpty) city,
+          if (country.isNotEmpty) country,
+        ].join(' • ');
 
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: ListTile(
-            onTap: () => _openPublicClubProfile(context, club),
-            leading: const CircleAvatar(
-              backgroundColor: Color(0xFFE8F0FE),
-              child: Icon(Icons.shield_outlined, color: Color(0xFF0D3B66)),
-            ),
-            title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(
-              [
-                if (short.isNotEmpty) short,
-                if (league.isNotEmpty) league,
-                if (country.isNotEmpty) country
-              ].join(' • '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: const Icon(
-              Icons.chevron_right,
-              color: Color(0xFF94A3B8),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _openPublicClubProfile(context, club),
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 4,
+                          height: 54,
+                          decoration: BoxDecoration(
+                            color:
+                                const Color(0xFF0D3B66).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        CircleAvatar(
+                          radius: 22,
+                          backgroundColor: const Color(0xFFE8F0FE),
+                          backgroundImage:
+                              logoUrl.isNotEmpty ? NetworkImage(logoUrl) : null,
+                          child: logoUrl.isNotEmpty
+                              ? null
+                              : const Icon(
+                                  Icons.shield_outlined,
+                                  color: Color(0xFF0D3B66),
+                                ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                              ),
+                              if (subtitle.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  subtitle,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: const Color(0xFF64748B),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.chevron_right,
+                          color: Color(0xFF94A3B8),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        if (league.isNotEmpty)
+                          _simpleBadge(league, color: const Color(0xFF0D3B66)),
+                        if (city.isNotEmpty)
+                          _simpleBadge(city, color: const Color(0xFF1D4ED8)),
+                        if (country.isNotEmpty)
+                          _simpleBadge(country, color: const Color(0xFF0F766E)),
+                        _simpleBadge(
+                          activeCount > 0
+                              ? '$activeCount convocatorias activas'
+                              : 'Sin convocatorias activas',
+                          color: activeCount > 0
+                              ? const Color(0xFF7C3AED)
+                              : const Color(0xFF718096),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         );

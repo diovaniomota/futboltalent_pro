@@ -1087,13 +1087,20 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     required IconData icon,
     required VoidCallback? onPressed,
     bool primary = false,
+    bool compact = false,
   }) {
+    final buttonHeight = compact ? 38.0 : 42.0;
+    final iconSize = compact ? 15.0 : 16.0;
+    final horizontalPadding = compact ? 10.0 : 12.0;
+    final verticalPadding = compact ? 8.0 : 10.0;
+    final borderRadius = compact ? 10.0 : 12.0;
+
     final labelWidget = Text(
       label,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: GoogleFonts.inter(
-        fontSize: 12.5,
+        fontSize: compact ? 12 : 12.5,
         fontWeight: FontWeight.w700,
         color: primary ? Colors.white : const Color(0xFF0D3B66),
       ),
@@ -1101,37 +1108,43 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
     if (primary) {
       return SizedBox(
-        height: 42,
+        height: buttonHeight,
         child: ElevatedButton.icon(
           onPressed: onPressed,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF0D3B66),
             foregroundColor: Colors.white,
             elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
+            ),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(borderRadius),
             ),
           ),
-          icon: Icon(icon, size: 16),
+          icon: Icon(icon, size: iconSize),
           label: FittedBox(fit: BoxFit.scaleDown, child: labelWidget),
         ),
       );
     }
 
     return SizedBox(
-      height: 42,
+      height: buttonHeight,
       child: OutlinedButton.icon(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
           foregroundColor: const Color(0xFF0D3B66),
           side: const BorderSide(color: Color(0xFFD5DFEB)),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: verticalPadding,
+          ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(borderRadius),
           ),
         ),
-        icon: Icon(icon, size: 16),
+        icon: Icon(icon, size: iconSize),
         label: FittedBox(fit: BoxFit.scaleDown, child: labelWidget),
       ),
     );
@@ -2697,13 +2710,13 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           ),
         ),
         _buildActiveConvocatoriasSection(),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
         _buildSectionHeader(title: 'Postulaciones recientes'),
         _buildRecentPostulacionesSection(),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
         _buildSectionHeader(title: 'Jugadores verificados'),
         _buildSuggestedPlayersSection(),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
         _buildSectionHeader(title: 'Seguimiento'),
         _buildPipelineSection(),
       ],
@@ -3716,10 +3729,10 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         final cardWidth =
             compact ? (maxWidth - 4).clamp(248.0, 320.0).toDouble() : 286.0;
         final sectionHeight = stackedActions
-            ? 340.0
+            ? 220.0
             : compact
-                ? 290.0
-                : 240.0;
+                ? 182.0
+                : 170.0;
 
         return SizedBox(
           height: sectionHeight,
@@ -3730,19 +3743,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             itemBuilder: (_, index) {
               final conv = previewItems[index];
               final title = conv['titulo']?.toString() ?? 'Convocatoria';
-              final zone = conv['ubicacion']?.toString() ?? 'Sin zona';
-              final minAge = conv['edad_minima'] ?? conv['edad_min'];
-              final maxAge = conv['edad_maxima'] ?? conv['edad_max'];
-              final category = (minAge != null || maxAge != null)
-                  ? '${minAge ?? '-'}-${maxAge ?? '-'}'
-                  : 'N/A';
-              final position = _resolveTryoutPosition(conv);
               final postulaciones = conv['postulaciones_count'] ?? 0;
               final saved = conv['saved_count'] ?? 0;
 
               return Container(
                 width: cardWidth,
-                padding: EdgeInsets.all(compact ? 14 : 12),
+                padding: EdgeInsets.all(compact ? 12 : 11),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
@@ -3782,7 +3788,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     Text(
                       title,
                       style: GoogleFonts.inter(
@@ -3793,20 +3799,16 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Wrap(
                       spacing: 8,
                       runSpacing: 6,
                       children: [
-                        _metaChip('Zona: $zone'),
-                        _metaChip('Categoría: $category'),
-                        if (position.isNotEmpty)
-                          _metaChip('Posición: $position'),
                         _metaChip('Postulaciones: $postulaciones'),
                         _metaChip('En seguimiento: $saved'),
                       ],
                     ),
-                    const Spacer(),
+                    const SizedBox(height: 10),
                     if (stackedActions) ...[
                       SizedBox(
                         width: double.infinity,
@@ -3814,7 +3816,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                           onPressed: () => _showCandidatesSheet(conv),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0D3B66),
-                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           child: _buildAdaptiveButtonLabel(
                             'Ver candidatos',
@@ -3829,7 +3831,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                           onPressed: () =>
                               context.pushNamed(PostulacionesWidget.routeName),
                           style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           child: _buildAdaptiveButtonLabel(
                             'Postulaciones',
@@ -3846,7 +3848,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF0D3B66),
                                 padding:
-                                    const EdgeInsets.symmetric(vertical: 11),
+                                    const EdgeInsets.symmetric(vertical: 10),
                               ),
                               child: _buildAdaptiveButtonLabel(
                                 'Ver candidatos',
@@ -3862,7 +3864,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               ),
                               style: OutlinedButton.styleFrom(
                                 padding:
-                                    const EdgeInsets.symmetric(vertical: 11),
+                                    const EdgeInsets.symmetric(vertical: 10),
                               ),
                               child: _buildAdaptiveButtonLabel(
                                 'Postulaciones',
@@ -3932,7 +3934,9 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      padding: compact
+          ? const EdgeInsets.fromLTRB(10, 10, 10, 8)
+          : const EdgeInsets.fromLTRB(12, 12, 12, 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -3950,8 +3954,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(10),
                     child: Container(
-                      width: 52,
-                      height: 52,
+                      width: compact ? 46 : 52,
+                      height: compact ? 46 : 52,
                       color: const Color(0xFFE8F0FE),
                       child: thumb.isNotEmpty
                           ? Image.network(
@@ -3995,7 +3999,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                     ),
                 ],
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: compact ? 8 : 10),
               // Name + subtitle + badges
               Expanded(
                 child: Column(
@@ -4009,7 +4013,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                             name.isNotEmpty ? name : 'Jugador',
                             style: GoogleFonts.inter(
                               fontWeight: FontWeight.w700,
-                              fontSize: 14,
+                              fontSize: compact ? 13.5 : 14,
                               color: const Color(0xFF0F172A),
                             ),
                             maxLines: 1,
@@ -4061,19 +4065,19 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                       ],
                     ),
                     if (subtitleParts.isNotEmpty) ...[
-                      const SizedBox(height: 2),
+                      SizedBox(height: compact ? 1 : 2),
                       Text(
                         subtitleParts.join(' • '),
                         style: GoogleFonts.inter(
                           color: const Color(0xFF64748B),
-                          fontSize: 12,
+                          fontSize: compact ? 11.5 : 12,
                           fontWeight: FontWeight.w400,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                    const SizedBox(height: 5),
+                    SizedBox(height: compact ? 4 : 5),
                     // Badges + convocatoria in one wrap
                     Wrap(
                       spacing: 6,
@@ -4101,7 +4105,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                                 convocatoriaTitle,
                                 style: GoogleFonts.inter(
                                   color: const Color(0xFF334155),
-                                  fontSize: 12,
+                                  fontSize: compact ? 11.5 : 12,
                                   fontWeight: FontWeight.w600,
                                 ),
                                 maxLines: 1,
@@ -4117,7 +4121,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               ),
             ],
           ),
-          const SizedBox(height: 9),
+          SizedBox(height: compact ? 6 : 9),
           // Action buttons
           Row(
             children: [
@@ -4125,6 +4129,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                 child: _buildRecentCardAction(
                   label: 'Ver perfil',
                   icon: Icons.person_outline_rounded,
+                  compact: compact,
                   onPressed: userId.isEmpty
                       ? null
                       : () {
@@ -4140,19 +4145,21 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                 child: _buildRecentCardAction(
                   label: 'Ver video',
                   icon: Icons.play_circle_outline_rounded,
+                  compact: compact,
                   onPressed:
                       hasVideo ? () => _openPlayerVideo(videoData) : null,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: compact ? 4 : 6),
           SizedBox(
             width: double.infinity,
             child: _buildRecentCardAction(
               label: 'Agregar al pipeline',
               icon: Icons.playlist_add_rounded,
               primary: true,
+              compact: compact,
               onPressed: () => _updatePipelineStatus(
                 post['id']?.toString() ?? '',
                 'guardado',

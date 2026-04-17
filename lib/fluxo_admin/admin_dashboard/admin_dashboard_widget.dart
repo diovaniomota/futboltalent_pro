@@ -93,8 +93,9 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
 
       int totalPostulaciones = 0;
       try {
-        final postulacionesResponse =
-            await SupaFlow.client.from('aplicaciones_convocatoria').select('id');
+        final postulacionesResponse = await SupaFlow.client
+            .from('aplicaciones_convocatoria')
+            .select('id');
         totalPostulaciones = (postulacionesResponse as List).length;
       } catch (_) {
         totalPostulaciones = 0;
@@ -221,14 +222,6 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
                     ),
                     const SizedBox(height: 12),
                     _buildMenuCard(
-                      icon: Icons.category,
-                      title: 'Categorías',
-                      subtitle: 'Gestionar categorías de desafíos',
-                      onTap: () =>
-                          context.pushNamed(AdminCategoriesWidget.routeName),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildMenuCard(
                       icon: Icons.settings,
                       title: 'Configuración',
                       subtitle: 'Piloto, flags y textos',
@@ -262,10 +255,10 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
             'Videos', _totalVideos, Icons.video_library, Colors.redAccent),
         _buildStatCard('Desafíos', _totalChallenges, Icons.fitness_center,
             Colors.deepOrange),
-        _buildStatCard('Convocatorias', _totalConvocatorias,
-            Icons.campaign, Colors.teal),
-        _buildStatCard('Postulaciones', _totalPostulaciones,
-            Icons.how_to_reg, Colors.indigo),
+        _buildStatCard(
+            'Convocatorias', _totalConvocatorias, Icons.campaign, Colors.teal),
+        _buildStatCard('Postulaciones', _totalPostulaciones, Icons.how_to_reg,
+            Colors.indigo),
       ],
     );
   }
