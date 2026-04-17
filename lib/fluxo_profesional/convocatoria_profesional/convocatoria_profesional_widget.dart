@@ -2,7 +2,6 @@ import '/backend/supabase/supabase.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
-import '/fluxo_profesional/explorar/explorar_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import 'package:flutter/material.dart';
@@ -184,8 +183,6 @@ class _ConvocatoriaProfesionalWidgetState
 
   @override
   Widget build(BuildContext context) {
-    return const ExplorarWidget(initialScoutTab: 'convocatorias');
-
     final userType = context.watch<FFAppState>().userType;
     final convocatoriasEnabled = FFAppState().isFeatureEnabled('convocatorias');
     final hasConvocatoriasAccess =

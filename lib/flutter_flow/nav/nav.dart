@@ -214,9 +214,7 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: ConvocatoriaProfesionalWidget.routeName,
           path: ConvocatoriaProfesionalWidget.routePath,
-          builder: (context, params) => const ExplorarWidget(
-            initialScoutTab: 'convocatorias',
-          ),
+          builder: (context, params) => ConvocatoriaProfesionalWidget(),
         ),
         FFRoute(
           name: DetallesDeLaConvocatoriaProfesionalWidget.routeName,
