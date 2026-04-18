@@ -1537,6 +1537,17 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Vídeos destacados',
+              style: GoogleFonts.inter(
+                color: const Color(0xFF0F172A),
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -2589,15 +2600,16 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-                                  Text(
-                                    '${_formatNumber(followers)} seguidores',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.inter(
-                                      color: const Color(0xFF444444),
-                                      fontSize: isCompactProfile ? 13 : 14,
+                                  if (followers > 0)
+                                    Text(
+                                      '${_formatNumber(followers)} seguidores',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                        color: const Color(0xFF444444),
+                                        fontSize: isCompactProfile ? 13 : 14,
+                                      ),
                                     ),
-                                  ),
                                   if (playerStatus.isNotEmpty)
                                     _buildPlayerStatusChip(playerStatus),
                                 ],

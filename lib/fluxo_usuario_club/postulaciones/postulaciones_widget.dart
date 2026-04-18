@@ -620,7 +620,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                               _buildDrawerItemCallback(
                                   context, // Use parent context for navigation
                                   Icons.dashboard_outlined,
-                                  'Dashboard',
+                                  'Gestión de talento',
                                   false,
                                   () async => context.pushNamed(
                                       DashboardClubWidget.routeName)),
@@ -634,32 +634,25 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.people_outline,
-                                  'Jugadores',
+                                  'Postulaciones',
                                   true,
                                   () async => context.pushNamed(
                                       PostulacionesWidget.routeName)),
                               _buildDrawerItemCallback(
                                   context,
-                                  Icons.list_alt_outlined,
-                                  'Scouting',
+                                  Icons.search_rounded,
+                                  'Explorar jugadores',
                                   false,
                                   () async => context
                                       .pushNamed(ListaYNotaWidget.routeName)),
-                              const Divider(),
-                              _buildDrawerItemCallback(
-                                  context,
-                                  Icons.visibility_outlined,
-                                  'Perfil público',
-                                  false,
-                                  () async =>
-                                      _openCurrentClubPublicProfile(ctx)),
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.shield_outlined,
-                                  'Mi perfil',
+                                  'Perfil del club',
                                   false,
                                   () async => context
                                       .pushNamed(ConfiguracinWidget.routeName)),
+                              const Divider(),
                               _buildDrawerItemCallback(
                                   context, Icons.logout, 'Cerrar Sesión', false,
                                   () async {
@@ -1150,7 +1143,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                     ),
                     SizedBox(height: 4 * scale),
                     Text(
-                      'Publicá una convocatoria para empezar a recibir jugadores.',
+                      'Publicá una convocatoria y los jugadores interesados aparecerán acá.',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.inter(
                         fontSize: 12 * scale,

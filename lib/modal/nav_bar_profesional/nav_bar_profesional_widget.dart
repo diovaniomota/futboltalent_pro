@@ -2,7 +2,6 @@ import '/flutter_flow/flutter_flow_icon_button.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'nav_bar_profesional_model.dart';
 export 'nav_bar_profesional_model.dart';
@@ -124,8 +123,8 @@ class _NavBarProfesionalWidgetState extends State<NavBarProfesionalWidget> {
                   Expanded(
                     child: Center(
                       child: _navButton(
-                        icon: FaIcon(
-                          FontAwesomeIcons.magnifyingGlass,
+                        icon: Icon(
+                          Icons.explore_rounded,
                           color: canOpenExplorer
                               ? const Color(0xFF0D3B66)
                               : const Color(0xFF94A3B8),

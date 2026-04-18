@@ -8,6 +8,9 @@ import '/index.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '/fluxo_compartilhado/location_data.dart';
 import 'configuracin_model.dart';
 export 'configuracin_model.dart';
 
@@ -28,6 +31,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
   final TextEditingController _nombreController = TextEditingController();
   final TextEditingController _nombreCortoController = TextEditingController();
   final TextEditingController _paisController = TextEditingController();
+  final TextEditingController _estadoController = TextEditingController();
+  final TextEditingController _ciudadController = TextEditingController();
   final TextEditingController _ligaController = TextEditingController();
   final TextEditingController _descripcionController = TextEditingController();
   final TextEditingController _sitioWebController = TextEditingController();
@@ -35,6 +40,12 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isEditingClubProfile = false;
+  List<String> _states = [];
+  List<String> _cities = [];
+  bool _isStatesLoading = false;
+  bool _isCitiesLoading = false;
+  bool _stateFreeText = false;
+  bool _cityFreeText = false;
   Map<String, dynamic>? _clubData;
   Map<String, dynamic>? _currentUserData;
   List<Map<String, dynamic>> _staffMembers = [];
@@ -65,6 +76,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     _nombreController.dispose();
     _nombreCortoController.dispose();
     _paisController.dispose();
+    _estadoController.dispose();
+    _ciudadController.dispose();
     _ligaController.dispose();
     _descripcionController.dispose();
     _sitioWebController.dispose();
@@ -194,6 +207,18 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       clubData?['pais'],
       clubData?['country'],
     ]));
+    _estadoController.text = _firstNonEmptyText([
+      clubData?['state'],
+      clubData?['estado'],
+    ]);
+    _ciudadController.text = _firstNonEmptyText([
+      clubData?['city'],
+      clubData?['ciudad'],
+    ]);
+    _states = [];
+    _cities = [];
+    _stateFreeText = false;
+    _cityFreeText = false;
     _ligaController.text = normalizeLeagueName(_firstNonEmptyText([
       clubData?['liga'],
       clubData?['league'],
@@ -363,6 +388,265 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     }
   }
 
+  Future<void> _loadStates(String countryName) async {
+    final trimmedCountry = countryName.trim();
+    if (trimmedCountry.isEmpty) return;
+    final apiName = locationToApiCountryName(trimmedCountry);
+    final currentState = _estadoController.text.trim();
+    final hardcoded = getHardcodedStates(apiName);
+    if (mounted) {
+      setState(() {
+        _isStatesLoading = true;
+        _states = [];
+        _stateFreeText = false;
+      });
+    }
+    final stateSet = <String>{};
+    var loadedFromApi = false;
+    try {
+      final response = await http
+          .post(
+            Uri.parse('https://countriesnow.space/api/v0.1/countries/states'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'country': apiName}),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final statesList = data['data']?['states'] as List?;
+        if (statesList != null && statesList.isNotEmpty) {
+          loadedFromApi = true;
+          stateSet.addAll(statesList
+              .map((s) => (s as Map<String, dynamic>)['name']?.toString() ?? '')
+              .where((n) => n.isNotEmpty));
+        }
+      }
+    } catch (_) {}
+    if (!loadedFromApi) {
+      stateSet.addAll(hardcoded);
+    }
+    final states = stateSet.toList()..sort();
+    if (mounted) {
+      setState(() {
+        _isStatesLoading = false;
+        _states = states;
+        _stateFreeText = states.isEmpty;
+      });
+    }
+    if (currentState.isNotEmpty) {
+      await _loadCitiesByState(trimmedCountry, currentState);
+    }
+  }
+
+  String _normalizeLocationToken(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll('á', 'a')
+        .replaceAll('à', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('ã', 'a')
+        .replaceAll('ä', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('è', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('ë', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ì', 'i')
+        .replaceAll('î', 'i')
+        .replaceAll('ï', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ò', 'o')
+        .replaceAll('ô', 'o')
+        .replaceAll('õ', 'o')
+        .replaceAll('ö', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ù', 'u')
+        .replaceAll('û', 'u')
+        .replaceAll('ü', 'u')
+        .replaceAll('ñ', 'n')
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  Future<List<String>> _resolveApiStateCandidates(
+      String apiCountryName, String selectedState) async {
+    final targetRaw = selectedState.trim();
+    final target = _normalizeLocationToken(targetRaw);
+    if (target.isEmpty) return [];
+
+    final exact = <String>[];
+    final contains = <String>[];
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('https://countriesnow.space/api/v0.1/countries/states'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'country': apiCountryName}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final statesList = data['data']?['states'] as List?;
+        if (statesList != null && statesList.isNotEmpty) {
+          for (final raw in statesList) {
+            final name =
+                (raw as Map<String, dynamic>)['name']?.toString().trim() ?? '';
+            if (name.isEmpty) continue;
+            final normalized = _normalizeLocationToken(name);
+            if (normalized == target) {
+              exact.add(name);
+              continue;
+            }
+            if (normalized.contains(target) || target.contains(normalized)) {
+              contains.add(name);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    final ordered = <String>[];
+    ordered.add(targetRaw);
+    ordered.addAll(exact);
+    ordered.addAll(contains);
+    final seen = <String>{};
+    final unique = <String>[];
+    for (final name in ordered) {
+      final key = name.trim().toLowerCase();
+      if (name.trim().isEmpty || !seen.add(key)) continue;
+      unique.add(name);
+    }
+    return unique;
+  }
+
+  Future<List<String>> _fetchCitiesForState(
+      String apiCountryName, String stateName) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse(
+                'https://countriesnow.space/api/v0.1/countries/state/cities'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'country': apiCountryName, 'state': stateName}),
+          )
+          .timeout(const Duration(seconds: 12));
+
+      if (response.statusCode != 200) return const [];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (data['error'] == true) return const [];
+      final citiesList = data['data'] as List?;
+      if (citiesList == null || citiesList.isEmpty) return const [];
+
+      return citiesList
+          .map((item) {
+            if (item is Map<String, dynamic>) {
+              return (item['name'] ?? item['city'] ?? '').toString().trim();
+            }
+            return item?.toString().trim() ?? '';
+          })
+          .where((n) => n.isNotEmpty)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> _loadCitiesDirectly(String apiCountryName) async {
+    final citySet = <String>{...getHardcodedCitiesForCountry(apiCountryName)};
+    if (mounted) {
+      setState(() {
+        _isCitiesLoading = true;
+        _cities = [];
+        _cityFreeText = false;
+      });
+    }
+    try {
+      final response = await http
+          .post(
+            Uri.parse('https://countriesnow.space/api/v0.1/countries/cities'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'country': apiCountryName}),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final citiesList = data['data'] as List?;
+        if (citiesList != null && citiesList.isNotEmpty) {
+          citySet.addAll(citiesList.map((item) {
+            if (item is Map<String, dynamic>) {
+              return (item['name'] ?? item['city'] ?? '').toString().trim();
+            }
+            return item?.toString().trim() ?? '';
+          }).where((n) => n.isNotEmpty));
+        }
+      }
+    } catch (_) {}
+    final cities = citySet.toList()..sort();
+    if (mounted) {
+      setState(() {
+        _isCitiesLoading = false;
+        _cities = cities;
+        _cityFreeText = cities.isEmpty;
+      });
+    }
+  }
+
+  Future<void> _loadCitiesByState(String countryName, String stateName) async {
+    final trimmedCountry = countryName.trim();
+    final trimmedState = stateName.trim();
+    if (trimmedCountry.isEmpty || trimmedState.isEmpty) return;
+    final apiName = locationToApiCountryName(trimmedCountry);
+    final citySet = <String>{};
+    if (mounted) {
+      setState(() {
+        _isCitiesLoading = true;
+        _cities = [];
+        _cityFreeText = false;
+      });
+    }
+    final candidates = await _resolveApiStateCandidates(apiName, trimmedState);
+    for (final candidate in candidates) {
+      final fetched = await _fetchCitiesForState(apiName, candidate);
+      if (fetched.isNotEmpty) {
+        citySet.addAll(fetched);
+      }
+    }
+
+    if (citySet.isNotEmpty) {
+      final cities = citySet.toList()..sort();
+      if (mounted) {
+        setState(() {
+          _isCitiesLoading = false;
+          _cities = cities;
+          _cityFreeText = false;
+        });
+      }
+      return;
+    }
+
+    citySet.addAll(getHardcodedCities(apiName, trimmedState));
+    if (citySet.isNotEmpty) {
+      final cities = citySet.toList()..sort();
+      if (mounted) {
+        setState(() {
+          _isCitiesLoading = false;
+          _cities = cities;
+          _cityFreeText = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isCitiesLoading = false;
+        _cities = [];
+        _cityFreeText = true;
+      });
+    }
+  }
+
   Future<void> _saveChanges() async {
     if (_clubData == null) return;
     setState(() => _isSaving = true);
@@ -387,6 +671,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         'nombre_corto': _nombreCortoController.text.trim(),
         'pais': normalizedCountry,
         'country': normalizedCountry,
+        'state': _estadoController.text.trim(),
+        'city': _ciudadController.text.trim(),
         'liga': normalizedLeague,
         'descripcion': _descripcionController.text.trim(),
         'sitio_web': _sitioWebController.text.trim(),
@@ -756,7 +1042,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                           _buildDrawerItem(
                               context,
                               Icons.dashboard_outlined,
-                              'Dashboard',
+                              'Gestión de talento',
                               false,
                               () => context
                                   .pushNamed(DashboardClubWidget.routeName)),
@@ -770,28 +1056,21 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                           _buildDrawerItem(
                               context,
                               Icons.people_outline,
-                              'Jugadores',
+                              'Postulaciones',
                               false,
                               () => context
                                   .pushNamed(PostulacionesWidget.routeName)),
                           _buildDrawerItem(
                               context,
-                              Icons.list_alt_outlined,
-                              'Scouting',
+                              Icons.search_rounded,
+                              'Explorar jugadores',
                               false,
                               () => context
                                   .pushNamed(ListaYNotaWidget.routeName)),
                           _buildDrawerItem(
                               context,
-                              Icons.visibility_outlined,
-                              'Perfil público',
-                              false,
-                              () async => _openCurrentClubPublicProfile(ctx)),
-                          const Divider(),
-                          _buildDrawerItem(
-                              context,
                               Icons.shield_outlined,
-                              'Mi perfil',
+                              'Perfil del club',
                               true,
                               () => context
                                   .pushNamed(ConfiguracinWidget.routeName)),
@@ -1637,14 +1916,20 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                   ),
                   SizedBox(height: 4 * scale),
                   Text(
-                    value.isEmpty ? 'Sin completar' : value,
+                    value.isEmpty
+                        ? 'Completá este campo para mejorar tu perfil'
+                        : value,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
                       fontSize: 15 * scale,
-                      color: const Color(0xFF0F172A),
+                      color: value.isEmpty
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF0F172A),
                       fontWeight:
                           value.isEmpty ? FontWeight.w500 : FontWeight.w700,
+                      fontStyle:
+                          value.isEmpty ? FontStyle.italic : FontStyle.normal,
                     ),
                   ),
                 ],
@@ -1834,6 +2119,10 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       ),
       onPressed: () {
         setState(() => _isEditingClubProfile = true);
+        final country = _paisController.text.trim();
+        if (country.isNotEmpty) {
+          _loadStates(country);
+        }
       },
       icon: const Icon(Icons.edit_outlined),
       label: _buildPrimaryActionLabel(
@@ -1920,12 +2209,161 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         SizedBox(height: 16 * scale),
         _buildTextField(context, 'Nombre Corto', _nombreCortoController),
         SizedBox(height: 16 * scale),
-        _buildTextField(context, 'País', _paisController),
+        _buildTextField(
+          context,
+          'País',
+          _paisController,
+          onChanged: (value) {
+            final country = value.trim();
+            setState(() {
+              _estadoController.text = '';
+              _ciudadController.text = '';
+              _states = [];
+              _cities = [];
+            });
+            if (country.isNotEmpty) {
+              _loadStates(country);
+            }
+          },
+        ),
+        SizedBox(height: 16 * scale),
+        // Estado
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Estado / Provincia', style: TextStyle(color: Colors.grey[700])),
+          const SizedBox(height: 5),
+          if (_isStatesLoading)
+            Container(
+              height: 50,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[400]!),
+              ),
+              child: const Center(
+                child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+            )
+          else if (_states.isNotEmpty && !_stateFreeText)
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[400]!),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  value: _states.contains(_estadoController.text)
+                      ? _estadoController.text
+                      : null,
+                  hint: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Text('Selecciona el estado'),
+                  ),
+                  items: _states
+                      .map((s) => DropdownMenuItem(
+                          value: s,
+                          child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(s))))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() {
+                      _estadoController.text = v;
+                      _ciudadController.text = '';
+                      _cities = [];
+                    });
+                    _loadCitiesByState(_paisController.text.trim(), v);
+                  },
+                ),
+              ),
+            )
+          else
+            TextField(
+              controller: _estadoController,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.grey[100],
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+        ]),
+        SizedBox(height: 16 * scale),
+        // Ciudad
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Ciudad', style: TextStyle(color: Colors.grey[700])),
+          const SizedBox(height: 5),
+          if (_isCitiesLoading)
+            Container(
+              height: 50,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[400]!),
+              ),
+              child: const Center(
+                child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+            )
+          else if (_cities.isNotEmpty && !_cityFreeText)
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[400]!),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  value: _cities.contains(_ciudadController.text)
+                      ? _ciudadController.text
+                      : null,
+                  hint: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Text('Selecciona la ciudad'),
+                  ),
+                  items: _cities
+                      .map((c) => DropdownMenuItem(
+                          value: c,
+                          child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(c))))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _ciudadController.text = v);
+                  },
+                ),
+              ),
+            )
+          else
+            TextField(
+              controller: _ciudadController,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.grey[100],
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+        ]),
         SizedBox(height: 16 * scale),
         _buildTextField(context, 'Liga', _ligaController),
         SizedBox(height: 16 * scale),
         _buildTextField(context, 'Descripción', _descripcionController,
-            maxLines: 4),
+            maxLines: 4,
+            hint:
+                'Ej: Club formador con más de 10 años de experiencia, enfocado en el desarrollo de jugadores juveniles...'),
         SizedBox(height: 16 * scale),
         _buildTextField(context, 'Sitio Web', _sitioWebController),
       ]),
@@ -2001,14 +2439,17 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
 
   Widget _buildTextField(
       BuildContext context, String label, TextEditingController ctrl,
-      {int maxLines = 1}) {
+      {int maxLines = 1, String? hint, ValueChanged<String>? onChanged}) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: TextStyle(color: Colors.grey[700])),
       const SizedBox(height: 5),
       TextField(
           controller: ctrl,
+          onChanged: onChanged,
           maxLines: maxLines,
           decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
               filled: true,
               fillColor: Colors.grey[100],
               border:

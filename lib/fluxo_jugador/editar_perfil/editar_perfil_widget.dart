@@ -1,3 +1,4 @@
+import 'dart:async';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/profile_history_utils.dart';
@@ -497,6 +498,1773 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     return map[name] ?? name;
   }
 
+  static const Map<String, List<String>> _hardcodedStates = {
+    'Nicaragua': [
+      'Boaco',
+      'Carazo',
+      'Chinandega',
+      'Chontales',
+      'Estelí',
+      'Granada',
+      'Jinotega',
+      'León',
+      'Madriz',
+      'Managua',
+      'Masaya',
+      'Matagalpa',
+      'Nueva Segovia',
+      'Rivas',
+      'Río San Juan',
+      'Costa Caribe Norte',
+      'Costa Caribe Sur'
+    ],
+    'Argentina': [
+      'Buenos Aires',
+      'Catamarca',
+      'Chaco',
+      'Chubut',
+      'Ciudad Autónoma de Buenos Aires',
+      'Córdoba',
+      'Corrientes',
+      'Entre Ríos',
+      'Formosa',
+      'Jujuy',
+      'La Pampa',
+      'La Rioja',
+      'Mendoza',
+      'Misiones',
+      'Neuquén',
+      'Río Negro',
+      'Salta',
+      'San Juan',
+      'San Luis',
+      'Santa Cruz',
+      'Santa Fe',
+      'Santiago del Estero',
+      'Tierra del Fuego',
+      'Tucumán'
+    ],
+    'Brazil': [
+      'Acre',
+      'Alagoas',
+      'Amapá',
+      'Amazonas',
+      'Bahia',
+      'Ceará',
+      'Distrito Federal',
+      'Espírito Santo',
+      'Goiás',
+      'Maranhão',
+      'Mato Grosso',
+      'Mato Grosso do Sul',
+      'Minas Gerais',
+      'Pará',
+      'Paraíba',
+      'Paraná',
+      'Pernambuco',
+      'Piauí',
+      'Rio de Janeiro',
+      'Rio Grande do Norte',
+      'Rio Grande do Sul',
+      'Rondônia',
+      'Roraima',
+      'Santa Catarina',
+      'São Paulo',
+      'Sergipe',
+      'Tocantins'
+    ],
+    'Mexico': [
+      'Aguascalientes',
+      'Baja California',
+      'Baja California Sur',
+      'Campeche',
+      'Chiapas',
+      'Chihuahua',
+      'Ciudad de México',
+      'Coahuila',
+      'Colima',
+      'Durango',
+      'Estado de México',
+      'Guanajuato',
+      'Guerrero',
+      'Hidalgo',
+      'Jalisco',
+      'Michoacán',
+      'Morelos',
+      'Nayarit',
+      'Nuevo León',
+      'Oaxaca',
+      'Puebla',
+      'Querétaro',
+      'Quintana Roo',
+      'San Luis Potosí',
+      'Sinaloa',
+      'Sonora',
+      'Tabasco',
+      'Tamaulipas',
+      'Tlaxcala',
+      'Veracruz',
+      'Yucatán',
+      'Zacatecas'
+    ],
+    'Colombia': [
+      'Amazonas',
+      'Antioquia',
+      'Arauca',
+      'Archipiélago de San Andrés',
+      'Atlántico',
+      'Bogotá D.C.',
+      'Bolívar',
+      'Boyacá',
+      'Caldas',
+      'Caquetá',
+      'Casanare',
+      'Cauca',
+      'Cesar',
+      'Chocó',
+      'Córdoba',
+      'Cundinamarca',
+      'Guainía',
+      'Guaviare',
+      'Huila',
+      'La Guajira',
+      'Magdalena',
+      'Meta',
+      'Nariño',
+      'Norte de Santander',
+      'Putumayo',
+      'Quindío',
+      'Risaralda',
+      'Santander',
+      'Sucre',
+      'Tolima',
+      'Valle del Cauca',
+      'Vaupés',
+      'Vichada'
+    ],
+    'Venezuela': [
+      'Amazonas',
+      'Anzoátegui',
+      'Apure',
+      'Aragua',
+      'Barinas',
+      'Bolívar',
+      'Carabobo',
+      'Cojedes',
+      'Delta Amacuro',
+      'Distrito Capital',
+      'Falcón',
+      'Guárico',
+      'Lara',
+      'Mérida',
+      'Miranda',
+      'Monagas',
+      'Nueva Esparta',
+      'Portuguesa',
+      'Sucre',
+      'Táchira',
+      'Trujillo',
+      'Vargas',
+      'Yaracuy',
+      'Zulia'
+    ],
+    'Chile': [
+      'Arica y Parinacota',
+      'Tarapacá',
+      'Antofagasta',
+      'Atacama',
+      'Coquimbo',
+      'Valparaíso',
+      'Región Metropolitana de Santiago',
+      'O\'Higgins',
+      'Maule',
+      'Ñuble',
+      'Biobío',
+      'La Araucanía',
+      'Los Ríos',
+      'Los Lagos',
+      'Aysén',
+      'Magallanes'
+    ],
+    'Peru': [
+      'Amazonas',
+      'Áncash',
+      'Apurímac',
+      'Arequipa',
+      'Ayacucho',
+      'Cajamarca',
+      'Callao',
+      'Cusco',
+      'Huancavelica',
+      'Huánuco',
+      'Ica',
+      'Junín',
+      'La Libertad',
+      'Lambayeque',
+      'Lima',
+      'Loreto',
+      'Madre de Dios',
+      'Moquegua',
+      'Pasco',
+      'Piura',
+      'Puno',
+      'San Martín',
+      'Tacna',
+      'Tumbes',
+      'Ucayali'
+    ],
+    'Ecuador': [
+      'Azuay',
+      'Bolívar',
+      'Cañar',
+      'Carchi',
+      'Chimborazo',
+      'Cotopaxi',
+      'El Oro',
+      'Esmeraldas',
+      'Galápagos',
+      'Guayas',
+      'Imbabura',
+      'Loja',
+      'Los Ríos',
+      'Manabí',
+      'Morona Santiago',
+      'Napo',
+      'Orellana',
+      'Pastaza',
+      'Pichincha',
+      'Santa Elena',
+      'Santo Domingo de los Tsáchilas',
+      'Sucumbíos',
+      'Tungurahua',
+      'Zamora Chinchipe'
+    ],
+    'Bolivia': [
+      'Beni',
+      'Chuquisaca',
+      'Cochabamba',
+      'La Paz',
+      'Oruro',
+      'Pando',
+      'Potosí',
+      'Santa Cruz',
+      'Tarija'
+    ],
+    'Paraguay': [
+      'Alto Paraguay',
+      'Alto Paraná',
+      'Amambay',
+      'Asunción',
+      'Boquerón',
+      'Caaguazú',
+      'Caazapá',
+      'Canindeyú',
+      'Central',
+      'Concepción',
+      'Cordillera',
+      'Guairá',
+      'Itapúa',
+      'Misiones',
+      'Ñeembucú',
+      'Paraguarí',
+      'Presidente Hayes',
+      'San Pedro'
+    ],
+    'Uruguay': [
+      'Artigas',
+      'Canelones',
+      'Cerro Largo',
+      'Colonia',
+      'Durazno',
+      'Flores',
+      'Florida',
+      'Lavalleja',
+      'Maldonado',
+      'Montevideo',
+      'Paysandú',
+      'Río Negro',
+      'Rivera',
+      'Rocha',
+      'Salto',
+      'San José',
+      'Soriano',
+      'Tacuarembó',
+      'Treinta y Tres'
+    ],
+    'Spain': [
+      'Álava',
+      'Albacete',
+      'Alicante',
+      'Almería',
+      'Asturias',
+      'Ávila',
+      'Badajoz',
+      'Baleares',
+      'Barcelona',
+      'Burgos',
+      'Cáceres',
+      'Cádiz',
+      'Cantabria',
+      'Castellón',
+      'Ceuta',
+      'Ciudad Real',
+      'Córdoba',
+      'Cuenca',
+      'Girona',
+      'Granada',
+      'Guadalajara',
+      'Guipúzcoa',
+      'Huelva',
+      'Huesca',
+      'Jaén',
+      'La Coruña',
+      'La Rioja',
+      'Las Palmas',
+      'León',
+      'Lleida',
+      'Lugo',
+      'Madrid',
+      'Málaga',
+      'Melilla',
+      'Murcia',
+      'Navarra',
+      'Ourense',
+      'Palencia',
+      'Pontevedra',
+      'Salamanca',
+      'Santa Cruz de Tenerife',
+      'Segovia',
+      'Sevilla',
+      'Soria',
+      'Tarragona',
+      'Teruel',
+      'Toledo',
+      'Valencia',
+      'Valladolid',
+      'Vizcaya',
+      'Zamora',
+      'Zaragoza'
+    ],
+    'Portugal': [
+      'Aveiro',
+      'Beja',
+      'Braga',
+      'Bragança',
+      'Castelo Branco',
+      'Coimbra',
+      'Évora',
+      'Faro',
+      'Guarda',
+      'Leiria',
+      'Lisboa',
+      'Portalegre',
+      'Porto',
+      'Santarém',
+      'Setúbal',
+      'Viana do Castelo',
+      'Vila Real',
+      'Viseu',
+      'Açores',
+      'Madeira'
+    ],
+    'Costa Rica': [
+      'Alajuela',
+      'Cartago',
+      'Guanacaste',
+      'Heredia',
+      'Limón',
+      'Puntarenas',
+      'San José'
+    ],
+    'Guatemala': [
+      'Alta Verapaz',
+      'Baja Verapaz',
+      'Chimaltenango',
+      'Chiquimula',
+      'El Progreso',
+      'Escuintla',
+      'Guatemala',
+      'Huehuetenango',
+      'Izabal',
+      'Jalapa',
+      'Jutiapa',
+      'Petén',
+      'Quetzaltenango',
+      'Quiché',
+      'Retalhuleu',
+      'Sacatepéquez',
+      'San Marcos',
+      'Santa Rosa',
+      'Sololá',
+      'Suchitepéquez',
+      'Totonicapán',
+      'Zacapa'
+    ],
+    'Honduras': [
+      'Atlántida',
+      'Choluteca',
+      'Colón',
+      'Comayagua',
+      'Copán',
+      'Cortés',
+      'El Paraíso',
+      'Francisco Morazán',
+      'Gracias a Dios',
+      'Intibucá',
+      'Islas de la Bahía',
+      'La Paz',
+      'Lempira',
+      'Ocotepeque',
+      'Olancho',
+      'Santa Bárbara',
+      'Valle',
+      'Yoro'
+    ],
+    'El Salvador': [
+      'Ahuachapán',
+      'Cabañas',
+      'Chalatenango',
+      'Cuscatlán',
+      'La Libertad',
+      'La Paz',
+      'La Unión',
+      'Morazán',
+      'San Miguel',
+      'San Salvador',
+      'San Vicente',
+      'Santa Ana',
+      'Sonsonate',
+      'Usulután'
+    ],
+    'Panama': [
+      'Bocas del Toro',
+      'Chiriquí',
+      'Coclé',
+      'Colón',
+      'Darién',
+      'Emberá',
+      'Guna Yala',
+      'Herrera',
+      'Los Santos',
+      'Ngöbe-Buglé',
+      'Panamá',
+      'Panamá Oeste',
+      'Veraguas'
+    ],
+    'Dominican Republic': [
+      'Azua',
+      'Bahoruco',
+      'Barahona',
+      'Dajabón',
+      'Distrito Nacional',
+      'Duarte',
+      'El Seibo',
+      'Elías Piña',
+      'Espaillat',
+      'Hato Mayor',
+      'Hermanas Mirabal',
+      'Independencia',
+      'La Altagracia',
+      'La Romana',
+      'La Vega',
+      'María Trinidad Sánchez',
+      'Monseñor Nouel',
+      'Monte Cristi',
+      'Monte Plata',
+      'Pedernales',
+      'Peravia',
+      'Puerto Plata',
+      'Samaná',
+      'Sánchez Ramírez',
+      'San Cristóbal',
+      'San José de Ocoa',
+      'San Juan',
+      'San Pedro de Macorís',
+      'Santiago',
+      'Santiago Rodríguez',
+      'Santo Domingo',
+      'Valverde'
+    ],
+    'United States': [
+      'Alabama',
+      'Alaska',
+      'Arizona',
+      'Arkansas',
+      'California',
+      'Colorado',
+      'Connecticut',
+      'Delaware',
+      'Florida',
+      'Georgia',
+      'Hawaii',
+      'Idaho',
+      'Illinois',
+      'Indiana',
+      'Iowa',
+      'Kansas',
+      'Kentucky',
+      'Louisiana',
+      'Maine',
+      'Maryland',
+      'Massachusetts',
+      'Michigan',
+      'Minnesota',
+      'Mississippi',
+      'Missouri',
+      'Montana',
+      'Nebraska',
+      'Nevada',
+      'New Hampshire',
+      'New Jersey',
+      'New Mexico',
+      'New York',
+      'North Carolina',
+      'North Dakota',
+      'Ohio',
+      'Oklahoma',
+      'Oregon',
+      'Pennsylvania',
+      'Rhode Island',
+      'South Carolina',
+      'South Dakota',
+      'Tennessee',
+      'Texas',
+      'Utah',
+      'Vermont',
+      'Virginia',
+      'Washington',
+      'West Virginia',
+      'Wisconsin',
+      'Wyoming'
+    ],
+    'Germany': [
+      'Baden-Württemberg',
+      'Bavaria',
+      'Berlin',
+      'Brandenburg',
+      'Bremen',
+      'Hamburg',
+      'Hesse',
+      'Lower Saxony',
+      'Mecklenburg-Vorpommern',
+      'North Rhine-Westphalia',
+      'Rhineland-Palatinate',
+      'Saarland',
+      'Saxony',
+      'Saxony-Anhalt',
+      'Schleswig-Holstein',
+      'Thuringia'
+    ],
+    'France': [
+      'Auvergne-Rhône-Alpes',
+      'Bourgogne-Franche-Comté',
+      'Bretagne',
+      'Centre-Val de Loire',
+      'Corse',
+      'Grand Est',
+      'Hauts-de-France',
+      'Île-de-France',
+      'Normandie',
+      'Nouvelle-Aquitaine',
+      'Occitanie',
+      'Pays de la Loire',
+      'Provence-Alpes-Côte d\'Azur'
+    ],
+    'Italy': [
+      'Abruzzo',
+      'Basilicata',
+      'Calabria',
+      'Campania',
+      'Emilia-Romagna',
+      'Friuli-Venezia Giulia',
+      'Lazio',
+      'Liguria',
+      'Lombardia',
+      'Marche',
+      'Molise',
+      'Piemonte',
+      'Puglia',
+      'Sardegna',
+      'Sicilia',
+      'Toscana',
+      'Trentino-Alto Adige',
+      'Umbria',
+      'Valle d\'Aosta',
+      'Veneto'
+    ],
+    'United Kingdom': ['England', 'Northern Ireland', 'Scotland', 'Wales'],
+  };
+
+  static const Map<String, List<String>> _hardcodedCities = {
+    'Nicaragua|Managua': [
+      'Managua',
+      'Ciudad Sandino',
+      'Ticuantepe',
+      'El Crucero',
+      'Mateare',
+      'Villa El Carmen',
+      'San Rafael del Sur'
+    ],
+    'Nicaragua|Masaya': [
+      'Masaya',
+      'Nindirí',
+      'La Concepción',
+      'Tisma',
+      'Nandasmo',
+      'Niquinohomo',
+      'San Juan de Oriente',
+      'Catarina'
+    ],
+    'Nicaragua|Granada': ['Granada', 'Diriomo', 'Diriá', 'Nandaime'],
+    'Nicaragua|León': [
+      'León',
+      'Nagarote',
+      'La Paz Centro',
+      'Telica',
+      'El Sauce',
+      'Malpaisillo',
+      'Quezalguaque',
+      'Santa Rosa del Peñón',
+      'Larreynaga',
+      'Achuapa'
+    ],
+    'Nicaragua|Chinandega': [
+      'Chinandega',
+      'Corinto',
+      'El Viejo',
+      'Posoltega',
+      'Chichigalpa',
+      'Puerto Morazán',
+      'Villanueva',
+      'Somotillo',
+      'El Realejo',
+      'Santo Tomás del Norte'
+    ],
+    'Nicaragua|Estelí': [
+      'Estelí',
+      'Condega',
+      'Pueblo Nuevo',
+      'La Trinidad',
+      'San Juan de Limay',
+      'San Nicolás'
+    ],
+    'Nicaragua|Matagalpa': [
+      'Matagalpa',
+      'Ciudad Darío',
+      'Sébaco',
+      'San Ramón',
+      'Río Blanco',
+      'Muy Muy',
+      'Rancho Grande',
+      'Tuma La Dalia'
+    ],
+    'Nicaragua|Carazo': [
+      'Jinotepe',
+      'Diriamba',
+      'San Marcos',
+      'Dolores',
+      'El Rosario',
+      'La Conquista',
+      'La Paz de Carazo',
+      'Santa Teresa'
+    ],
+    'Nicaragua|Rivas': [
+      'Rivas',
+      'San Juan del Sur',
+      'Tola',
+      'Cárdenas',
+      'Buenos Aires',
+      'Altagracia',
+      'Belén',
+      'Moyogalpa',
+      'San Jorge'
+    ],
+    'Nicaragua|Chontales': [
+      'Juigalpa',
+      'Acoyapa',
+      'La Libertad',
+      'Comalapa',
+      'Cuapa',
+      'Villa Sandino',
+      'El Coral',
+      'Santo Tomás',
+      'San Pedro de Lóvago',
+      'Santo Domingo'
+    ],
+    'Nicaragua|Boaco': [
+      'Boaco',
+      'Camoapa',
+      'Teustepe',
+      'San José de los Remates',
+      'San Lorenzo',
+      'Santa Lucía'
+    ],
+    'Nicaragua|Nueva Segovia': [
+      'Ocotal',
+      'Jalapa',
+      'Mozonte',
+      'Dipilto',
+      'El Jícaro',
+      'Macuelizo',
+      'Murra',
+      'Quilalí',
+      'Santa María',
+      'Wiwilí de Nueva Segovia'
+    ],
+    'Nicaragua|Jinotega': [
+      'Jinotega',
+      'San Sebastián de Yalí',
+      'El Cuá',
+      'Wiwilí de Jinotega',
+      'San José de Bocay',
+      'La Concordia',
+      'Santa María de Pantasma'
+    ],
+    'Nicaragua|Madriz': [
+      'Somoto',
+      'Palacagüina',
+      'San Lucas',
+      'Totogalpa',
+      'Telpaneca',
+      'San Juan de Río Coco',
+      'Las Sabanas',
+      'Yalagüina'
+    ],
+    'Nicaragua|Río San Juan': [
+      'San Carlos',
+      'El Castillo',
+      'Morrito',
+      'El Almendro',
+      'San Miguelito'
+    ],
+    'Nicaragua|Costa Caribe Norte': [
+      'Bilwi',
+      'Waspam',
+      'Siuna',
+      'Rosita',
+      'Bonanza',
+      'Prinzapolka',
+      'Mulukukú'
+    ],
+    'Nicaragua|Costa Caribe Sur': [
+      'Bluefields',
+      'El Rama',
+      'Nueva Guinea',
+      'Pearl Lagoon',
+      'Bocana de Paiwas',
+      'La Cruz del Río Grande',
+      'Laguna de Perlas',
+      'Muelle de los Bueyes'
+    ],
+    'Argentina|Buenos Aires': [
+      'La Plata',
+      'Mar del Plata',
+      'Quilmes',
+      'Lomas de Zamora',
+      'Lanús',
+      'Almirante Brown',
+      'Florencio Varela',
+      'General San Martín',
+      'Tres de Febrero',
+      'Morón',
+      'Tigre',
+      'Avellaneda',
+      'Berazategui',
+      'Vicente López',
+      'San Isidro',
+      'Bahía Blanca',
+      'Tandil',
+      'Olavarría',
+      'Necochea',
+      'Junín',
+      'Pergamino',
+      'Azul',
+      'Chivilcoy'
+    ],
+    'Argentina|Ciudad Autónoma de Buenos Aires': [
+      'Buenos Aires',
+      'Palermo',
+      'Belgrano',
+      'Flores',
+      'Caballito',
+      'Recoleta',
+      'San Telmo',
+      'La Boca',
+      'Almagro',
+      'Villa Crespo',
+      'Núñez',
+      'Saavedra'
+    ],
+    'Argentina|Córdoba': [
+      'Córdoba',
+      'Villa Carlos Paz',
+      'Río Cuarto',
+      'San Francisco',
+      'Villa María',
+      'Alta Gracia',
+      'Jesús María',
+      'La Calera',
+      'Cosquín',
+      'Río Tercero'
+    ],
+    'Argentina|Santa Fe': [
+      'Rosario',
+      'Santa Fe',
+      'Rafaela',
+      'Venado Tuerto',
+      'Reconquista',
+      'Santo Tomé',
+      'Villa Constitución',
+      'San Lorenzo'
+    ],
+    'Argentina|Mendoza': [
+      'Mendoza',
+      'Godoy Cruz',
+      'Guaymallén',
+      'Las Heras',
+      'Maipú',
+      'San Rafael',
+      'Luján de Cuyo',
+      'Rivadavia'
+    ],
+    'Argentina|Tucumán': [
+      'San Miguel de Tucumán',
+      'Tafí Viejo',
+      'Concepción',
+      'Yerba Buena',
+      'Banda del Río Salí'
+    ],
+    'Argentina|Salta': ['Salta', 'Tartagal', 'Orán', 'Metán', 'General Güemes'],
+    'Argentina|Entre Ríos': [
+      'Paraná',
+      'Concordia',
+      'Gualeguaychú',
+      'Concepción del Uruguay',
+      'Villaguay'
+    ],
+    'Argentina|Corrientes': [
+      'Corrientes',
+      'Goya',
+      'Paso de los Libres',
+      'Mercedes',
+      'Curuzú Cuatiá'
+    ],
+    'Argentina|Chaco': [
+      'Resistencia',
+      'Barranqueras',
+      'Presidencia Roque Sáenz Peña',
+      'Villa Ángela'
+    ],
+    'Argentina|Misiones': [
+      'Posadas',
+      'Oberá',
+      'Eldorado',
+      'Puerto Iguazú',
+      'Apóstoles'
+    ],
+    'Argentina|Jujuy': [
+      'San Salvador de Jujuy',
+      'Palpalá',
+      'La Quiaca',
+      'Humahuaca'
+    ],
+    'Argentina|Santiago del Estero': [
+      'Santiago del Estero',
+      'La Banda',
+      'Termas de Río Hondo'
+    ],
+    'Argentina|San Juan': [
+      'San Juan',
+      'Rivadavia',
+      'Rawson',
+      'Pocito',
+      'Chimbas'
+    ],
+    'Argentina|Neuquén': [
+      'Neuquén',
+      'Cipolletti',
+      'San Martín de los Andes',
+      'Zapala',
+      'Cutral-Có'
+    ],
+    'Argentina|Río Negro': [
+      'Viedma',
+      'General Roca',
+      'San Carlos de Bariloche',
+      'Cipolletti',
+      'El Bolsón'
+    ],
+    'Argentina|La Rioja': ['La Rioja', 'Chilecito'],
+    'Argentina|San Luis': ['San Luis', 'Villa Mercedes', 'Merlo'],
+    'Argentina|Catamarca': [
+      'San Fernando del Valle de Catamarca',
+      'Andalgalá',
+      'Belén'
+    ],
+    'Argentina|La Pampa': ['Santa Rosa', 'General Pico'],
+    'Argentina|Chubut': [
+      'Comodoro Rivadavia',
+      'Rawson',
+      'Puerto Madryn',
+      'Trelew',
+      'Esquel'
+    ],
+    'Argentina|Santa Cruz': [
+      'Río Gallegos',
+      'Caleta Olivia',
+      'Pico Truncado',
+      'Puerto Deseado'
+    ],
+    'Argentina|Tierra del Fuego': ['Ushuaia', 'Río Grande', 'Tolhuin'],
+    'Argentina|Formosa': ['Formosa', 'Clorinda'],
+    'Brazil|São Paulo': [
+      'São Paulo',
+      'Guarulhos',
+      'Campinas',
+      'São Bernardo do Campo',
+      'Santo André',
+      'Osasco',
+      'Ribeirão Preto',
+      'São José dos Campos',
+      'Sorocaba',
+      'Santos',
+      'Mauá',
+      'Diadema',
+      'Jundiaí',
+      'Piracicaba',
+      'Bauru',
+      'Mogi das Cruzes',
+      'Franca'
+    ],
+    'Brazil|Rio de Janeiro': [
+      'Rio de Janeiro',
+      'São Gonçalo',
+      'Duque de Caxias',
+      'Nova Iguaçu',
+      'Niterói',
+      'Belford Roxo',
+      'Campos dos Goytacazes',
+      'Petrópolis',
+      'Volta Redonda',
+      'Macaé'
+    ],
+    'Brazil|Minas Gerais': [
+      'Belo Horizonte',
+      'Uberlândia',
+      'Contagem',
+      'Juiz de Fora',
+      'Betim',
+      'Montes Claros',
+      'Uberaba',
+      'Governador Valadares',
+      'Ipatinga'
+    ],
+    'Brazil|Bahia': [
+      'Salvador',
+      'Feira de Santana',
+      'Vitória da Conquista',
+      'Camaçari',
+      'Juazeiro',
+      'Ilhéus',
+      'Lauro de Freitas'
+    ],
+    'Brazil|Rio Grande do Sul': [
+      'Porto Alegre',
+      'Caxias do Sul',
+      'Canoas',
+      'Pelotas',
+      'Santa Maria',
+      'Novo Hamburgo',
+      'São Leopoldo',
+      'Gravataí',
+      'Passo Fundo'
+    ],
+    'Brazil|Paraná': [
+      'Curitiba',
+      'Londrina',
+      'Maringá',
+      'Ponta Grossa',
+      'Cascavel',
+      'Foz do Iguaçu',
+      'São José dos Pinhais',
+      'Colombo'
+    ],
+    'Brazil|Santa Catarina': [
+      'Florianópolis',
+      'Joinville',
+      'Blumenau',
+      'São José',
+      'Chapecó',
+      'Criciúma',
+      'Itajaí'
+    ],
+    'Brazil|Pernambuco': [
+      'Recife',
+      'Caruaru',
+      'Olinda',
+      'Paulista',
+      'Petrolina',
+      'Jaboatão dos Guararapes'
+    ],
+    'Brazil|Ceará': [
+      'Fortaleza',
+      'Juazeiro do Norte',
+      'Caucaia',
+      'Maracanaú',
+      'Sobral',
+      'Crato'
+    ],
+    'Brazil|Goiás': [
+      'Goiânia',
+      'Aparecida de Goiânia',
+      'Anápolis',
+      'Rio Verde'
+    ],
+    'Brazil|Amazonas': ['Manaus', 'Parintins', 'Itacoatiara', 'Manacapuru'],
+    'Brazil|Pará': ['Belém', 'Ananindeua', 'Santarém', 'Marabá', 'Castanhal'],
+    'Brazil|Maranhão': [
+      'São Luís',
+      'Imperatriz',
+      'São José de Ribamar',
+      'Timon'
+    ],
+    'Brazil|Mato Grosso do Sul': [
+      'Campo Grande',
+      'Dourados',
+      'Três Lagoas',
+      'Corumbá'
+    ],
+    'Brazil|Mato Grosso': ['Cuiabá', 'Várzea Grande', 'Rondonópolis', 'Sinop'],
+    'Brazil|Espírito Santo': ['Vitória', 'Serra', 'Vila Velha', 'Cariacica'],
+    'Brazil|Distrito Federal': [
+      'Brasília',
+      'Ceilândia',
+      'Taguatinga',
+      'Samambaia'
+    ],
+    'Mexico|Ciudad de México': [
+      'Ciudad de México',
+      'Álvaro Obregón',
+      'Azcapotzalco',
+      'Benito Juárez',
+      'Coyoacán',
+      'Cuauhtémoc',
+      'Gustavo A. Madero',
+      'Iztapalapa',
+      'Iztacalco',
+      'Miguel Hidalgo',
+      'Tlalpan',
+      'Xochimilco'
+    ],
+    'Mexico|Jalisco': [
+      'Guadalajara',
+      'Zapopan',
+      'Tlaquepaque',
+      'Tonalá',
+      'Tlajomulco de Zúñiga',
+      'Puerto Vallarta',
+      'Lagos de Moreno'
+    ],
+    'Mexico|Nuevo León': [
+      'Monterrey',
+      'Guadalupe',
+      'Apodaca',
+      'San Nicolás de los Garza',
+      'Escobedo',
+      'Santa Catarina',
+      'San Pedro Garza García'
+    ],
+    'Mexico|Estado de México': [
+      'Ecatepec',
+      'Naucalpan',
+      'Nezahualcóyotl',
+      'Chimalhuacán',
+      'Toluca',
+      'Tlalnepantla',
+      'Ixtapaluca',
+      'Tecámac',
+      'Cuautitlán Izcalli'
+    ],
+    'Mexico|Veracruz': [
+      'Veracruz',
+      'Xalapa',
+      'Boca del Río',
+      'Coatzacoalcos',
+      'Córdoba',
+      'Orizaba',
+      'Poza Rica'
+    ],
+    'Mexico|Puebla': ['Puebla', 'Tehuacán', 'Atlixco', 'Cholula'],
+    'Mexico|Guanajuato': [
+      'León',
+      'Irapuato',
+      'Celaya',
+      'Salamanca',
+      'Guanajuato'
+    ],
+    'Mexico|Chihuahua': [
+      'Ciudad Juárez',
+      'Chihuahua',
+      'Delicias',
+      'Cuauhtémoc'
+    ],
+    'Mexico|Coahuila': ['Torreón', 'Saltillo', 'Monclova', 'Piedras Negras'],
+    'Mexico|Tamaulipas': ['Reynosa', 'Matamoros', 'Nuevo Laredo', 'Tampico'],
+    'Mexico|Sonora': ['Hermosillo', 'Ciudad Obregón', 'Nogales', 'Guaymas'],
+    'Mexico|Sinaloa': ['Culiacán', 'Mazatlán', 'Guasave'],
+    'Mexico|Baja California': ['Tijuana', 'Mexicali', 'Ensenada', 'Tecate'],
+    'Mexico|Michoacán': ['Morelia', 'Uruapan', 'Zamora', 'Lázaro Cárdenas'],
+    'Mexico|Oaxaca': [
+      'Oaxaca de Juárez',
+      'Juchitán de Zaragoza',
+      'Salina Cruz'
+    ],
+    'Mexico|Chiapas': [
+      'Tuxtla Gutiérrez',
+      'San Cristóbal de las Casas',
+      'Tapachula'
+    ],
+    'Mexico|Guerrero': ['Acapulco', 'Chilpancingo', 'Iguala', 'Taxco'],
+    'Mexico|Yucatán': ['Mérida', 'Valladolid', 'Progreso'],
+    'Colombia|Antioquia': [
+      'Medellín',
+      'Bello',
+      'Envigado',
+      'Itagüí',
+      'Rionegro',
+      'Apartadó',
+      'Turbo',
+      'Caucasia',
+      'Sabaneta'
+    ],
+    'Colombia|Bogotá D.C.': [
+      'Bogotá',
+      'Suba',
+      'Engativá',
+      'Kennedy',
+      'Usaquén',
+      'Chapinero',
+      'Fontibón',
+      'Bosa'
+    ],
+    'Colombia|Valle del Cauca': [
+      'Cali',
+      'Buenaventura',
+      'Palmira',
+      'Tulúa',
+      'Buga',
+      'Cartago',
+      'Yumbo',
+      'Jamundí'
+    ],
+    'Colombia|Atlántico': ['Barranquilla', 'Soledad', 'Malambo', 'Sabanalarga'],
+    'Colombia|Bolívar': [
+      'Cartagena',
+      'Magangué',
+      'El Carmen de Bolívar',
+      'Turbaco'
+    ],
+    'Colombia|Santander': [
+      'Bucaramanga',
+      'Floridablanca',
+      'Girón',
+      'Piedecuesta',
+      'Barrancabermeja'
+    ],
+    'Colombia|Cundinamarca': [
+      'Soacha',
+      'Fusagasugá',
+      'Zipaquirá',
+      'Chía',
+      'Mosquera',
+      'Facatativá',
+      'Madrid'
+    ],
+    'Colombia|Norte de Santander': [
+      'Cúcuta',
+      'Ocaña',
+      'Pamplona',
+      'Villa del Rosario',
+      'Los Patios'
+    ],
+    'Colombia|Tolima': ['Ibagué', 'Espinal', 'Melgar', 'Honda'],
+    'Colombia|Nariño': ['Pasto', 'Tumaco', 'Ipiales'],
+    'Colombia|Huila': ['Neiva', 'Pitalito', 'Garzón'],
+    'Colombia|Magdalena': ['Santa Marta', 'Ciénaga', 'El Banco', 'Fundación'],
+    'Colombia|Caldas': ['Manizales', 'Villamaría', 'La Dorada'],
+    'Colombia|Risaralda': ['Pereira', 'Dosquebradas', 'Santa Rosa de Cabal'],
+    'Colombia|Quindío': ['Armenia', 'Calarcá', 'Montenegro'],
+    'Colombia|Meta': ['Villavicencio', 'Granada', 'Acacías'],
+    'Colombia|Cesar': ['Valledupar', 'Aguachica', 'Codazzi'],
+    'Colombia|La Guajira': ['Riohacha', 'Maicao', 'Uribia'],
+    'Colombia|Boyacá': ['Tunja', 'Duitama', 'Sogamoso'],
+    'Venezuela|Distrito Capital': ['Caracas'],
+    'Venezuela|Miranda': [
+      'Los Teques',
+      'Guarenas',
+      'Guatire',
+      'Ocumare del Tuy',
+      'Santa Teresa del Tuy',
+      'Charallave'
+    ],
+    'Venezuela|Carabobo': [
+      'Valencia',
+      'Puerto Cabello',
+      'Guacara',
+      'San Diego',
+      'Los Guayos',
+      'Naguanagua'
+    ],
+    'Venezuela|Aragua': [
+      'Maracay',
+      'Turmero',
+      'La Victoria',
+      'Cagua',
+      'El Limón'
+    ],
+    'Venezuela|Lara': ['Barquisimeto', 'Carora', 'El Tocuyo'],
+    'Venezuela|Zulia': [
+      'Maracaibo',
+      'Cabimas',
+      'Ciudad Ojeda',
+      'San Francisco',
+      'Lagunillas'
+    ],
+    'Venezuela|Bolívar': [
+      'Ciudad Bolívar',
+      'Ciudad Guayana',
+      'San Félix',
+      'Puerto Ordaz',
+      'Upata'
+    ],
+    'Venezuela|Anzoátegui': [
+      'Barcelona',
+      'Lecherías',
+      'El Tigre',
+      'Puerto La Cruz',
+      'Anaco'
+    ],
+    'Venezuela|Sucre': ['Cumaná', 'Carúpano', 'Güiria'],
+    'Venezuela|Táchira': ['San Cristóbal', 'Táriba', 'Rubio'],
+    'Venezuela|Mérida': ['Mérida', 'El Vigía', 'Tovar'],
+    'Venezuela|Monagas': ['Maturín', 'Caripito'],
+    'Venezuela|Falcón': ['Coro', 'Punto Fijo', 'La Vela de Coro'],
+    'Venezuela|Nueva Esparta': ['La Asunción', 'Porlamar', 'Pampatar'],
+    'Chile|Región Metropolitana de Santiago': [
+      'Santiago',
+      'Maipú',
+      'La Florida',
+      'Puente Alto',
+      'Las Condes',
+      'Ñuñoa',
+      'Quilicura',
+      'San Bernardo',
+      'Peñalolén',
+      'La Pintana',
+      'Renca',
+      'Pudahuel'
+    ],
+    'Chile|Valparaíso': [
+      'Valparaíso',
+      'Viña del Mar',
+      'Quilpué',
+      'San Antonio',
+      'Villa Alemana',
+      'Quillota',
+      'Los Andes'
+    ],
+    'Chile|Biobío': [
+      'Concepción',
+      'Talcahuano',
+      'San Pedro de la Paz',
+      'Hualpén',
+      'Chillán',
+      'Los Ángeles',
+      'Coronel'
+    ],
+    'Chile|La Araucanía': ['Temuco', 'Padre Las Casas', 'Villarrica', 'Angol'],
+    'Chile|Los Lagos': ['Puerto Montt', 'Osorno', 'Castro', 'Puerto Varas'],
+    'Chile|Antofagasta': ['Antofagasta', 'Calama', 'Tocopilla'],
+    'Chile|Coquimbo': ['La Serena', 'Coquimbo', 'Ovalle'],
+    'Chile|O\'Higgins': ['Rancagua', 'San Fernando', 'Pichilemu'],
+    'Chile|Maule': ['Talca', 'Curicó', 'Linares'],
+    'Chile|Arica y Parinacota': ['Arica'],
+    'Chile|Tarapacá': ['Iquique', 'Alto Hospicio'],
+    'Peru|Lima': [
+      'Lima',
+      'Callao',
+      'San Juan de Lurigancho',
+      'San Martín de Porres',
+      'Ate',
+      'Comas',
+      'Villa El Salvador',
+      'Los Olivos',
+      'Puente Piedra',
+      'Chorrillos',
+      'Independencia'
+    ],
+    'Peru|Arequipa': [
+      'Arequipa',
+      'Cayma',
+      'Cerro Colorado',
+      'Socabaya',
+      'Paucarpata'
+    ],
+    'Peru|La Libertad': [
+      'Trujillo',
+      'Huanchaco',
+      'El Porvenir',
+      'La Esperanza'
+    ],
+    'Peru|Piura': ['Piura', 'Sullana', 'Castilla', 'Talara', 'Paita'],
+    'Peru|Cusco': ['Cusco', 'San Sebastián', 'Wanchaq', 'Santiago'],
+    'Peru|Junín': ['Huancayo', 'El Tambo', 'Chilca', 'Satipo'],
+    'Peru|Lambayeque': ['Chiclayo', 'José Leonardo Ortiz', 'La Victoria'],
+    'Peru|Ica': ['Ica', 'Chincha Alta', 'Pisco', 'Nazca'],
+    'Peru|Loreto': ['Iquitos', 'Yurimaguas'],
+    'Peru|Puno': ['Puno', 'Juliaca', 'Ilave'],
+    'Ecuador|Pichincha': ['Quito', 'Cayambe', 'Sangolquí', 'Machachi'],
+    'Ecuador|Guayas': [
+      'Guayaquil',
+      'Durán',
+      'Milagro',
+      'Samborondón',
+      'Playas'
+    ],
+    'Ecuador|Azuay': ['Cuenca', 'Gualaceo', 'Paute'],
+    'Ecuador|Manabí': ['Portoviejo', 'Manta', 'Chone', 'El Carmen'],
+    'Ecuador|El Oro': ['Machala', 'Pasaje', 'Santa Rosa', 'Huaquillas'],
+    'Ecuador|Tungurahua': ['Ambato', 'Baños', 'Pelileo'],
+    'Ecuador|Imbabura': ['Ibarra', 'Otavalo', 'Cotacachi'],
+    'Ecuador|Loja': ['Loja', 'Catamayo'],
+    'Ecuador|Santa Elena': ['Santa Elena', 'La Libertad', 'Salinas'],
+    'Bolivia|La Paz': ['La Paz', 'El Alto', 'Viacha', 'Copacabana', 'Caranavi'],
+    'Bolivia|Santa Cruz': [
+      'Santa Cruz de la Sierra',
+      'Montero',
+      'Warnes',
+      'Camiri',
+      'Cotoca'
+    ],
+    'Bolivia|Cochabamba': [
+      'Cochabamba',
+      'Sacaba',
+      'Quillacollo',
+      'Tiquipaya',
+      'Colcapirhua'
+    ],
+    'Bolivia|Oruro': ['Oruro', 'Llallagua'],
+    'Bolivia|Potosí': ['Potosí', 'Uyuni', 'Tupiza'],
+    'Bolivia|Chuquisaca': ['Sucre', 'Camargo'],
+    'Bolivia|Tarija': ['Tarija', 'Yacuiba', 'Bermejo'],
+    'Paraguay|Central': [
+      'Luque',
+      'San Lorenzo',
+      'Capiatá',
+      'Lambaré',
+      'Fernando de la Mora',
+      'Mariano Roque Alonso',
+      'Ñemby',
+      'Limpio'
+    ],
+    'Paraguay|Asunción': ['Asunción'],
+    'Paraguay|Alto Paraná': [
+      'Ciudad del Este',
+      'Presidente Franco',
+      'Hernandarias'
+    ],
+    'Paraguay|Itapúa': ['Encarnación'],
+    'Paraguay|Caaguazú': ['Coronel Oviedo', 'Caaguazú'],
+    'Uruguay|Montevideo': [
+      'Montevideo',
+      'Ciudad Vieja',
+      'Pocitos',
+      'Punta Carretas',
+      'Malvín',
+      'Carrasco',
+      'Prado'
+    ],
+    'Uruguay|Canelones': [
+      'Las Piedras',
+      'La Paz',
+      'Pando',
+      'Progreso',
+      'Santa Lucía'
+    ],
+    'Uruguay|Maldonado': [
+      'Maldonado',
+      'Punta del Este',
+      'San Carlos',
+      'Piriápolis'
+    ],
+    'Uruguay|Salto': ['Salto'],
+    'Uruguay|Paysandú': ['Paysandú'],
+    'Uruguay|Rivera': ['Rivera'],
+    'Uruguay|Colonia': ['Colonia del Sacramento', 'Juan Lacaze', 'Carmelo'],
+    'Spain|Madrid': [
+      'Madrid',
+      'Móstoles',
+      'Alcalá de Henares',
+      'Fuenlabrada',
+      'Leganés',
+      'Getafe',
+      'Alcorcón',
+      'Torrejón de Ardoz',
+      'Parla',
+      'Alcobendas',
+      'Pozuelo de Alarcón'
+    ],
+    'Spain|Barcelona': [
+      'Barcelona',
+      'L\'Hospitalet de Llobregat',
+      'Badalona',
+      'Terrassa',
+      'Sabadell',
+      'Mataró',
+      'Santa Coloma de Gramenet',
+      'Cornellà de Llobregat',
+      'Rubí'
+    ],
+    'Spain|Valencia': [
+      'Valencia',
+      'Alicante',
+      'Elche',
+      'Torrent',
+      'Castellón de la Plana',
+      'Alcoy',
+      'Orihuela',
+      'Gandia'
+    ],
+    'Spain|Sevilla': [
+      'Sevilla',
+      'Dos Hermanas',
+      'Alcalá de Guadaíra',
+      'Jerez de la Frontera',
+      'Utrera'
+    ],
+    'Spain|Málaga': [
+      'Málaga',
+      'Marbella',
+      'Fuengirola',
+      'Torremolinos',
+      'Vélez-Málaga',
+      'Estepona'
+    ],
+    'Spain|Murcia': ['Murcia', 'Cartagena', 'Lorca', 'Molina de Segura'],
+    'Spain|Vizcaya': ['Bilbao', 'Barakaldo', 'Getxo', 'Basauri', 'Portugalete'],
+    'Spain|Guipúzcoa': ['San Sebastián', 'Irun', 'Errenteria'],
+    'Spain|Zaragoza': ['Zaragoza', 'Calatayud'],
+    'Spain|Asturias': ['Oviedo', 'Gijón', 'Avilés'],
+    'Spain|Cantabria': ['Santander', 'Torrelavega'],
+    'Spain|Navarra': ['Pamplona', 'Tudela'],
+    'Spain|La Rioja': ['Logroño', 'Calahorra'],
+    'Spain|Baleares': ['Palma', 'Ibiza', 'Maó'],
+    'Spain|Las Palmas': ['Las Palmas de Gran Canaria', 'Telde', 'Arrecife'],
+    'Spain|Santa Cruz de Tenerife': [
+      'Santa Cruz de Tenerife',
+      'San Cristóbal de La Laguna',
+      'Arona'
+    ],
+    'Portugal|Lisboa': [
+      'Lisboa',
+      'Sintra',
+      'Cascais',
+      'Loures',
+      'Odivelas',
+      'Amadora',
+      'Almada',
+      'Setúbal',
+      'Seixal'
+    ],
+    'Portugal|Porto': [
+      'Porto',
+      'Vila Nova de Gaia',
+      'Matosinhos',
+      'Gondomar',
+      'Maia',
+      'Valongo'
+    ],
+    'Portugal|Braga': ['Braga', 'Guimarães', 'Barcelos'],
+    'Portugal|Faro': ['Faro', 'Loulé', 'Portimão', 'Lagos', 'Olhão'],
+    'Portugal|Aveiro': ['Aveiro', 'Oliveira de Azeméis', 'São João da Madeira'],
+    'Portugal|Madeira': ['Funchal', 'Câmara de Lobos'],
+    'Portugal|Açores': ['Ponta Delgada', 'Angra do Heroísmo'],
+    'Costa Rica|San José': [
+      'San José',
+      'Desamparados',
+      'Alajuelita',
+      'Aserrí',
+      'Curridabat',
+      'Tibás',
+      'Goicoechea',
+      'Escazú',
+      'Santa Ana'
+    ],
+    'Costa Rica|Alajuela': [
+      'Alajuela',
+      'San Carlos',
+      'Grecia',
+      'Atenas',
+      'Naranjo'
+    ],
+    'Costa Rica|Cartago': ['Cartago', 'El Guarco', 'La Unión', 'Turrialba'],
+    'Costa Rica|Heredia': ['Heredia', 'San Rafael', 'Santa Bárbara', 'Belén'],
+    'Costa Rica|Guanacaste': ['Liberia', 'Nicoya', 'Santa Cruz'],
+    'Costa Rica|Puntarenas': ['Puntarenas', 'Quepos'],
+    'Costa Rica|Limón': ['Limón', 'Pococí', 'Siquirres'],
+    'Guatemala|Guatemala': [
+      'Guatemala City',
+      'Mixco',
+      'Villa Nueva',
+      'San Juan Sacatepéquez',
+      'Chinautla',
+      'Petapa'
+    ],
+    'Guatemala|Quetzaltenango': ['Quetzaltenango', 'Coatepeque'],
+    'Guatemala|Alta Verapaz': ['Cobán', 'Chisec'],
+    'Guatemala|Izabal': ['Puerto Barrios', 'Morales', 'Livingston'],
+    'Guatemala|Petén': ['Flores', 'Santa Elena'],
+    'Guatemala|Sacatepéquez': ['Antigua Guatemala', 'Jocotenango'],
+    'Honduras|Francisco Morazán': ['Tegucigalpa', 'Comayagüela'],
+    'Honduras|Cortés': [
+      'San Pedro Sula',
+      'Puerto Cortés',
+      'Villanueva',
+      'Choloma',
+      'La Lima'
+    ],
+    'Honduras|Atlántida': ['La Ceiba', 'El Progreso', 'Tela'],
+    'Honduras|Comayagua': ['Comayagua', 'Siguatepeque'],
+    'Honduras|El Paraíso': ['Danlí', 'El Paraíso'],
+    'El Salvador|San Salvador': [
+      'San Salvador',
+      'Soyapango',
+      'Mejicanos',
+      'Apopa',
+      'Ciudad Delgado',
+      'Santa Tecla',
+      'Antiguo Cuscatlán',
+      'Ilopango',
+      'San Marcos'
+    ],
+    'El Salvador|Santa Ana': ['Santa Ana', 'Chalchuapa', 'Coatepeque'],
+    'El Salvador|San Miguel': ['San Miguel'],
+    'El Salvador|Sonsonate': ['Sonsonate', 'Acajutla', 'Armenia'],
+    'Panama|Panamá': [
+      'Ciudad de Panamá',
+      'San Miguelito',
+      'Tocumen',
+      'Arraiján',
+      'La Chorrera'
+    ],
+    'Panama|Panamá Oeste': ['La Chorrera', 'Arraiján'],
+    'Panama|Colón': ['Colón', 'Portobelo'],
+    'Panama|Chiriquí': ['David', 'Boquete', 'La Concepción'],
+    'Dominican Republic|Distrito Nacional': ['Santo Domingo'],
+    'Dominican Republic|Santo Domingo': [
+      'Santo Domingo Este',
+      'Santo Domingo Norte',
+      'Santo Domingo Oeste',
+      'Boca Chica'
+    ],
+    'Dominican Republic|Santiago': ['Santiago de los Caballeros', 'Moca'],
+    'Dominican Republic|La Altagracia': ['Higüey'],
+    'Dominican Republic|La Vega': [
+      'La Vega',
+      'Jarabacoa',
+      'Constanza',
+      'Bonao'
+    ],
+    'Dominican Republic|San Pedro de Macorís': ['San Pedro de Macorís'],
+    'Dominican Republic|Puerto Plata': ['Puerto Plata', 'Sosúa', 'Cabarete'],
+    'United States|Florida': [
+      'Miami',
+      'Orlando',
+      'Tampa',
+      'Jacksonville',
+      'St. Petersburg',
+      'Hialeah',
+      'Fort Lauderdale',
+      'Cape Coral'
+    ],
+    'United States|California': [
+      'Los Angeles',
+      'San Diego',
+      'San Jose',
+      'San Francisco',
+      'Fresno',
+      'Sacramento',
+      'Long Beach',
+      'Oakland',
+      'Bakersfield'
+    ],
+    'United States|Texas': [
+      'Houston',
+      'San Antonio',
+      'Dallas',
+      'Austin',
+      'Fort Worth',
+      'El Paso',
+      'Arlington',
+      'Corpus Christi',
+      'Laredo'
+    ],
+    'United States|New York': [
+      'New York City',
+      'Buffalo',
+      'Rochester',
+      'Yonkers',
+      'Syracuse',
+      'Albany'
+    ],
+    'United States|Illinois': [
+      'Chicago',
+      'Aurora',
+      'Naperville',
+      'Joliet',
+      'Rockford',
+      'Springfield'
+    ],
+    'Italy|Lombardia': [
+      'Milano',
+      'Brescia',
+      'Bergamo',
+      'Monza',
+      'Como',
+      'Varese'
+    ],
+    'Italy|Lazio': ['Roma', 'Latina', 'Frosinone', 'Viterbo'],
+    'Italy|Campania': [
+      'Napoli',
+      'Salerno',
+      'Torre del Greco',
+      'Pozzuoli',
+      'Caserta'
+    ],
+    'Italy|Sicilia': [
+      'Palermo',
+      'Catania',
+      'Messina',
+      'Siracusa',
+      'Ragusa',
+      'Agrigento'
+    ],
+    'Italy|Piemonte': ['Torino', 'Novara', 'Alessandria', 'Asti', 'Cuneo'],
+    'Italy|Veneto': ['Venezia', 'Verona', 'Padova', 'Vicenza', 'Treviso'],
+    'Italy|Emilia-Romagna': [
+      'Bologna',
+      'Modena',
+      'Reggio nell\'Emilia',
+      'Parma',
+      'Ferrara',
+      'Ravenna',
+      'Rimini'
+    ],
+    'Italy|Toscana': ['Firenze', 'Prato', 'Livorno', 'Pisa', 'Arezzo'],
+    'Italy|Puglia': ['Bari', 'Taranto', 'Foggia', 'Lecce'],
+    'Germany|North Rhine-Westphalia': [
+      'Köln',
+      'Düsseldorf',
+      'Dortmund',
+      'Essen',
+      'Duisburg',
+      'Bochum',
+      'Wuppertal',
+      'Bielefeld',
+      'Bonn',
+      'Münster'
+    ],
+    'Germany|Bavaria': [
+      'München',
+      'Nürnberg',
+      'Augsburg',
+      'Würzburg',
+      'Regensburg'
+    ],
+    'Germany|Baden-Württemberg': [
+      'Stuttgart',
+      'Mannheim',
+      'Karlsruhe',
+      'Freiburg im Breisgau',
+      'Heidelberg'
+    ],
+    'Germany|Hesse': ['Frankfurt am Main', 'Wiesbaden', 'Kassel', 'Darmstadt'],
+    'Germany|Saxony': ['Leipzig', 'Dresden', 'Chemnitz'],
+    'Germany|Berlin': [
+      'Berlin',
+      'Mitte',
+      'Kreuzberg',
+      'Prenzlauer Berg',
+      'Charlottenburg',
+      'Neukölln'
+    ],
+    'Germany|Hamburg': ['Hamburg', 'Wandsbek', 'Altona'],
+    'France|Île-de-France': [
+      'Paris',
+      'Boulogne-Billancourt',
+      'Saint-Denis',
+      'Argenteuil',
+      'Montreuil',
+      'Nanterre',
+      'Versailles',
+      'Créteil'
+    ],
+    'France|Auvergne-Rhône-Alpes': [
+      'Lyon',
+      'Grenoble',
+      'Saint-Étienne',
+      'Villeurbanne',
+      'Clermont-Ferrand'
+    ],
+    'France|Nouvelle-Aquitaine': [
+      'Bordeaux',
+      'Limoges',
+      'Pau',
+      'La Rochelle',
+      'Poitiers'
+    ],
+    'France|Occitanie': ['Toulouse', 'Montpellier', 'Nîmes', 'Perpignan'],
+    'France|Hauts-de-France': ['Lille', 'Amiens', 'Dunkerque', 'Roubaix'],
+    'France|Provence-Alpes-Côte d\'Azur': [
+      'Marseille',
+      'Nice',
+      'Toulon',
+      'Aix-en-Provence',
+      'Avignon'
+    ],
+    'United Kingdom|England': [
+      'London',
+      'Birmingham',
+      'Leeds',
+      'Sheffield',
+      'Manchester',
+      'Liverpool',
+      'Bristol',
+      'Coventry',
+      'Newcastle',
+      'Nottingham',
+      'Leicester'
+    ],
+    'United Kingdom|Scotland': ['Glasgow', 'Edinburgh', 'Aberdeen', 'Dundee'],
+    'United Kingdom|Wales': ['Cardiff', 'Swansea', 'Newport'],
+    'United Kingdom|Northern Ireland': ['Belfast', 'Londonderry'],
+  };
+
+  List<String> _getHardcodedCities(String apiCountryName, String stateName) {
+    return _hardcodedCities['$apiCountryName|$stateName'] ?? [];
+  }
+
+  List<String> _getHardcodedCitiesForCountry(String apiCountryName) {
+    final cities = <String>{};
+    for (final entry in _hardcodedCities.entries) {
+      if (entry.key.startsWith('$apiCountryName|')) {
+        cities.addAll(entry.value);
+      }
+    }
+    final list = cities.toList()..sort();
+    return list;
+  }
+
   Future<void> _initializeLocationDropdowns() async {
     final country = normalizeCountryName(_countryController?.text);
     if (country.isEmpty) return;
@@ -524,12 +2292,38 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       _isCitiesLoading = false;
     });
 
+    // Check hardcoded list first (instant, offline)
+    final hardcoded = _hardcodedStates[apiName] ?? [];
+    if (hardcoded.isNotEmpty) {
+      final matchedState = hardcoded.cast<String?>().firstWhere(
+            (s) =>
+                normalizeLookupKey(s) == normalizeLookupKey(preferredStateText),
+            orElse: () => null,
+          );
+      final selectedState = matchedState ??
+          (preferredStateText.isNotEmpty ? preferredStateText : null);
+      if (!mounted) return;
+      setState(() {
+        _states = hardcoded;
+        _isStatesLoading = false;
+        _selectedState = selectedState;
+        _stateController?.text = selectedState ?? '';
+      });
+      if (selectedState != null) {
+        await _loadCitiesByState(countryName, selectedState,
+            preferredCity: preferredCityText);
+      }
+      return;
+    }
+
     try {
-      final response = await http.post(
-        Uri.parse('https://countriesnow.space/api/v0.1/countries/states'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'country': apiName}),
-      );
+      final response = await http
+          .post(
+            Uri.parse('https://countriesnow.space/api/v0.1/countries/states'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'country': apiName}),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -616,12 +2410,40 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       _cities = [];
     });
 
+    // Check hardcoded list first (instant, offline)
+    final hardcodedForCountry = _getHardcodedCitiesForCountry(apiCountryName);
+    if (hardcodedForCountry.isNotEmpty) {
+      final matchedCity = hardcodedForCountry.cast<String?>().firstWhere(
+            (c) =>
+                normalizeLookupKey(c) == normalizeLookupKey(preferredCityText),
+            orElse: () => null,
+          );
+      final selectedCity = matchedCity ??
+          (preferredCityText.isNotEmpty ? preferredCityText : null);
+      if (!mounted) return;
+      setState(() {
+        final list = List<String>.from(hardcodedForCountry);
+        if (selectedCity != null &&
+            !list.any((c) =>
+                normalizeLookupKey(c) == normalizeLookupKey(selectedCity))) {
+          list.insert(0, selectedCity);
+        }
+        _cities = list;
+        _selectedCity = selectedCity;
+        _cityController?.text = selectedCity ?? '';
+        _isCitiesLoading = false;
+      });
+      return;
+    }
+
     try {
-      final response = await http.post(
-        Uri.parse('https://countriesnow.space/api/v0.1/countries/cities'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'country': apiCountryName}),
-      );
+      final response = await http
+          .post(
+            Uri.parse('https://countriesnow.space/api/v0.1/countries/cities'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'country': apiCountryName}),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -696,12 +2518,41 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
 
     final apiName = _toApiCountryName(countryName);
 
+    // Check hardcoded list first (instant, offline)
+    final hardcodedForState = _getHardcodedCities(apiName, stateName);
+    if (hardcodedForState.isNotEmpty) {
+      final matchedCity = hardcodedForState.cast<String?>().firstWhere(
+            (c) =>
+                normalizeLookupKey(c) == normalizeLookupKey(preferredCityText),
+            orElse: () => null,
+          );
+      final selectedCity = matchedCity ??
+          (preferredCityText.isNotEmpty ? preferredCityText : null);
+      if (!mounted) return;
+      setState(() {
+        final list = List<String>.from(hardcodedForState);
+        if (selectedCity != null &&
+            !list.any((c) =>
+                normalizeLookupKey(c) == normalizeLookupKey(selectedCity))) {
+          list.insert(0, selectedCity);
+        }
+        _cities = list;
+        _selectedCity = selectedCity;
+        _cityController?.text = selectedCity ?? '';
+        _isCitiesLoading = false;
+      });
+      return;
+    }
+
     try {
-      final response = await http.post(
-        Uri.parse('https://countriesnow.space/api/v0.1/countries/state/cities'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'country': apiName, 'state': stateName}),
-      );
+      final response = await http
+          .post(
+            Uri.parse(
+                'https://countriesnow.space/api/v0.1/countries/state/cities'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'country': apiName, 'state': stateName}),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -1768,6 +3619,96 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     );
   }
 
+  Widget _buildSearchableField({
+    required String label,
+    required String hintText,
+    required String? value,
+    required bool enabled,
+    required ValueChanged<String> onSelected,
+    required List<String> items,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w500,
+                fontSize: 14,
+                color: const Color(0xFF1A202C),
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: enabled
+                ? () => _showSearchableBottomSheet(
+                      title: hintText,
+                      items: items,
+                      onSelected: onSelected,
+                    )
+                : null,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(
+                    color: enabled
+                        ? const Color(0xFFA0AEC0)
+                        : const Color(0xFFE2E8F0)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      value ?? hintText,
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        color: value != null
+                            ? const Color(0xFF1A202C)
+                            : const Color(0xFF718096),
+                      ),
+                    ),
+                  ),
+                  const Icon(Icons.arrow_drop_down, color: Color(0xFF718096)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSearchableBottomSheet({
+    required String title,
+    required List<String> items,
+    required ValueChanged<String> onSelected,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return _SearchableListSheet(
+          title: title,
+          items: items,
+          onSelected: (v) {
+            onSelected(v);
+            Navigator.pop(ctx);
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildSectionTitle(String title, {String? subtitle}) {
     return Padding(
       padding: const EdgeInsets.only(top: 28.0, bottom: 8.0),
@@ -2042,43 +3983,39 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               _loadStates(country);
             },
             options: _countryOptions),
-        _buildDropdownField(
+        _buildSearchableField(
             label: 'Estado / provincia',
             hintText: _isStatesLoading
                 ? 'Cargando estados...'
                 : 'Selecciona tu estado',
             value: _states.contains(_selectedState) ? _selectedState : null,
-            onChanged: _isStatesLoading
-                ? (_) {}
-                : (value) {
-                    setState(() {
-                      _selectedState = value;
-                      _stateController?.text = value ?? '';
-                    });
-                    final country =
-                        normalizeCountryName(_countryController?.text);
-                    if (country.isNotEmpty &&
-                        value != null &&
-                        value.isNotEmpty) {
-                      _loadCitiesByState(country, value);
-                    }
-                  },
-            options: _states),
-        _buildDropdownField(
+            enabled: !_isStatesLoading && _states.isNotEmpty,
+            onSelected: (value) {
+              setState(() {
+                _selectedState = value;
+                _stateController?.text = value;
+                _isCitiesLoading = true;
+              });
+              final country = normalizeCountryName(_countryController?.text);
+              if (country.isNotEmpty && value.isNotEmpty) {
+                _loadCitiesByState(country, value);
+              }
+            },
+            items: _states),
+        _buildSearchableField(
             label: 'Ciudad',
             hintText: _isCitiesLoading
                 ? 'Cargando ciudades...'
                 : 'Selecciona tu ciudad',
             value: _cities.contains(_selectedCity) ? _selectedCity : null,
-            onChanged: _isCitiesLoading
-                ? (_) {}
-                : (value) {
-                    setState(() {
-                      _selectedCity = value;
-                      _cityController?.text = value ?? '';
-                    });
-                  },
-            options: _cities),
+            enabled: !_isCitiesLoading && _cities.isNotEmpty,
+            onSelected: (value) {
+              setState(() {
+                _selectedCity = value;
+                _cityController?.text = value;
+              });
+            },
+            items: _cities),
         _buildDropdownField(
             label: 'Posición principal',
             hintText: 'Selecciona tu posición',
@@ -2180,43 +4117,39 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               _loadStates(country);
             },
             options: _countryOptions),
-        _buildDropdownField(
+        _buildSearchableField(
             label: 'Estado / provincia',
             hintText: _isStatesLoading
                 ? 'Cargando estados...'
                 : 'Selecciona tu estado',
             value: _states.contains(_selectedState) ? _selectedState : null,
-            onChanged: _isStatesLoading
-                ? (_) {}
-                : (value) {
-                    setState(() {
-                      _selectedState = value;
-                      _stateController?.text = value ?? '';
-                    });
-                    final country =
-                        normalizeCountryName(_countryController?.text);
-                    if (country.isNotEmpty &&
-                        value != null &&
-                        value.isNotEmpty) {
-                      _loadCitiesByState(country, value);
-                    }
-                  },
-            options: _states),
-        _buildDropdownField(
+            enabled: !_isStatesLoading && _states.isNotEmpty,
+            onSelected: (value) {
+              setState(() {
+                _selectedState = value;
+                _stateController?.text = value;
+                _isCitiesLoading = true;
+              });
+              final country = normalizeCountryName(_countryController?.text);
+              if (country.isNotEmpty && value.isNotEmpty) {
+                _loadCitiesByState(country, value);
+              }
+            },
+            items: _states),
+        _buildSearchableField(
             label: 'Ciudad',
             hintText: _isCitiesLoading
                 ? 'Cargando ciudades...'
                 : 'Selecciona tu ciudad',
             value: _cities.contains(_selectedCity) ? _selectedCity : null,
-            onChanged: _isCitiesLoading
-                ? (_) {}
-                : (value) {
-                    setState(() {
-                      _selectedCity = value;
-                      _cityController?.text = value ?? '';
-                    });
-                  },
-            options: _cities),
+            enabled: !_isCitiesLoading && _cities.isNotEmpty,
+            onSelected: (value) {
+              setState(() {
+                _selectedCity = value;
+                _cityController?.text = value;
+              });
+            },
+            items: _cities),
         _buildTextField(
             label: 'Fecha de nacimiento',
             controller: _birthdayController,
@@ -2628,6 +4561,102 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ===== SEARCHABLE LIST BOTTOM SHEET =====
+class _SearchableListSheet extends StatefulWidget {
+  final String title;
+  final List<String> items;
+  final ValueChanged<String> onSelected;
+
+  const _SearchableListSheet({
+    required this.title,
+    required this.items,
+    required this.onSelected,
+  });
+
+  @override
+  State<_SearchableListSheet> createState() => _SearchableListSheetState();
+}
+
+class _SearchableListSheetState extends State<_SearchableListSheet> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _query.isEmpty
+        ? widget.items
+        : widget.items
+            .where((i) => i.toLowerCase().contains(_query.toLowerCase()))
+            .toList();
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      maxChildSize: 0.9,
+      minChildSize: 0.3,
+      expand: false,
+      builder: (_, scrollController) => Column(
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              widget.title,
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF0D3B66),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Buscar...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              onChanged: (v) => setState(() => _query = v),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (filtered.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Text(
+                'Sin resultados para "$_query"',
+                style: TextStyle(color: Colors.grey[500]),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.builder(
+                controller: scrollController,
+                itemCount: filtered.length,
+                itemBuilder: (_, i) => ListTile(
+                  title: Text(filtered[i]),
+                  onTap: () => widget.onSelected(filtered[i]),
+                ),
+              ),
+            ),
         ],
       ),
     );

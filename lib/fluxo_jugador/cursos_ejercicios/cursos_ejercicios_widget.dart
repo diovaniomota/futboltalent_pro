@@ -1400,55 +1400,63 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
         FocusScope.of(context).unfocus();
         FocusManager.instance.primaryFocus?.unfocus();
       },
-      child: Scaffold(
-        key: scaffoldKey,
-        backgroundColor: Colors.white,
-        body: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: Color(0xFF0D3B66)))
-            : _errorMessage != null
-                ? _buildErrorState(context)
-                : Stack(
-                    children: [
-                      SafeArea(
-                        child: Column(
-                          children: [
-                            _buildHeader(context),
-                            SizedBox(height: 20 * scale),
-                            _buildFilters(context),
-                            SizedBox(height: 24 * scale),
-                            Expanded(
-                              child: _visibleCatalogItems.isEmpty
-                                  ? _buildEmptyState(context)
-                                  : _isLargeScreen(context)
-                                      ? _buildGridView(context)
-                                      : _buildCarousel(context),
-                            ),
-                            if (!_isLargeScreen(context) &&
-                                _currentPagedItemCount > 0)
-                              _buildPageIndicators(context),
-                            const SizedBox(height: 92),
-                          ],
+      child: PopScope(
+        canPop: !_shouldReturnToConvocatoria,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && _shouldReturnToConvocatoria) {
+            _handleChallengeDismissed();
+          }
+        },
+        child: Scaffold(
+          key: scaffoldKey,
+          backgroundColor: Colors.white,
+          body: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: Color(0xFF0D3B66)))
+              : _errorMessage != null
+                  ? _buildErrorState(context)
+                  : Stack(
+                      children: [
+                        SafeArea(
+                          child: Column(
+                            children: [
+                              _buildHeader(context),
+                              SizedBox(height: 20 * scale),
+                              _buildFilters(context),
+                              SizedBox(height: 24 * scale),
+                              Expanded(
+                                child: _visibleCatalogItems.isEmpty
+                                    ? _buildEmptyState(context)
+                                    : _isLargeScreen(context)
+                                        ? _buildGridView(context)
+                                        : _buildCarousel(context),
+                              ),
+                              if (!_isLargeScreen(context) &&
+                                  _currentPagedItemCount > 0)
+                                _buildPageIndicators(context),
+                              const SizedBox(height: 92),
+                            ],
+                          ),
                         ),
-                      ),
-                      Align(
-                        alignment: const AlignmentDirectional(0.0, 1.0),
-                        child: userType == 'jugador'
-                            ? wrapWithModel(
-                                model: _model.navBarJudadorModel,
-                                updateCallback: () => safeSetState(() {}),
-                                child: const NavBarJudadorWidget(),
-                              )
-                            : (userType == 'profesional'
-                                ? wrapWithModel(
-                                    model: _model.navBarProfesionalModel,
-                                    updateCallback: () => safeSetState(() {}),
-                                    child: const NavBarProfesionalWidget(),
-                                  )
-                                : const SizedBox.shrink()),
-                      ),
-                    ],
-                  ),
+                        Align(
+                          alignment: const AlignmentDirectional(0.0, 1.0),
+                          child: userType == 'jugador'
+                              ? wrapWithModel(
+                                  model: _model.navBarJudadorModel,
+                                  updateCallback: () => safeSetState(() {}),
+                                  child: const NavBarJudadorWidget(),
+                                )
+                              : (userType == 'profesional'
+                                  ? wrapWithModel(
+                                      model: _model.navBarProfesionalModel,
+                                      updateCallback: () => safeSetState(() {}),
+                                      child: const NavBarProfesionalWidget(),
+                                    )
+                                  : const SizedBox.shrink()),
+                        ),
+                      ],
+                    ),
+        ),
       ),
     );
   }
@@ -1889,6 +1897,13 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                           spacing: 8 * scale,
                           runSpacing: 8 * scale,
                           children: [
+                            _buildMotivationChip(
+                              icon: Icons.trending_up_rounded,
+                              label: 'Este desafío mejora tu habilidad',
+                              backgroundColor:
+                                  Colors.white.withValues(alpha: 0.14),
+                              borderColor: Colors.white.withValues(alpha: 0.14),
+                            ),
                             _buildMotivationChip(
                               icon: Icons.local_fire_department_rounded,
                               label: '🔥 +$pointsReward XP al completar',

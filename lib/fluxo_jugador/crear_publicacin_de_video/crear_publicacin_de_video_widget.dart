@@ -356,6 +356,23 @@ class _CrearPublicacinDeVideoWidgetState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _buildVideoUploadArea(),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Mostrá tu talento al mundo',
+                            style: GoogleFonts.inter(
+                              color: const Color(0xFF0D3B66),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Este video podría ser visto por scouts',
+                            style: GoogleFonts.inter(
+                              color: const Color(0xFF64748B),
+                              fontSize: 13,
+                            ),
+                          ),
                           const SizedBox(height: 20),
                           _buildTextField(
                               label: 'Título',

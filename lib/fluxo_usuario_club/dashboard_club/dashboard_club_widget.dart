@@ -2517,7 +2517,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                             children: [
                               _drawerItem(
                                 context,
-                                label: 'Dashboard',
+                                label: 'Gestión de talento',
                                 icon: Icons.home_outlined,
                                 selected: true,
                                 onTap: () => context
@@ -2533,7 +2533,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               ),
                               _drawerItem(
                                 context,
-                                label: 'Jugadores',
+                                label: 'Postulaciones',
                                 icon: Icons.people_outline,
                                 selected: false,
                                 onTap: () => context
@@ -2541,35 +2541,15 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                               ),
                               _drawerItem(
                                 context,
-                                label: 'Scouting',
-                                icon: Icons.list_alt_outlined,
+                                label: 'Explorar jugadores',
+                                icon: Icons.search_rounded,
                                 selected: false,
                                 onTap: () => context
                                     .pushNamed(ListaYNotaWidget.routeName),
                               ),
                               _drawerItem(
                                 context,
-                                label: 'Perfil público',
-                                icon: Icons.visibility_outlined,
-                                selected: false,
-                                onTap: () {
-                                  final ownClubRef = _clubRefs.isNotEmpty
-                                      ? _clubRefs.first
-                                      : currentUserUid;
-                                  if (ownClubRef.isNotEmpty) {
-                                    Navigator.of(ctx).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => PerfilPublicoClubWidget(
-                                          clubRef: ownClubRef,
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                },
-                              ),
-                              _drawerItem(
-                                context,
-                                label: 'Mi perfil',
+                                label: 'Perfil del club',
                                 icon: Icons.shield_outlined,
                                 selected: false,
                                 onTap: () => context
@@ -2688,7 +2668,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         Padding(
           padding: const EdgeInsets.only(left: 12, bottom: 14),
           child: Text(
-            'Publicá una convocatoria y empezá a recibir jugadores para ${_clubName ?? 'tu club'}.',
+            'Explorá jugadores y conectá con nuevos talentos',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
@@ -2701,12 +2681,27 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         const SizedBox(height: 16),
         _buildSectionHeader(
           title: 'Convocatorias activas',
-          trailing: OutlinedButton.icon(
+          trailing: ElevatedButton.icon(
             onPressed: () => context.pushNamed(
               ConvocatoriasClubWidget.routeName,
             ),
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Mis convocatorias'),
+            icon: const Icon(Icons.campaign_outlined,
+                size: 18, color: Colors.white),
+            label: Text(
+              'Mis convocatorias',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0D3B66),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            ),
           ),
         ),
         _buildActiveConvocatoriasSection(),
@@ -3708,12 +3703,72 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
   Widget _buildActiveConvocatoriasSection() {
     if (_activeConvocatorias.isEmpty) {
-      return _buildInlineStatus(
-        icon: Icons.campaign_outlined,
-        title: 'Todavía no publicaste convocatorias',
-        subtitle:
-            'Publicá una convocatoria y empezá a recibir jugadores para seguimiento.',
-        onRetry: () => context.pushNamed(ConvocatoriasClubWidget.routeName),
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FBFF),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFD0DFEF)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D3B66).withOpacity(0.10),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.campaign_outlined,
+                  size: 28, color: Color(0xFF0D3B66)),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Creá tu primera convocatoria para empezar a recibir jugadores',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1A202C),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Publicá una convocatoria con posición, categoría y requisitos. Los jugadores podrán postularse directamente.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 12.5,
+                color: const Color(0xFF718096),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: () =>
+                    context.pushNamed(ConvocatoriasClubWidget.routeName),
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: Text(
+                  'Crear convocatoria',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D3B66),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       );
     }
 
@@ -3890,7 +3945,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         icon: Icons.people_outline,
         title: 'Aún no hay postulaciones',
         subtitle:
-            'Cuando publiques convocatorias activas, las postulaciones aparecerán acá automáticamente.',
+            'Publicá una convocatoria y los jugadores interesados aparecerán acá automáticamente.',
       );
     }
 
@@ -4176,8 +4231,9 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (_suggestedPlayers.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.workspace_premium_outlined,
-        title: 'Sin resultados',
-        subtitle: 'Todavía no hay jugadores Pro recientes para recomendar.',
+        title: 'Sin jugadores verificados todavía',
+        subtitle:
+            'Cuando haya jugadores verificados activos, aparecerán acá para que los explores.',
       );
     }
 
@@ -4300,9 +4356,9 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (_activeConvocatorias.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.alt_route,
-        title: 'Sin resultados',
+        title: 'Sin seguimiento activo',
         subtitle:
-            'El seguimiento aparecerá cuando existan convocatorias activas.',
+            'Creá una convocatoria para empezar a ver el seguimiento de jugadores postulados.',
       );
     }
 

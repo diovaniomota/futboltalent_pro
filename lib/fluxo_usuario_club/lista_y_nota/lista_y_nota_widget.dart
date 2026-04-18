@@ -561,7 +561,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                             _buildDrawerItem(
                                 context,
                                 Icons.dashboard_outlined,
-                                'Dashboard',
+                                'Gestión de talento',
                                 false,
                                 () => context
                                     .pushNamed(DashboardClubWidget.routeName)),
@@ -575,31 +575,25 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                             _buildDrawerItem(
                                 context,
                                 Icons.people_outline,
-                                'Jugadores',
+                                'Postulaciones',
                                 false,
                                 () => context
                                     .pushNamed(PostulacionesWidget.routeName)),
                             _buildDrawerItem(
                                 context,
-                                Icons.list_alt_outlined,
-                                'Scouting',
+                                Icons.search_rounded,
+                                'Explorar jugadores',
                                 true,
                                 () => context
                                     .pushNamed(ListaYNotaWidget.routeName)),
-                            const Divider(),
-                            _buildDrawerItem(
-                                context,
-                                Icons.visibility_outlined,
-                                'Perfil público',
-                                false,
-                                () async => _openCurrentClubPublicProfile(ctx)),
                             _buildDrawerItem(
                                 context,
                                 Icons.shield_outlined,
-                                'Mi perfil',
+                                'Perfil del club',
                                 false,
                                 () => context
                                     .pushNamed(ConfiguracinWidget.routeName)),
+                            const Divider(),
                             _buildDrawerItem(
                                 context, Icons.logout, 'Cerrar Sesión', false,
                                 () async {
@@ -745,7 +739,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           child: Icon(Icons.menu, color: Colors.black, size: 24 * scale),
         ),
         SizedBox(height: 14 * scale),
-        Text('Cuaderno de Campo',
+        Text('Mi Scouting',
             style: GoogleFonts.inter(
                 fontSize:
                     _responsive(context, mobile: 23, tablet: 26, desktop: 30) *
@@ -952,7 +946,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         Icon(Icons.touch_app, size: 48 * scale, color: Colors.grey[400]),
         SizedBox(height: 12 * scale),
-        Text('Selecciona una lista para ver los jugadores',
+        Text('Seleccioná una lista para ver los jugadores',
             style: GoogleFonts.inter(
                 fontSize: 14 * scale, color: Colors.grey[500]),
             textAlign: TextAlign.center),
@@ -1000,9 +994,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                   child: Column(
                     children: [
                       Text(
-                          _clubName != null && _clubName!.trim().isNotEmpty
-                              ? 'Todavía no hay listas creadas para $_clubName'
-                              : 'Todavía no hay listas creadas',
+                          'Creá una lista para acompañar jugadores y organizar tu scouting',
                           style: GoogleFonts.inter(
                               fontSize: 14 * scale, color: Colors.grey),
                           textAlign: TextAlign.center),
@@ -1179,9 +1171,10 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                   padding: EdgeInsets.all(24 * scale),
                   child: Column(
                     children: [
-                      Text('No hay jugadores en esta lista todavía',
+                      Text('Agregá jugadores para empezar a hacer seguimiento',
                           style: GoogleFonts.inter(
-                              fontSize: 14 * scale, color: Colors.grey)),
+                              fontSize: 14 * scale, color: Colors.grey),
+                          textAlign: TextAlign.center),
                       SizedBox(height: 12 * scale),
                       OutlinedButton.icon(
                         onPressed: _showAddJugadorModal,

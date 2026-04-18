@@ -138,7 +138,7 @@ class _NavBarJudadorWidgetState extends State<NavBarJudadorWidget> {
                                   },
                                 ),
                                 _navButton(
-                                  icon: Icons.search,
+                                  icon: Icons.explore_rounded,
                                   buttonSize: iconButtonSize,
                                   size: iconSize,
                                   iconColor: canOpenExplorer

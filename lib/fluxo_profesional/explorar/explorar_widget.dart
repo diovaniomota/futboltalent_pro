@@ -3520,7 +3520,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Buscar oportunidades',
+                    'Encuentra oportunidades',
                     style: GoogleFonts.inter(
                       color: const Color(0xFF0F172A),
                       fontSize: 15,

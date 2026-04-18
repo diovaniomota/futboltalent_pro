@@ -1436,7 +1436,7 @@ class _ChallengeFeedItem extends StatelessWidget {
       case 'in_progress':
         return 'En curso';
       default:
-        return 'Nuevo';
+        return 'Desafío activo';
     }
   }
 
@@ -1481,7 +1481,7 @@ class _ChallengeFeedItem extends StatelessWidget {
       case 'in_progress':
         return 'Continuar';
       default:
-        return 'Comenzar desafío';
+        return 'Intentar desafío';
     }
   }
 

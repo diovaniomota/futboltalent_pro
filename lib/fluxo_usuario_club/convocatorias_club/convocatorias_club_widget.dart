@@ -307,6 +307,66 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
     );
   }
 
+  void _confirmDeleteConvocatoria(Map<String, dynamic> conv) {
+    final titulo = conv['titulo']?.toString().trim() ?? 'esta convocatoria';
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Eliminar convocatoria',
+            style:
+                GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700)),
+        content: Text(
+            '¿Estás seguro de que querés eliminar "$titulo"? Esta acción no se puede deshacer.',
+            style: GoogleFonts.inter(
+                fontSize: 14, color: const Color(0xFF475569))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancelar',
+                style: GoogleFonts.inter(color: const Color(0xFF64748B))),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _deleteConvocatoria(conv);
+            },
+            child: Text('Eliminar',
+                style: GoogleFonts.inter(
+                    color: const Color(0xFFDC2626),
+                    fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteConvocatoria(Map<String, dynamic> conv) async {
+    final id = conv['id']?.toString().trim() ?? '';
+    if (id.isEmpty) return;
+    try {
+      await SupaFlow.client.from('convocatorias').delete().eq('id', id);
+      _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Convocatoria eliminada'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al eliminar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   String _formatDate(String? dateStr) {
     if (dateStr == null || dateStr.isEmpty) return '-';
     try {
@@ -389,7 +449,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.dashboard_outlined,
-                                  'Dashboard',
+                                  'Gestión de talento',
                                   false,
                                   () async => context.pushNamed(
                                       DashboardClubWidget.routeName)),
@@ -403,32 +463,25 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.people_outline,
-                                  'Jugadores',
+                                  'Postulaciones',
                                   false,
                                   () async => context.pushNamed(
                                       PostulacionesWidget.routeName)),
                               _buildDrawerItemCallback(
                                   context,
-                                  Icons.list_alt_outlined,
-                                  'Scouting',
+                                  Icons.search_rounded,
+                                  'Explorar jugadores',
                                   false,
                                   () async => context
                                       .pushNamed(ListaYNotaWidget.routeName)),
-                              const Divider(),
-                              _buildDrawerItemCallback(
-                                  context,
-                                  Icons.visibility_outlined,
-                                  'Perfil público',
-                                  false,
-                                  () async =>
-                                      _openCurrentClubPublicProfile(ctx)),
                               _buildDrawerItemCallback(
                                   context,
                                   Icons.shield_outlined,
-                                  'Mi perfil',
+                                  'Perfil del club',
                                   false,
                                   () async => context
                                       .pushNamed(ConfiguracinWidget.routeName)),
+                              const Divider(),
                               _buildDrawerItemCallback(
                                   context, Icons.logout, 'Cerrar Sesión', false,
                                   () async {
@@ -746,7 +799,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
             ),
             const SizedBox(height: 16),
             Text(
-              'Aún no hay convocatorias',
+              'Publicá tu primera convocatoria y empezá a encontrar talentos',
               style: GoogleFonts.inter(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -754,10 +807,33 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Publica tu primera convocatoria para\nempezar a recibir postulaciones.',
+              'Definí posición, categoría y requisitos.\nLos jugadores podrán postularse directamente.',
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                   fontSize: 13, color: const Color(0xFF718096), height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: ElevatedButton.icon(
+                onPressed: _showCreateConvocatoriaModal,
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: Text(
+                  'Crear convocatoria',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D3B66),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -866,6 +942,8 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               _showViewConvocatoriaModal(conv);
                             if (value == 'editar')
                               _showEditConvocatoriaModal(conv);
+                            if (value == 'eliminar')
+                              _confirmDeleteConvocatoria(conv);
                           },
                           itemBuilder: (_) => [
                             PopupMenuItem(
@@ -886,6 +964,18 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                                 const SizedBox(width: 10),
                                 Text('Editar',
                                     style: GoogleFonts.inter(fontSize: 13)),
+                              ]),
+                            ),
+                            PopupMenuItem(
+                              value: 'eliminar',
+                              child: Row(children: [
+                                const Icon(Icons.delete_outline,
+                                    size: 16, color: Color(0xFFDC2626)),
+                                const SizedBox(width: 10),
+                                Text('Eliminar',
+                                    style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        color: const Color(0xFFDC2626))),
                               ]),
                             ),
                           ],
@@ -1243,9 +1333,7 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
         'categoria': normalizedCategory,
         'tipo': _tipo,
         'pais': normalizedCountry,
-        'country': normalizedCountry,
         'ciudad': normalizedCity,
-        'city': normalizedCity,
         'ubicacion': normalizedLocation,
         'edad_minima': int.tryParse(_edadMinController.text) ?? 0,
         'edad_maxima': int.tryParse(_edadMaxController.text) ?? 99,
@@ -1269,14 +1357,78 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
 
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_isEditing
-                ? 'Convocatoria actualizada'
-                : 'Convocatoria creada'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        if (!_isEditing) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.check_circle,
+                      color: Color(0xFF16A34A), size: 28),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '¡Convocatoria creada!',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0D3B66),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: Text(
+                'Tu convocatoria ya está publicada. Los jugadores pueden postularse ahora.',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: const Color(0xFF4A5568),
+                  height: 1.4,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(
+                    'Cerrar',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF718096),
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    context.pushNamed(DashboardClubWidget.routeName);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D3B66),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    'Explorar jugadores',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Convocatoria actualizada'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       }
     } catch (e) {
       debugPrint('Error guardando convocatoria: $e');
@@ -1364,10 +1516,10 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildTextField('Título *', _tituloController,
-                      'Ej: Sub-17 Mediocampistas'),
+                      'Ej: Mediocampistas Sub-17 para temporada 2026'),
                   const SizedBox(height: 16),
                   _buildDropdown(
-                    'Posición',
+                    'Posición buscada',
                     canonicalPlayerPositions.contains(
                       _posicionController.text.trim(),
                     )
@@ -1380,9 +1532,21 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
                   ),
                   const SizedBox(height: 16),
                   _buildTextField('Descripción', _descripcionController,
-                      'Describe los requisitos de la convocatoria...',
+                      'Ej: Buscamos jugadores con buen manejo de balón, visión de juego y experiencia en competiciones regionales...',
                       maxLines: 3),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 4),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Text(
+                      'Una buena descripción atrae jugadores más relevantes para tu club.',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: Colors.grey[500],
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
 
                   // Categoría y Tipo
                   Row(
