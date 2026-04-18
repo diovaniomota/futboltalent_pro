@@ -165,10 +165,7 @@ class _NavBarProfesionalWidgetState extends State<NavBarProfesionalWidget> {
                         ),
                         onPressed: () async {
                           context.pushNamed(
-                            ExplorarWidget.routeName,
-                            queryParameters: {
-                              'initialScoutTab': 'convocatorias',
-                            },
+                            ConvocatoriaProfesionalWidget.routeName,
                           );
                         },
                       ),

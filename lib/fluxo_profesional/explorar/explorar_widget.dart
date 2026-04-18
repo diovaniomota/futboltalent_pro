@@ -1831,10 +1831,35 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
   bool _isPlayerSaved(String playerId) => _savedPlayerIds.contains(playerId);
 
+  void _showScoutScoutingFeedback({required bool added}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          added
+              ? 'Jugador agregado a mi Scouting'
+              : 'Jugador removido de mi Scouting',
+        ),
+        backgroundColor: added ? Colors.green : const Color(0xFF475569),
+        action: added
+            ? SnackBarAction(
+                label: 'Ver mi scouting',
+                textColor: Colors.white,
+                onPressed: () {
+                  context.pushNamed(ListaYNotasWidget.routeName);
+                },
+              )
+            : null,
+      ),
+    );
+  }
+
   Future<void> _toggleSavePlayerForScout(Map<String, dynamic> player) async {
     if (!await _ensureSensitiveAccess(
       message:
-          'Para guardar jugadores en listas necesitas verificación o un plan activo.',
+          'Para agregar jugadores a scouting necesitas verificación o un plan activo.',
     )) {
       return;
     }
@@ -1860,12 +1885,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           _savedPlayerIds.remove(playerId);
           _savingPlayerId = null;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Jugador removido de guardados'),
-            backgroundColor: Color(0xFF475569),
-          ),
-        );
+        _showScoutScoutingFeedback(added: false);
         return;
       }
 
@@ -1880,12 +1900,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         _savedPlayerIds.add(playerId);
         _savingPlayerId = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Jugador guardado con éxito'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      _showScoutScoutingFeedback(added: true);
     } catch (_) {
       if (!mounted) return;
       setState(() => _savingPlayerId = null);
@@ -1893,8 +1908,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         SnackBar(
           content: Text(
             wasSaved
-                ? 'No se pudo remover el jugador'
-                : 'No se pudo guardar el jugador',
+                ? 'No se pudo remover de mi Scouting'
+                : 'No se pudo agregar a mi Scouting',
           ),
         ),
       );
@@ -4327,7 +4342,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   const SizedBox(width: 8),
                   _buildPlayerCardActionButton(
                     icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
-                    tooltip: isSaved ? 'Guardado' : 'Guardar',
+                    tooltip: isSaved ? 'En mi scouting' : 'Agregar a scouting',
                     onPressed: () => _toggleSavePlayerForScout(player),
                     backgroundColor:
                         isSaved ? const Color(0xFF0F9D58) : Colors.white,

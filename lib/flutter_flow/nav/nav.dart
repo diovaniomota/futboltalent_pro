@@ -80,6 +80,11 @@ class AppStateNotifier extends ChangeNotifier {
 }
 
 Widget _homeForUserType() {
+  // Se o usu\u00e1rio tem sess\u00e3o auth mas n\u00e3o terminou o cadastro (sem row na tabela users),
+  // redireciona para sele\u00e7\u00e3o de tipo para que ele conclua o registro.
+  if (!FFAppState().registrationComplete) {
+    return SeleccionDelTipoDePerfilWidget();
+  }
   final userType = FFAppState.normalizeUserType(FFAppState().userType);
   if (userType == 'admin') return AdminDashboardWidget();
   if (userType == 'club') return DashboardClubWidget();

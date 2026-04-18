@@ -632,9 +632,21 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         if (mounted) setState(() => _isGuardado = true);
       }
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(_isGuardado ? 'Jugador guardado' : 'Jugador removido'),
-          backgroundColor: Colors.green,
+          content: Text(_isGuardado
+              ? 'Jugador agregado a mi Scouting'
+              : 'Jugador removido de mi Scouting'),
+          backgroundColor: _isGuardado ? Colors.green : const Color(0xFF475569),
+          action: _isGuardado
+              ? SnackBarAction(
+                  label: 'Ver mi scouting',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    context.pushNamed('Lista_y_notas');
+                  },
+                )
+              : null,
         ));
       }
     } catch (e) {
@@ -734,11 +746,12 @@ class _PerfilProfesionalSolicitarContatoWidgetState
 
   Widget _buildResponsiveActionGroup({
     required List<Widget> children,
-    double spacing = 10,
+    double spacing = 8,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final useColumn = constraints.maxWidth < 330;
+        // Keep 2-column actions on most phones and only stack on very narrow widths.
+        final useColumn = constraints.maxWidth < 280;
         if (useColumn) {
           return Column(
             children: [
@@ -1055,8 +1068,8 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                         Flexible(
                                           child: _buildActionLabel(
                                             _isGuardado
-                                                ? 'Guardado'
-                                                : 'Guardar',
+                                                ? 'En mi scouting'
+                                                : 'Agregar a scouting',
                                             fontSize: actionButtonFontSize,
                                           ),
                                         ),

@@ -111,6 +111,7 @@ class FFAppState extends ChangeNotifier {
     _currentPlanId = null;
     _currentUserVerified = true;
     _currentUserFullAccess = false;
+    _registrationComplete = false;
   }
 
   Future initializePersistedState() async {
@@ -156,10 +157,16 @@ class FFAppState extends ChangeNotifier {
 
       debugPrint('FFAppState: sync resposta = $response');
 
+      _registrationComplete = response != null;
+
       if (response != null) {
         _hydrateViewerAccessFromUser(response);
       } else {
         _resetViewerAccessState();
+        _registrationComplete = false;
+        debugPrint('FFAppState: cadastro incompleto - sem row na tabela users');
+        notifyListeners();
+        return;
       }
 
       final sanitizedType = normalizeUserType(response?['userType']);
@@ -253,6 +260,11 @@ class FFAppState extends ChangeNotifier {
 
   bool _currentUserFullAccess = false;
   bool get currentUserFullAccess => _currentUserFullAccess;
+
+  /// True apenas quando o usuário tem um row completo na tabela `users`.
+  /// False enquanto o cadastro não foi finalizado (auth criado mas perfil não salvo).
+  bool _registrationComplete = false;
+  bool get registrationComplete => _registrationComplete;
 
   bool get isAdminSession =>
       _currentUserIsAdmin || normalizeUserType(_userType) == 'admin';

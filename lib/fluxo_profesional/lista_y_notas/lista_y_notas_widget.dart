@@ -1028,13 +1028,13 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: EdgeInsets.all(padding),
                           child: Column(children: [
-                            Text('Cuaderno de Campo',
+                            Text('Mi scouting',
                                 style: GoogleFonts.inter(
                                     fontSize: 24 * scale,
                                     fontWeight: FontWeight.bold)),
                             SizedBox(height: 4 * scale),
                             Text(
-                              'Etiquetá y organizá a los jugadores por etapa de seguimiento',
+                              'Tu flujo unificado para seguir y organizar jugadores',
                               style: GoogleFonts.inter(
                                 fontSize: 13 * scale,
                                 color: const Color(0xFF64748B),
@@ -1090,7 +1090,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Center(
-                                        child: Text('Guardados',
+                                        child: Text('Mi scouting',
                                             style: TextStyle(
                                               color: _showGuardados
                                                   ? Colors.white
@@ -1193,7 +1193,8 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
             Text('No tienes jugadores guardados',
                 style: TextStyle(color: Colors.grey[600], fontSize: 16)),
             const SizedBox(height: 8),
-            Text('Guarda jugadores desde su perfil para verlos aquí',
+            Text(
+                'Agregá jugadores a scouting desde Feed o Explorer para verlos aquí',
                 style: TextStyle(color: Colors.grey[400], fontSize: 13),
                 textAlign: TextAlign.center),
           ]),
@@ -1203,7 +1204,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('${_jugadoresGuardados.length} jugador(es) guardado(s)',
+        Text('${_jugadoresGuardados.length} jugador(es) en mi scouting',
             style: TextStyle(color: Colors.grey[600], fontSize: 13 * scale)),
         SizedBox(height: 12 * scale),
         ..._jugadoresGuardados.map((g) => _buildGuardadoCard(context, g)),
@@ -1751,7 +1752,7 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
     if (raw.contains('listas_jugadores_lista_id_fkey') ||
         raw.contains('foreign key constraint') ||
         raw.contains('23503')) {
-      return 'No se pudo vincular esta lista. Reabrí Cuaderno de Campo o creá una lista nueva e intentá otra vez.';
+      return 'No se pudo vincular esta lista. Reabrí Mi scouting o creá una lista nueva e intentá otra vez.';
     }
     if (raw.contains('duplicate key') ||
         raw.contains('already exists') ||

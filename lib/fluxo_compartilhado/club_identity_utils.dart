@@ -52,6 +52,26 @@ Future<Map<String, dynamic>?> loadClubByRef(String ref) async {
     } catch (_) {}
   }
 
+  // Fallback: try legacy 'clubes' table
+  if (club == null) {
+    try {
+      final legacy = await SupaFlow.client
+          .from('clubes')
+          .select()
+          .eq('id', normalizedRef)
+          .maybeSingle();
+      if (legacy != null) {
+        club = {
+          ...legacy,
+          'owner_id': legacy['id'],
+          'nombre': legacy['nombre_corto'] ?? legacy['nombre'] ?? '',
+          'ciudad': legacy['ciudad'] ?? '',
+          'pais': legacy['pais'] ?? legacy['country'] ?? '',
+        };
+      }
+    } catch (_) {}
+  }
+
   return club;
 }
 
@@ -102,7 +122,8 @@ Future<Set<String>> resolveClubRefsForUser(String authUserId) async {
   return refs;
 }
 
-Future<Map<String, dynamic>?> resolveCurrentClubForUser(String authUserId) async {
+Future<Map<String, dynamic>?> resolveCurrentClubForUser(
+    String authUserId) async {
   final refs = await resolveClubRefsForUser(authUserId);
   for (final ref in refs) {
     final club = await loadClubByRef(ref);

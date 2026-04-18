@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'registro_club_model.dart';
 export 'registro_club_model.dart';
@@ -28,11 +31,20 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
   // Controllers Etapa 1
   final _clubNameController = TextEditingController();
   final _countryController = TextEditingController();
+  final _stateController = TextEditingController();
   final _cityController = TextEditingController();
   Uint8List? _logoBytes;
   String? _logoUrl;
   List<Map<String, dynamic>> _countries = [];
   String? _selectedCountryId;
+  List<String> _states = [];
+  List<String> _cities = [];
+  String? _selectedState;
+  String? _selectedCity;
+  bool _isStatesLoading = false;
+  bool _isCitiesLoading = false;
+  bool _stateFreeText = false;
+  bool _cityFreeText = false;
 
   // Controllers Etapa 2
   final _aboutClubController = TextEditingController();
@@ -61,6 +73,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
     _model.dispose();
     _clubNameController.dispose();
     _countryController.dispose();
+    _stateController.dispose();
     _cityController.dispose();
     _aboutClubController.dispose();
     _instagramController.dispose();
@@ -149,7 +162,333 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       _showError('Por favor, ingresa la ciudad');
       return false;
     }
+    if (_states.isNotEmpty &&
+        !_stateFreeText &&
+        _selectedState != '__all__' &&
+        (_selectedState == null || _selectedState!.trim().isEmpty)) {
+      _showError('Por favor, selecciona el estado/provincia');
+      return false;
+    }
+    if (_stateFreeText &&
+        _stateController.text.trim().isEmpty &&
+        _selectedState != '__all__') {
+      _showError('Por favor, ingresa el estado/provincia');
+      return false;
+    }
     return true;
+  }
+
+  String _toApiCountryName(String name) {
+    final input = name.trim();
+    final map = <String, String>{
+      'España': 'Spain',
+      'Espana': 'Spain',
+      'México': 'Mexico',
+      'Mexico': 'Mexico',
+      'Brasil': 'Brazil',
+      'Alemania': 'Germany',
+      'Francia': 'France',
+      'Italia': 'Italy',
+      'Países Bajos': 'Netherlands',
+      'Paises Bajos': 'Netherlands',
+      'Holanda': 'Netherlands',
+      'Bélgica': 'Belgium',
+      'Belgica': 'Belgium',
+      'Suiza': 'Switzerland',
+      'Suecia': 'Sweden',
+      'Noruega': 'Norway',
+      'Dinamarca': 'Denmark',
+      'Finlandia': 'Finland',
+      'Polonia': 'Poland',
+      'Grecia': 'Greece',
+      'Turquía': 'Turkey',
+      'Turquia': 'Turkey',
+      'Rusia': 'Russia',
+      'Ucrania': 'Ukraine',
+      'Rumania': 'Romania',
+      'Rumanía': 'Romania',
+      'Hungría': 'Hungary',
+      'Hungria': 'Hungary',
+      'República Checa': 'Czech Republic',
+      'Republica Checa': 'Czech Republic',
+      'Croacia': 'Croatia',
+      'Reino Unido': 'United Kingdom',
+      'Irlanda': 'Ireland',
+      'Escocia': 'Scotland',
+      'Estados Unidos': 'United States',
+      'EE.UU.': 'United States',
+      'EEUU': 'United States',
+      'Canadá': 'Canada',
+      'Canada': 'Canada',
+      'Colombia': 'Colombia',
+      'Venezuela': 'Venezuela',
+      'Chile': 'Chile',
+      'Perú': 'Peru',
+      'Peru': 'Peru',
+      'Ecuador': 'Ecuador',
+      'Bolivia': 'Bolivia',
+      'Paraguay': 'Paraguay',
+      'Uruguay': 'Uruguay',
+      'Costa Rica': 'Costa Rica',
+      'Guatemala': 'Guatemala',
+      'Honduras': 'Honduras',
+      'El Salvador': 'El Salvador',
+      'Nicaragua': 'Nicaragua',
+      'Panamá': 'Panama',
+      'Panama': 'Panama',
+      'Cuba': 'Cuba',
+      'República Dominicana': 'Dominican Republic',
+      'Republica Dominicana': 'Dominican Republic',
+      'Puerto Rico': 'Puerto Rico',
+      'Marruecos': 'Morocco',
+      'Argelia': 'Algeria',
+      'Túnez': 'Tunisia',
+      'Tunez': 'Tunisia',
+      'Egipto': 'Egypt',
+      'Nigeria': 'Nigeria',
+      'Ghana': 'Ghana',
+      'Senegal': 'Senegal',
+      'Costa de Marfil': "Côte d'Ivoire",
+      'Camerún': 'Cameroon',
+      'Camerun': 'Cameroon',
+      'Sudáfrica': 'South Africa',
+      'Sudafrica': 'South Africa',
+      'Japón': 'Japan',
+      'Japon': 'Japan',
+      'Corea del Sur': 'South Korea',
+      'Arabia Saudita': 'Saudi Arabia',
+      'Emiratos Árabes': 'United Arab Emirates',
+      'Emiratos Arabes': 'United Arab Emirates',
+    };
+    return map[input] ?? input;
+  }
+
+  Future<void> _loadStates(String countryName) async {
+    if (countryName.trim().isEmpty) return;
+    final apiCountryName = _toApiCountryName(countryName.trim());
+
+    setState(() {
+      _isStatesLoading = true;
+      _states = [];
+      _selectedState = null;
+      _stateController.text = '';
+      _stateFreeText = false;
+      _isCitiesLoading = false;
+      _cities = [];
+      _selectedCity = null;
+      _cityController.text = '';
+      _cityFreeText = false;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://countriesnow.space/api/v0.1/countries/states'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'country': apiCountryName}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['error'] == false && data['data'] is Map) {
+          final statesRaw = data['data']['states'];
+          if (statesRaw is List) {
+            final stateList = statesRaw
+                .map((item) {
+                  if (item is Map<String, dynamic>) {
+                    return (item['name'] ?? '').toString().trim();
+                  }
+                  return item.toString().trim();
+                })
+                .where((item) => item.isNotEmpty)
+                .toList()
+              ..sort();
+            if (mounted) {
+              setState(() => _states = stateList);
+            }
+          }
+        }
+      }
+
+      if (_states.isEmpty) {
+        debugPrint(
+            '_loadStates: sin estados para $apiCountryName, activando texto libre');
+        if (mounted) {
+          setState(() {
+            _stateFreeText = true;
+            _selectedState = '__all__';
+          });
+        }
+        await _loadCitiesDirectly(apiCountryName);
+      }
+    } catch (e) {
+      debugPrint('Error al cargar estados: $e');
+      if (mounted) {
+        setState(() {
+          _stateFreeText = true;
+          _selectedState = '__all__';
+        });
+      }
+      await _loadCitiesDirectly(apiCountryName);
+    } finally {
+      if (mounted) {
+        setState(() => _isStatesLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadCitiesDirectly(String apiCountryName) async {
+    setState(() {
+      _isCitiesLoading = true;
+      _cities = [];
+      _selectedCity = null;
+      _cityController.text = '';
+      _cityFreeText = false;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://countriesnow.space/api/v0.1/countries/cities'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'country': apiCountryName}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['error'] == false && data['data'] is List) {
+          final cityList = (data['data'] as List)
+              .map((item) {
+                if (item is Map<String, dynamic>) {
+                  return (item['name'] ?? item['city'] ?? '').toString().trim();
+                }
+                return item.toString().trim();
+              })
+              .where((item) => item.isNotEmpty)
+              .toList()
+            ..sort();
+          if (mounted) {
+            setState(() => _cities = cityList);
+          }
+        }
+      }
+
+      if (_cities.isEmpty && mounted) {
+        setState(() {
+          _cityFreeText = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error al cargar ciudades: $e');
+      if (mounted) {
+        setState(() {
+          _cityFreeText = true;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCitiesLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadCitiesByState(String countryName, String stateName) async {
+    if (countryName.trim().isEmpty || stateName.trim().isEmpty) return;
+
+    final apiCountryName = _toApiCountryName(countryName.trim());
+
+    setState(() {
+      _isCitiesLoading = true;
+      _cities = [];
+      _selectedCity = null;
+      _cityController.text = '';
+      _cityFreeText = false;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://countriesnow.space/api/v0.1/countries/state/cities'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'country': apiCountryName, 'state': stateName}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['error'] == false && data['data'] is List) {
+          final cityList = (data['data'] as List)
+              .map((item) {
+                if (item is Map<String, dynamic>) {
+                  return (item['name'] ?? item['city'] ?? '').toString().trim();
+                }
+                return item.toString().trim();
+              })
+              .where((item) => item.isNotEmpty)
+              .toList()
+            ..sort();
+          if (mounted) {
+            setState(() => _cities = cityList);
+          }
+        }
+      }
+
+      if (_cities.isEmpty) {
+        await _loadCitiesDirectly(apiCountryName);
+      }
+    } catch (e) {
+      debugPrint('Error al cargar ciudades por estado: $e');
+      await _loadCitiesDirectly(apiCountryName);
+    } finally {
+      if (mounted) {
+        setState(() => _isCitiesLoading = false);
+      }
+    }
+  }
+
+  bool _removeMissingColumnFromPayload(
+    Map<String, dynamic> payload,
+    Object error,
+  ) {
+    final text = error.toString();
+    final match =
+        RegExp(r"Could not find the '([^']+)' column").firstMatch(text);
+    if (match == null) return false;
+    final missing = match.group(1);
+    if (missing == null || missing.isEmpty) return false;
+    return payload.remove(missing) != null;
+  }
+
+  Future<void> _safeUpdate(
+    String table,
+    Map<String, dynamic> payload,
+    String eqField,
+    dynamic eqValue,
+  ) async {
+    final mutable = Map<String, dynamic>.from(payload);
+    for (var i = 0; i < 4; i++) {
+      try {
+        await SupaFlow.client.from(table).update(mutable).eq(eqField, eqValue);
+        return;
+      } catch (e) {
+        if (!_removeMissingColumnFromPayload(mutable, e)) rethrow;
+      }
+    }
+    throw Exception(
+        'No se pudo actualizar $table por incompatibilidad de schema');
+  }
+
+  Future<void> _safeInsert(
+    String table,
+    Map<String, dynamic> payload,
+  ) async {
+    final mutable = Map<String, dynamic>.from(payload);
+    for (var i = 0; i < 4; i++) {
+      try {
+        await SupaFlow.client.from(table).insert(mutable);
+        return;
+      } catch (e) {
+        if (!_removeMissingColumnFromPayload(mutable, e)) rethrow;
+      }
+    }
+    throw Exception(
+        'No se pudo insertar en $table por incompatibilidad de schema');
   }
 
   bool _validateStep3() {
@@ -172,6 +511,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
           ? _websiteController.text
           : _otherUrlController.text;
       final normalizedCountry = normalizeCountryName(_countryController.text);
+      final normalizedState = _stateController.text.trim();
       final normalizedCity = normalizeCityName(_cityController.text);
 
       // Update User
@@ -183,8 +523,8 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       final userData = {
         'name': _clubNameController.text,
         'city': normalizedCity,
+        'state': normalizedState,
         'country': normalizedCountry,
-        'pais': normalizedCountry,
         'country_id': _selectedCountryId != null
             ? int.tryParse(_selectedCountryId!)
             : null,
@@ -246,21 +586,17 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
             ? _aboutClubController.text
             : 'Sin descripción',
         'liga': _leagueController.text.isNotEmpty ? _leagueController.text : '',
+        'state': normalizedState,
         'city': normalizedCity,
-        'ciudad': normalizedCity,
-        'pais': normalizedCountry,
         'country': normalizedCountry,
         'sitio_web': sitioWeb.isNotEmpty ? sitioWeb : '',
       };
       if (existingClub != null) {
-        await SupaFlow.client
-            .from('clubes')
-            .update(clubData)
-            .eq('id', currentUserUid);
+        await _safeUpdate('clubes', clubData, 'id', currentUserUid);
       } else {
         clubData['id'] = currentUserUid;
         clubData['created_at'] = DateTime.now().toIso8601String();
-        await SupaFlow.client.from('clubes').insert(clubData);
+        await _safeInsert('clubes', clubData);
       }
 
       // Also create/update in 'clubs' table (used by all club screens)
@@ -272,11 +608,9 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       final clubsData = {
         'nombre': _clubNameController.text,
         'nombre_corto': _clubNameController.text,
-        'pais': normalizedCountry,
         'country': normalizedCountry,
+        'state': normalizedState,
         'city': normalizedCity,
-        'ciudad': normalizedCity,
-        'ubicacion': normalizedCity,
         'liga': _leagueController.text.isNotEmpty ? _leagueController.text : '',
         'descripcion': _aboutClubController.text.isNotEmpty
             ? _aboutClubController.text
@@ -286,12 +620,9 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
         'owner_id': currentUserUid,
       };
       if (existingClubs != null) {
-        await SupaFlow.client
-            .from('clubs')
-            .update(clubsData)
-            .eq('owner_id', currentUserUid);
+        await _safeUpdate('clubs', clubsData, 'owner_id', currentUserUid);
       } else {
-        await SupaFlow.client.from('clubs').insert(clubsData);
+        await _safeInsert('clubs', clubsData);
       }
 
       if (mounted) {
@@ -418,8 +749,10 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       _buildLabel('País'),
       _buildCountryDropdown(),
       const SizedBox(height: 20),
+      _buildStateDropdown(),
+      const SizedBox(height: 20),
       _buildLabel('Ciudad'),
-      _buildTextField(_cityController, 'Selecciona la ciudad'),
+      _buildCityDropdown(),
     ]);
   }
 
@@ -526,12 +859,162 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
             .map((c) => DropdownMenuItem(
                 value: c['id'].toString(), child: Text(c['name'])))
             .toList(),
-        onChanged: (v) => setState(() {
-          _selectedCountryId = v;
-          _countryController.text =
-              _countries.firstWhere((c) => c['id'].toString() == v)['name'];
-        }),
+        onChanged: (v) {
+          if (v == null) return;
+          final selected =
+              _countries.firstWhere((c) => c['id'].toString() == v);
+          final countryName = (selected['name'] ?? '').toString();
+          setState(() {
+            _selectedCountryId = v;
+            _countryController.text = countryName;
+            _selectedState = null;
+            _stateController.text = '';
+            _states = [];
+            _stateFreeText = false;
+            _selectedCity = null;
+            _cityController.text = '';
+            _cities = [];
+            _cityFreeText = false;
+          });
+          _loadStates(countryName);
+        },
       )),
+    );
+  }
+
+  Widget _buildStateDropdown() {
+    // Não mostrar antes de selecionar um país
+    if (_selectedCountryId == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('Estado / Provincia'),
+        if (_isStatesLoading)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey),
+                borderRadius: BorderRadius.circular(8)),
+            child: const Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 10),
+                Text('Cargando estados...'),
+              ],
+            ),
+          )
+        else if (_stateFreeText || (_states.isEmpty && !_isStatesLoading))
+          _buildTextField(_stateController, 'Escribe el estado / provincia')
+        else
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey),
+                borderRadius: BorderRadius.circular(8)),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value:
+                    (_selectedState != null && _states.contains(_selectedState))
+                        ? _selectedState
+                        : null,
+                hint: const Text('Selecciona el estado'),
+                isExpanded: true,
+                items: _states
+                    .map((state) => DropdownMenuItem<String>(
+                          value: state,
+                          child: Text(state),
+                        ))
+                    .toList(),
+                onChanged: (v) {
+                  setState(() {
+                    _selectedState = v;
+                    _stateController.text = v ?? '';
+                  });
+                  if (v != null) {
+                    _loadCitiesByState(_countryController.text, v);
+                  }
+                },
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCityDropdown() {
+    if (_isCitiesLoading) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.grey),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 10),
+            Text('Cargando ciudades...'),
+          ],
+        ),
+      );
+    }
+
+    if (_cityFreeText) {
+      return _buildTextField(_cityController, 'Escribe la ciudad');
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey),
+          borderRadius: BorderRadius.circular(8)),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: (_selectedCity != null && _cities.contains(_selectedCity))
+              ? _selectedCity
+              : null,
+          hint: Text(
+            _selectedCountryId == null
+                ? 'Selecciona primero el país'
+                : ((_selectedState == null) && !_cityFreeText)
+                    ? 'Selecciona primero el estado'
+                    : _cities.isEmpty
+                        ? 'Sin ciudades disponibles'
+                        : 'Selecciona la ciudad',
+          ),
+          isExpanded: true,
+          items: _cities
+              .map((city) => DropdownMenuItem<String>(
+                    value: city,
+                    child: Text(city),
+                  ))
+              .toList(),
+          onChanged: ((_selectedState == null) && !_cityFreeText)
+              ? null
+              : (v) {
+                  setState(() {
+                    _selectedCity = v;
+                    _cityController.text = v ?? '';
+                  });
+                },
+        ),
+      ),
     );
   }
 

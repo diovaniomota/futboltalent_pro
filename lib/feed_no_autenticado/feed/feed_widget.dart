@@ -889,13 +889,34 @@ class _FeedWidgetState extends State<FeedWidget>
 
           try {
             if (userId != null && videoId.isNotEmpty) {
-              final savedCheck = await SupaFlow.client
-                  .from('saved_videos')
-                  .select('id')
-                  .eq('user_id', userId)
-                  .eq('video_id', videoId)
-                  .maybeSingle();
-              video['is_saved'] = savedCheck != null;
+              final userData = video['user_data'] is Map
+                  ? Map<String, dynamic>.from(video['user_data'] as Map)
+                  : <String, dynamic>{};
+              final authorType = FFAppState.normalizeUserType(
+                userData['userType'] ??
+                    userData['usertype'] ??
+                    userData['user_type'],
+              );
+              final useScoutScoutingSave =
+                  _isScoutViewer && authorType == 'jugador';
+
+              if (useScoutScoutingSave) {
+                final savedCheck = await SupaFlow.client
+                    .from('jugadores_guardados')
+                    .select('id')
+                    .eq('scout_id', userId)
+                    .eq('jugador_id', videoUserId)
+                    .maybeSingle();
+                video['is_saved'] = savedCheck != null;
+              } else {
+                final savedCheck = await SupaFlow.client
+                    .from('saved_videos')
+                    .select('id')
+                    .eq('user_id', userId)
+                    .eq('video_id', videoId)
+                    .maybeSingle();
+                video['is_saved'] = savedCheck != null;
+              }
             } else {
               video['is_saved'] = false;
             }
@@ -1767,6 +1788,11 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
 
   bool get _isChallengeVideo => _videoKindLabel() == 'Desafío';
 
+  bool get _isScoutViewer {
+    final viewerType = FFAppState.normalizeUserType(FFAppState().userType);
+    return viewerType == 'profesional';
+  }
+
   bool get _isPlayerAuthor {
     final rawUserData = widget.videoData['user_data'];
     if (rawUserData is! Map) return false;
@@ -1775,6 +1801,34 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
       userData['userType'] ?? userData['usertype'] ?? userData['user_type'],
     );
     return authorType == 'jugador';
+  }
+
+  bool get _canAddAuthorToScouting => _isScoutViewer && _isPlayerAuthor;
+
+  void _showScoutingFeedback({required bool added}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          added
+              ? 'Jugador agregado a mi Scouting'
+              : 'Jugador removido de mi Scouting',
+        ),
+        duration: const Duration(seconds: 2),
+        backgroundColor: added ? Colors.green : const Color(0xFF475569),
+        action: added
+            ? SnackBarAction(
+                label: 'Ver mi scouting',
+                textColor: Colors.white,
+                onPressed: () {
+                  context.pushNamed('Lista_y_notas');
+                },
+              )
+            : null,
+      ),
+    );
   }
 
   String _videoKindLabel() {
@@ -2208,27 +2262,52 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
       return;
     }
     final vid = widget.videoData['id']?.toString() ?? '';
+    final authorId = widget.videoData['user_id']?.toString().trim() ?? '';
+    if (_canAddAuthorToScouting && authorId.isEmpty) {
+      return;
+    }
     setState(() => _isSaveLoading = true);
     try {
-      if (_isSaved) {
-        await SupaFlow.client
-            .from('saved_videos')
-            .delete()
-            .eq('user_id', uid)
-            .eq('video_id', vid);
+      if (_canAddAuthorToScouting) {
+        if (_isSaved) {
+          await SupaFlow.client
+              .from('jugadores_guardados')
+              .delete()
+              .eq('scout_id', uid)
+              .eq('jugador_id', authorId);
+        } else {
+          await SupaFlow.client.from('jugadores_guardados').insert({
+            'scout_id': uid,
+            'jugador_id': authorId,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        }
       } else {
-        await SupaFlow.client
-            .from('saved_videos')
-            .insert({'user_id': uid, 'video_id': vid});
+        if (_isSaved) {
+          await SupaFlow.client
+              .from('saved_videos')
+              .delete()
+              .eq('user_id', uid)
+              .eq('video_id', vid);
+        } else {
+          await SupaFlow.client
+              .from('saved_videos')
+              .insert({'user_id': uid, 'video_id': vid});
+        }
       }
+
       setState(() => _isSaved = !_isSaved);
       widget.onSaveChanged(vid, _isSaved);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(_isSaved
-                ? 'Video guardado en Guardados'
-                : 'Video removido de Guardados'),
-            duration: const Duration(seconds: 1)));
+        if (_canAddAuthorToScouting) {
+          _showScoutingFeedback(added: _isSaved);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(_isSaved
+                  ? 'Video guardado en Guardados'
+                  : 'Video removido de Guardados'),
+              duration: const Duration(seconds: 1)));
+        }
       }
     } catch (e) {}
     setState(() => _isSaveLoading = false);
@@ -2669,7 +2748,9 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                   _buildSideBtn(
                       _isSaved ? Icons.bookmark : Icons.bookmark_border,
                       _isSaved,
-                      _isSaved ? 'Guardado' : 'Guardar',
+                      _canAddAuthorToScouting
+                          ? (_isSaved ? 'En scouting' : 'Agregar a scouting')
+                          : (_isSaved ? 'Guardado' : 'Guardar'),
                       _toggleSave),
                 ])),
             if (_isPaused)
