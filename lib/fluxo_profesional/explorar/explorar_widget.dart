@@ -4505,45 +4505,71 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton(
-                      onPressed:
-                          hasVideo ? () => _openPlayerVideos(player) : null,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openPublicPlayerProfile(player),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF0D3B66),
-                        side: const BorderSide(color: Color(0xFFD6DEE8)),
+                        side: const BorderSide(color: Color(0xFFDCE3EC)),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        minimumSize: const Size.fromHeight(40),
-                        padding: EdgeInsets.zero,
+                        minimumSize: const Size.fromHeight(42),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                       ),
-                      child: Icon(
-                        Icons.smart_display_rounded,
-                        size: 20,
-                        color: hasVideo
-                            ? const Color(0xFF0D3B66)
-                            : const Color(0xFF9CA3AF),
+                      icon: const Icon(Icons.person_outline_rounded, size: 16),
+                      label: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Ver perfil',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF0D3B66),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _openPublicPlayerProfile(player),
+                    child: ElevatedButton.icon(
+                      onPressed:
+                          hasVideo ? () => _openPlayerVideos(player) : null,
                       style: ElevatedButton.styleFrom(
+                        elevation: 0,
                         backgroundColor: const Color(0xFF0D3B66),
                         foregroundColor: Colors.white,
+                        disabledBackgroundColor: const Color(0xFFF1F5F9),
+                        disabledForegroundColor: const Color(0xFF94A3B8),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        minimumSize: const Size.fromHeight(40),
-                        padding: EdgeInsets.zero,
-                        elevation: 0,
+                        minimumSize: const Size.fromHeight(42),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                       ),
-                      child: const Icon(
-                        Icons.person_search_rounded,
-                        size: 20,
-                        color: Colors.white,
+                      icon: Icon(Icons.play_circle_outline_rounded,
+                          size: 16,
+                          color: hasVideo
+                              ? Colors.white
+                              : const Color(0xFF94A3B8)),
+                      label: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Ver video',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: hasVideo
+                                ? Colors.white
+                                : const Color(0xFF94A3B8),
+                          ),
+                        ),
                       ),
                     ),
                   ),

@@ -596,7 +596,7 @@ class _DetallesDeLaConvocatoriaWidgetState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 GestureDetector(
-                    onTap: () => context.pop(),
+                    onTap: () => context.safePop(),
                     child: const Icon(Icons.arrow_back,
                         color: Colors.black, size: 24)),
                 const SizedBox(height: 20),

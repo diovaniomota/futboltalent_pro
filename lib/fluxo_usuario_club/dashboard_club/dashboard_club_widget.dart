@@ -4155,7 +4155,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
           SizedBox(
             width: double.infinity,
             child: _buildRecentCardAction(
-              label: 'Agregar al pipeline',
+              label: 'Agregar a Scouting',
               icon: Icons.playlist_add_rounded,
               primary: true,
               compact: compact,

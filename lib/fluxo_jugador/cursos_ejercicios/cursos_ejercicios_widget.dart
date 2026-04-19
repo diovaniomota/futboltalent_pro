@@ -63,6 +63,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   final Map<String, String> _userExerciseStatus = {};
   final Map<String, _ChallengeAttempt> _attemptByItemKey = {};
   bool _didHandleInitialChallenge = false;
+  bool _isReturningToConvocatoria = false;
 
   bool get _shouldReturnToConvocatoria {
     final returnTo = widget.returnTo?.trim().toLowerCase() ?? '';
@@ -71,16 +72,19 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
   }
 
   void _handleChallengeDismissed() {
-    if (!_shouldReturnToConvocatoria || !mounted) return;
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
+    if (!_shouldReturnToConvocatoria ||
+        !mounted ||
+        _isReturningToConvocatoria) {
       return;
     }
     final convId = widget.returnConvocatoriaId?.trim() ?? '';
     if (convId.isEmpty) return;
-    context.pushNamed(
+    _isReturningToConvocatoria = true;
+    context.goNamed(
       'Detalles_de_la_convocatoria',
-      queryParameters: {'convocatoriaId': convId},
+      queryParameters: {
+        'convocatoriaId': serializeParam(convId, ParamType.String),
+      }.withoutNulls,
     );
   }
 
@@ -1011,7 +1015,6 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                               child: GestureDetector(
                                 onTap: () {
                                   Navigator.pop(ctx);
-                                  _handleChallengeDismissed();
                                 },
                                 child: Container(
                                   padding: EdgeInsets.all(8 * scale),
@@ -1350,7 +1353,9 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      _handleChallengeDismissed();
+    });
   }
 
   @override
