@@ -141,12 +141,27 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
 
   Widget _buildStatePill(String state) {
     final color = _scoutingStateColor(state);
+    final background = () {
+      switch (state) {
+        case 'descubierto':
+          return const Color(0xFFEFF6FF);
+        case 'en_acompanamiento':
+          return const Color(0xFFFFF7ED);
+        case 'prioridad':
+          return const Color(0xFFECFDF3);
+        case 'descartado':
+          return const Color(0xFFFEF2F2);
+        default:
+          return color.withOpacity(0.12);
+      }
+    }();
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: background,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.28)),
+        border: Border.all(color: color.withOpacity(0.35)),
       ),
       child: Text(
         _scoutingStateLabel(state),
@@ -268,6 +283,51 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     });
   }
 
+  String _normalizeForMatch(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ñ', 'n');
+  }
+
+  List<String> _contextPositionTokens() {
+    final listName = (_selectedLista?['nombre']?.toString() ?? '').trim();
+    if (listName.isEmpty) return const [];
+    final normalized = _normalizeForMatch(listName);
+
+    const tokenGroups = <String, List<String>>{
+      'arquero': ['arquero', 'portero', 'goalkeeper', 'goleiro'],
+      'defensa': ['defensa', 'defensor', 'zaguero', 'lateral', 'center back'],
+      'mediocampo': ['mediocampo', 'mediocampista', 'volante', 'medio'],
+      'delantero': ['delantero', 'atacante', 'punta', 'extremo', 'forward'],
+    };
+
+    final matches = <String>{};
+    tokenGroups.forEach((_, tokens) {
+      for (final token in tokens) {
+        if (normalized.contains(token)) {
+          matches.addAll(tokens);
+          break;
+        }
+      }
+    });
+    return matches.toList();
+  }
+
+  bool _matchesSuggestionContext(Map<String, dynamic> player) {
+    final tokens = _contextPositionTokens();
+    if (tokens.isEmpty) return true;
+    final position = _normalizeForMatch(
+      (player['posicion'] ?? player['position'] ?? '').toString(),
+    );
+    if (position.isEmpty) return false;
+    return tokens.any(position.contains);
+  }
+
   List<Map<String, dynamic>> _suggestedPlayersFromGuardados() {
     final existingIds = _jugadoresEnLista
         .map((item) => item['jugador_id']?.toString() ?? '')
@@ -286,7 +346,13 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
         'user_id': uid,
       };
     }
-    return dedup.values.take(8).toList();
+
+    final all = dedup.values.toList();
+    final contextual = all.where(_matchesSuggestionContext).toList();
+    if (contextual.isNotEmpty) {
+      return contextual.take(8).toList();
+    }
+    return all.take(8).toList();
   }
 
   Future<void> _searchPlayersToAdd(String query) async {
@@ -1073,13 +1139,16 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: EdgeInsets.all(padding),
                           child: Column(children: [
-                            Text('Mi scouting',
-                                style: GoogleFonts.inter(
-                                    fontSize: 24 * scale,
-                                    fontWeight: FontWeight.bold)),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text('Mi scouting',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 24 * scale,
+                                      fontWeight: FontWeight.bold)),
+                            ),
                             SizedBox(height: 4 * scale),
                             Text(
-                              'Uso individual: organizá y seguí jugadores de forma flexible',
+                              'Gestioná y evaluá talento de forma profesional',
                               style: GoogleFonts.inter(
                                 fontSize: 13 * scale,
                                 color: const Color(0xFF64748B),
@@ -1135,7 +1204,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Center(
-                                        child: Text('Guardados',
+                                        child: Text('Inbox',
                                             style: TextStyle(
                                               color: _showGuardados
                                                   ? Colors.white
@@ -1235,11 +1304,11 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
           child: Column(children: [
             Icon(Icons.bookmark_border, size: 48, color: Colors.grey[400]),
             const SizedBox(height: 12),
-            Text('No tienes jugadores guardados',
+            Text('Inbox vacío',
                 style: TextStyle(color: Colors.grey[600], fontSize: 16)),
             const SizedBox(height: 8),
             Text(
-                'Agregá jugadores a scouting desde Feed o Explorer para verlos aquí',
+                'Los jugadores que guardás desde Feed o Explorer entran aquí para clasificarlos en listas.',
                 style: TextStyle(color: Colors.grey[400], fontSize: 13),
                 textAlign: TextAlign.center),
           ]),
@@ -1249,7 +1318,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('${_jugadoresGuardados.length} jugador(es) en mi scouting',
+        Text('${_jugadoresGuardados.length} jugador(es) en inbox',
             style: TextStyle(color: Colors.grey[600], fontSize: 13 * scale)),
         SizedBox(height: 12 * scale),
         ..._jugadoresGuardados.map((g) => _buildGuardadoCard(context, g)),
@@ -1683,39 +1752,40 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                         fontSize: 12,
                       ),
                     ),
+                  if (customTags.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: customTags
+                          .map(
+                            (tag) => Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F0FE),
+                                borderRadius: BorderRadius.circular(999),
+                                border:
+                                    Border.all(color: const Color(0xFFC5D7F2)),
+                              ),
+                              child: Text(
+                                '#$tag',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF0D3B66),
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
                 ],
               ),
             ),
             _buildStatePill(scoutingState),
           ]),
-          if (customTags.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: customTags
-                  .map(
-                    (tag) => Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8F0FE),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: const Color(0xFFC5D7F2)),
-                      ),
-                      child: Text(
-                        '#$tag',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF0D3B66),
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ],
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
@@ -1724,7 +1794,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
               OutlinedButton.icon(
                 onPressed: () => _editarNotaJugador(item),
                 icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('Editar'),
+                label: const Text('Avaliar jugador'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF0D3B66),
                   side: const BorderSide(color: Color(0xFF0D3B66)),
