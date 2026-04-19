@@ -34,6 +34,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   Map<String, dynamic>? _selectedLista;
   List<Map<String, dynamic>> _jugadoresEnLista = [];
   List<Map<String, dynamic>> _filteredJugadores = [];
+  String? _stateFilter; // null = all
 
   final _searchController = TextEditingController();
 
@@ -167,12 +168,26 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
 
   Widget _buildStatePill(String state) {
     final color = _scoutingStateColor(state);
+    final background = () {
+      switch (state) {
+        case 'descubierto':
+          return const Color(0xFFEFF6FF);
+        case 'en_acompanamiento':
+          return const Color(0xFFFFF7ED);
+        case 'prioridad':
+          return const Color(0xFFECFDF3);
+        case 'descartado':
+          return const Color(0xFFFEF2F2);
+        default:
+          return color.withOpacity(0.12);
+      }
+    }();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: background,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.28)),
+        border: Border.all(color: color.withOpacity(0.40)),
       ),
       child: Text(
         _scoutingStateLabel(state),
@@ -182,6 +197,117 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           color: color,
         ),
       ),
+    );
+  }
+
+  Widget _buildPipelineSummary(BuildContext context) {
+    final scale = _scaleFactor(context);
+    final counts = <String, int>{};
+    for (final state in _scoutingStates) {
+      counts[state] = _jugadoresEnLista
+          .where((i) => _scoutingStateFromItem(i) == state)
+          .length;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.account_tree_outlined,
+                size: 14 * scale, color: const Color(0xFF64748B)),
+            SizedBox(width: 6 * scale),
+            Text('Pipeline',
+                style: GoogleFonts.inter(
+                    fontSize: 12 * scale,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF64748B))),
+          ],
+        ),
+        SizedBox(height: 8 * scale),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: _scoutingStates.map((state) {
+              final count = counts[state] ?? 0;
+              final color = _scoutingStateColor(state);
+              final background = () {
+                switch (state) {
+                  case 'descubierto':
+                    return const Color(0xFFEFF6FF);
+                  case 'en_acompanamiento':
+                    return const Color(0xFFFFF7ED);
+                  case 'prioridad':
+                    return const Color(0xFFECFDF3);
+                  case 'descartado':
+                    return const Color(0xFFFEF2F2);
+                  default:
+                    return color.withOpacity(0.12);
+                }
+              }();
+              return GestureDetector(
+                onTap: () => setState(() {
+                  _stateFilter = _stateFilter == state ? null : state;
+                  _filterJugadores();
+                }),
+                child: Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _stateFilter == state ? color : background,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: color
+                            .withOpacity(_stateFilter == state ? 1.0 : 0.35)),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        count.toString(),
+                        style: GoogleFonts.inter(
+                          fontSize: 18 * scale,
+                          fontWeight: FontWeight.w800,
+                          color: _stateFilter == state ? Colors.white : color,
+                        ),
+                      ),
+                      Text(
+                        _scoutingStateLabel(state),
+                        style: GoogleFonts.inter(
+                          fontSize: 10 * scale,
+                          fontWeight: FontWeight.w600,
+                          color: _stateFilter == state ? Colors.white : color,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        if (_stateFilter != null) ...[
+          SizedBox(height: 8 * scale),
+          GestureDetector(
+            onTap: () => setState(() {
+              _stateFilter = null;
+              _filterJugadores();
+            }),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.filter_alt_off,
+                    size: 14 * scale, color: const Color(0xFF0D3B66)),
+                SizedBox(width: 4 * scale),
+                Text('Limpar filtro',
+                    style: GoogleFonts.inter(
+                        fontSize: 12 * scale,
+                        color: const Color(0xFF0D3B66),
+                        fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -347,10 +473,15 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   void _filterJugadores() {
     final query = normalizeLookupKey(_searchController.text);
     setState(() {
+      var base = _stateFilter == null
+          ? List<Map<String, dynamic>>.from(_jugadoresEnLista)
+          : _jugadoresEnLista
+              .where((item) => _scoutingStateFromItem(item) == _stateFilter)
+              .toList();
       if (query.isEmpty) {
-        _filteredJugadores = List.from(_jugadoresEnLista);
+        _filteredJugadores = base;
       } else {
-        _filteredJugadores = _jugadoresEnLista.where((item) {
+        _filteredJugadores = base.where((item) {
           final jugador = item['jugador'] as Map<String, dynamic>?;
           if (jugador == null) return false;
           final name = normalizeLookupKey(
@@ -883,7 +1014,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           SizedBox(height: 12 * scale),
           Text(
             hasSelectedList
-                ? 'Equipe técnica: compartilhe internamente a lista e atualize estados para apoiar decisões do clube.'
+                ? 'Avalie jogadores desta lista atualizando estado, etiquetas e notas de avaliação.'
                 : '1. Crie uma lista por necessidade do clube. 2. Selecione a lista. 3. Avalie jogadores com estado, etiquetas e notas.',
             style: GoogleFonts.inter(
               fontSize: 13 * scale,
@@ -1017,7 +1148,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
             textAlign: TextAlign.center),
         SizedBox(height: 10 * scale),
         Text(
-          'Depois você poderá adicionar jogadores, atualizar estado, etiquetas e notas com o staff.',
+          'Depois você poderá adicionar jogadores e avaliar cada um com estado, etiquetas e notas.',
           style: GoogleFonts.inter(
             fontSize: 12 * scale,
             color: Colors.grey[500],
@@ -1228,6 +1359,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                   contentPadding: EdgeInsets.symmetric(vertical: 10 * scale))),
         ),
         SizedBox(height: 16 * scale),
+        _buildPipelineSummary(context),
+        SizedBox(height: 16 * scale),
         if (_isLoading)
           const Center(child: CircularProgressIndicator())
         else if (_filteredJugadores.isEmpty)
@@ -1236,16 +1369,20 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                   padding: EdgeInsets.all(24 * scale),
                   child: Column(
                     children: [
-                      Text('Agregá jugadores para empezar a hacer seguimiento',
+                      Text(
+                          _stateFilter != null
+                              ? 'Nenhum jogador com estado "${_scoutingStateLabel(_stateFilter!)}" nesta lista.'
+                              : 'Adicione jogadores para iniciar o pipeline de avaliação.',
                           style: GoogleFonts.inter(
                               fontSize: 14 * scale, color: Colors.grey),
                           textAlign: TextAlign.center),
                       SizedBox(height: 12 * scale),
-                      OutlinedButton.icon(
-                        onPressed: _showAddJugadorModal,
-                        icon: const Icon(Icons.person_add_alt_1_rounded),
-                        label: const Text('Agregar jugador a esta lista'),
-                      ),
+                      if (_stateFilter == null)
+                        OutlinedButton.icon(
+                          onPressed: _showAddJugadorModal,
+                          icon: const Icon(Icons.person_add_alt_1_rounded),
+                          label: const Text('Adicionar jogador à lista'),
+                        ),
                     ],
                   )))
         else
@@ -1266,90 +1403,148 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     final photo = jugador?['photo_url'];
     final scoutingState = _scoutingStateFromItem(item);
     final customTags = _parseScoutingTags(item['scouting_tags']);
-    final positionLabel = position.isNotEmpty ? position : 'Sin posición';
+    final positionLabel =
+        position.isNotEmpty ? position : 'Posição não definida';
+    final stateColor = _scoutingStateColor(scoutingState);
+    final userId = item['jugador_id']?.toString().trim() ?? '';
 
     return Container(
       margin: EdgeInsets.only(bottom: 12 * scale),
-      padding: EdgeInsets.all(12 * scale),
       decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFB5BECA))),
-      child: Column(children: [
-        Row(children: [
-          CircleAvatar(
-              radius: 20 * scale,
-              backgroundImage: photo != null ? NetworkImage(photo) : null,
-              child: photo == null
-                  ? Text(_getInitials(jugador?['name'], jugador?['lastname']))
-                  : null),
-          SizedBox(width: 12 * scale),
-          Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Row(children: [
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: stateColor.withOpacity(0.30), width: 1.5),
+          color: Colors.white),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // State bar at top
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: stateColor.withOpacity(0.07),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(9)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              _buildStatePill(scoutingState),
+            ],
+          ),
+        ),
+        // Player info
+        Padding(
+          padding: EdgeInsets.all(12 * scale),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                      radius: 20 * scale,
+                      backgroundImage:
+                          photo != null ? NetworkImage(photo) : null,
+                      child: photo == null
+                          ? Text(_getInitials(
+                              jugador?['name'], jugador?['lastname']))
+                          : null),
+                  SizedBox(width: 12 * scale),
                   Expanded(
-                      child: Text(name,
-                          style: GoogleFonts.inter(
-                              fontSize: 14 * scale,
-                              fontWeight: FontWeight.w600))),
-                  TextButton.icon(
-                    onPressed: () => _showEditJugadorModal(item),
-                    icon: const Icon(Icons.edit_outlined, size: 16),
-                    label: const Text('Editar'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF0D3B66),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  )
-                ]),
-                Text('$positionLabel • $age años',
-                    style: GoogleFonts.inter(
-                        fontSize: 12 * scale, color: Colors.grey)),
-                SizedBox(height: 6 * scale),
-                _buildStatePill(scoutingState),
-              ]))
-        ]),
-        if (customTags.isNotEmpty) ...[
-          SizedBox(height: 8 * scale),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: customTags
-                .map(
-                  (tag) => Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8F0FE),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0xFFC5D7F2)),
-                    ),
-                    child: Text(
-                      '#$tag',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF0D3B66),
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name,
+                            style: GoogleFonts.inter(
+                                fontSize: 14 * scale,
+                                fontWeight: FontWeight.w700)),
+                        SizedBox(height: 2 * scale),
+                        Text('$positionLabel • $age anos',
+                            style: GoogleFonts.inter(
+                                fontSize: 12 * scale, color: Colors.grey[600])),
+                        if (customTags.isNotEmpty) ...[
+                          SizedBox(height: 6 * scale),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: customTags
+                                .map((tag) => Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE8F0FE),
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                        border: Border.all(
+                                            color: const Color(0xFFC5D7F2)),
+                                      ),
+                                      child: Text('#$tag',
+                                          style: GoogleFonts.inter(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: const Color(0xFF0D3B66))),
+                                    ))
+                                .toList(),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                )
-                .toList(),
+                ],
+              ),
+              if (item['nota'] != null &&
+                  item['nota'].toString().isNotEmpty) ...[
+                SizedBox(height: 10 * scale),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0))),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Nota de avaliação',
+                          style: GoogleFonts.inter(
+                              fontSize: 10 * scale,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF64748B))),
+                      SizedBox(height: 4 * scale),
+                      Text(item['nota'],
+                          style: GoogleFonts.inter(
+                              fontSize: 12 * scale,
+                              color: const Color(0xFF1E293B))),
+                    ],
+                  ),
+                ),
+              ],
+              SizedBox(height: 10 * scale),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => _showEditJugadorModal(item),
+                    icon: const Icon(Icons.assessment_outlined, size: 18),
+                    label: const Text('Avaliar jogador'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF0D3B66),
+                      side: const BorderSide(color: Color(0xFF0D3B66)),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: userId.isEmpty
+                        ? null
+                        : () => context.pushNamed(
+                              'perfil_profesional_solicitar_Contato',
+                              queryParameters: {'userId': userId},
+                            ),
+                    icon: const Icon(Icons.person_outline, size: 18),
+                    label: const Text('Ver perfil'),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
-        if (item['nota'] != null && item['nota'].toString().isNotEmpty) ...[
-          const Divider(),
-          Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8)),
-              child: Text(item['nota'],
-                  style: GoogleFonts.inter(fontSize: 12 * scale)))
-        ]
+        ),
       ]),
     );
   }
@@ -1759,7 +1954,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Mantenha o estado atualizado para facilitar alinhamento entre membros do staff.',
+                  'Mantenha o estado atualizado para apoiar decisões do clube sobre cada jogador.',
                   style: TextStyle(color: Colors.grey[600], fontSize: 12),
                 ),
                 const SizedBox(height: 10),

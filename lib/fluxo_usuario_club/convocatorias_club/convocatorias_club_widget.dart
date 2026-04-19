@@ -368,6 +368,62 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
     }
   }
 
+  Future<void> _closeConvocatoria(Map<String, dynamic> conv) async {
+    final id = conv['id']?.toString().trim() ?? '';
+    if (id.isEmpty) return;
+    try {
+      await SupaFlow.client
+          .from('convocatorias')
+          .update({'estado': 'cerrada'}).eq('id', id);
+      _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Convocatória fechada'),
+            backgroundColor: Color(0xFF6B7280),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao fechar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _reopenConvocatoria(Map<String, dynamic> conv) async {
+    final id = conv['id']?.toString().trim() ?? '';
+    if (id.isEmpty) return;
+    try {
+      await SupaFlow.client
+          .from('convocatorias')
+          .update({'estado': 'activa'}).eq('id', id);
+      _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Convocatória reaberta'),
+            backgroundColor: Color(0xFF16A34A),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao reabrir: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   String _formatDate(String? dateStr) {
     if (dateStr == null || dateStr.isEmpty) return '-';
     try {
@@ -610,7 +666,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
           backgroundColor: const Color(0xFF0D3B66),
           icon: const Icon(Icons.add, color: Colors.white),
           label: Text(
-            'Nueva',
+            '+ Nova convocatória',
             style: GoogleFonts.inter(
                 color: Colors.white, fontWeight: FontWeight.w600),
           ),
@@ -941,6 +997,8 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                           onSelected: (value) {
                             if (value == 'ver')
                               _showViewConvocatoriaModal(conv);
+                            if (value == 'scouting')
+                              context.pushNamed(ListaYNotaWidget.routeName);
                             if (value == 'editar')
                               _showEditConvocatoriaModal(conv);
                             if (value == 'eliminar')
@@ -955,6 +1013,18 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                                 const SizedBox(width: 10),
                                 Text('Ver detalles',
                                     style: GoogleFonts.inter(fontSize: 13)),
+                              ]),
+                            ),
+                            PopupMenuItem(
+                              value: 'scouting',
+                              child: Row(children: [
+                                const Icon(Icons.bookmark_add_outlined,
+                                    size: 16, color: Color(0xFF7C3AED)),
+                                const SizedBox(width: 10),
+                                Text('Adicionar ao scouting',
+                                    style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        color: const Color(0xFF7C3AED))),
                               ]),
                             ),
                             PopupMenuItem(
@@ -1012,31 +1082,122 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                       ),
                     ],
                     const SizedBox(height: 10),
+                    // Postulações destacadas
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: postulaciones > 0
+                            ? const Color(0xFFEDE9FE)
+                            : const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.people,
+                              size: 14,
+                              color: postulaciones > 0
+                                  ? const Color(0xFF7C3AED)
+                                  : const Color(0xFF9CA3AF)),
+                          const SizedBox(width: 5),
+                          Text(
+                            '$postulaciones jogador${postulaciones != 1 ? 'es' : ''} postulado${postulaciones != 1 ? 's' : ''}',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: postulaciones > 0
+                                  ? const Color(0xFF6D28D9)
+                                  : const Color(0xFF6B7280),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
                     // Stats inline
                     Wrap(
                       spacing: 12,
                       runSpacing: 4,
                       children: [
-                        _inlineStat(Icons.people_outline,
-                            '$postulaciones postulacion${postulaciones != 1 ? 'es' : ''}'),
                         if (fechaCierre != '-')
                           _inlineStat(Icons.calendar_today_outlined,
                               'Cierra $fechaCierre'),
                         if (challengeLabels.isNotEmpty)
                           _inlineStat(Icons.flag_outlined,
-                              '${challengeLabels.length} desafío${challengeLabels.length != 1 ? 's' : ''}'),
+                              '${challengeLabels.length} desafio${challengeLabels.length != 1 ? 's' : ''}'),
                       ],
                     ),
-                    if (challengeLabels.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: challengeLabels
-                            .map<Widget>((c) => _buildExerciseTag(c))
-                            .toList(),
-                      ),
-                    ],
+                    const SizedBox(height: 10),
+                    // Quick actions row
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => context
+                                .pushNamed(PostulacionesWidget.routeName),
+                            icon: const Icon(Icons.people_outline, size: 14),
+                            label: Text('Ver postulantes',
+                                style: GoogleFonts.inter(
+                                    fontSize: 12, fontWeight: FontWeight.w600)),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF7C3AED),
+                              side: const BorderSide(color: Color(0xFFDDD6FE)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 6),
+                              minimumSize: const Size(0, 32),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        OutlinedButton.icon(
+                          onPressed: () => _showEditConvocatoriaModal(conv),
+                          icon: const Icon(Icons.edit_outlined, size: 14),
+                          label: Text('Editar',
+                              style: GoogleFonts.inter(
+                                  fontSize: 12, fontWeight: FontWeight.w600)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF0D3B66),
+                            side: const BorderSide(color: Color(0xFFBFDBFE)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            minimumSize: const Size(0, 32),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        OutlinedButton.icon(
+                          onPressed: () => isActive
+                              ? _closeConvocatoria(conv)
+                              : _reopenConvocatoria(conv),
+                          icon: Icon(
+                              isActive
+                                  ? Icons.lock_outline
+                                  : Icons.lock_open_outlined,
+                              size: 14),
+                          label: Text(isActive ? 'Fechar' : 'Reabrir',
+                              style: GoogleFonts.inter(
+                                  fontSize: 12, fontWeight: FontWeight.w600)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: isActive
+                                ? const Color(0xFFDC2626)
+                                : const Color(0xFF16A34A),
+                            side: BorderSide(
+                                color: isActive
+                                    ? const Color(0xFFFECACA)
+                                    : const Color(0xFFBBF7D0)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            minimumSize: const Size(0, 32),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),

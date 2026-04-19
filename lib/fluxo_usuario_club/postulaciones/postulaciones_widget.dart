@@ -396,6 +396,61 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     }
   }
 
+  Future<void> _showAddToScoutingModal(Map<String, dynamic> postulacion) async {
+    final jugador = postulacion['jugador'] as Map<String, dynamic>?;
+    final jugadorId = jugador?['user_id']?.toString() ?? '';
+    if (jugadorId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Jogador sem ID — não é possível adicionar.'),
+            backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    // Load listas_club for this club
+    List<Map<String, dynamic>> listas = [];
+    try {
+      final refs = _clubRefs.toList();
+      final response = refs.length == 1
+          ? await SupaFlow.client
+              .from('listas_club')
+              .select('id, nombre')
+              .eq('club_id', refs.first)
+              .order('created_at', ascending: false)
+          : await SupaFlow.client
+              .from('listas_club')
+              .select('id, nombre')
+              .inFilter('club_id', refs)
+              .order('created_at', ascending: false);
+      listas = List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Erro ao carregar listas: $e'),
+              backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _AddToScoutingSheet(
+        listas: listas,
+        jugadorId: jugadorId,
+        jugadorName:
+            '${jugador?['name'] ?? ''} ${jugador?['lastname'] ?? ''}'.trim(),
+        clubRefs: _clubRefs,
+      ),
+    );
+  }
+
   ({Color background, Color foreground, IconData icon}) _statusVisuals(
       String estado) {
     switch (estado.toLowerCase()) {
@@ -1371,17 +1426,36 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                               size: 20 * scale,
                               color: const Color(0xFF475569),
                             ),
-                            onSelected: (value) =>
-                                _updatePostulacionStatus(postulacion, value),
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
+                            onSelected: (value) {
+                              if (value == 'scouting') {
+                                _showAddToScoutingModal(postulacion);
+                              } else {
+                                _updatePostulacionStatus(postulacion, value);
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              const PopupMenuItem(
                                   value: 'pendiente', child: Text('Nuevo')),
-                              PopupMenuItem(
+                              const PopupMenuItem(
                                   value: 'revisado', child: Text('Revisado')),
-                              PopupMenuItem(
+                              const PopupMenuItem(
                                   value: 'aceptado', child: Text('Aceptado')),
-                              PopupMenuItem(
+                              const PopupMenuItem(
                                   value: 'rechazado', child: Text('Rechazado')),
+                              const PopupMenuDivider(),
+                              PopupMenuItem(
+                                value: 'scouting',
+                                child: Row(children: [
+                                  const Icon(Icons.bookmark_add_outlined,
+                                      size: 16, color: Color(0xFF7C3AED)),
+                                  const SizedBox(width: 10),
+                                  Text('Adicionar ao scouting',
+                                      style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          color: const Color(0xFF7C3AED),
+                                          fontWeight: FontWeight.w600)),
+                                ]),
+                              ),
                             ],
                           ),
                         ),
@@ -2068,6 +2142,344 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ===== ADD TO SCOUTING SHEET =====
+class _AddToScoutingSheet extends StatefulWidget {
+  const _AddToScoutingSheet({
+    Key? key,
+    required this.listas,
+    required this.jugadorId,
+    required this.jugadorName,
+    required this.clubRefs,
+  }) : super(key: key);
+
+  final List<Map<String, dynamic>> listas;
+  final String jugadorId;
+  final String jugadorName;
+  final Set<String> clubRefs;
+
+  @override
+  State<_AddToScoutingSheet> createState() => _AddToScoutingSheetState();
+}
+
+class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
+  String? _selectedListaId;
+  bool _isSaving = false;
+  bool _isCreatingList = false;
+  final _newListNameCtrl = TextEditingController();
+  late List<Map<String, dynamic>> _listas;
+
+  @override
+  void initState() {
+    super.initState();
+    _listas = List.from(widget.listas);
+  }
+
+  @override
+  void dispose() {
+    _newListNameCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _createListAndSelect() async {
+    final name = _newListNameCtrl.text.trim();
+    if (name.isEmpty) return;
+    setState(() => _isSaving = true);
+    try {
+      final clubId = widget.clubRefs.isNotEmpty ? widget.clubRefs.first : '';
+      if (clubId.isEmpty) throw Exception('Club não identificado');
+      final res = await SupaFlow.client
+          .from('listas_club')
+          .insert({
+            'club_id': clubId,
+            'nombre': name,
+            'created_at': DateTime.now().toIso8601String(),
+          })
+          .select('id, nombre')
+          .single();
+      final newLista = Map<String, dynamic>.from(res);
+      setState(() {
+        _listas.insert(0, newLista);
+        _selectedListaId = newLista['id']?.toString();
+        _isCreatingList = false;
+        _newListNameCtrl.clear();
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Erro ao criar lista: $e'),
+              backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _addToScouting() async {
+    if (_selectedListaId == null) return;
+    setState(() => _isSaving = true);
+    try {
+      // Check if already in list to avoid duplicate
+      final existing = await SupaFlow.client
+          .from('listas_jugadores')
+          .select('id')
+          .eq('lista_id', _selectedListaId!)
+          .eq('jugador_id', widget.jugadorId)
+          .maybeSingle();
+      if (existing != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Jogador já está nessa lista.'),
+              backgroundColor: Color(0xFF6B7280),
+            ),
+          );
+        }
+        Navigator.pop(context);
+        return;
+      }
+      await SupaFlow.client.from('listas_jugadores').insert({
+        'lista_id': _selectedListaId,
+        'jugador_id': widget.jugadorId,
+        'scouting_state': 'descubierto',
+        'calificacion': 1,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${widget.jugadorName.isNotEmpty ? widget.jugadorName : 'Jogador'} adicionado ao scouting ✓',
+            ),
+            backgroundColor: const Color(0xFF7C3AED),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              const Icon(Icons.bookmark_add_outlined,
+                  color: Color(0xFF7C3AED), size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Adicionar ao scouting',
+                  style: GoogleFonts.inter(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A)),
+                ),
+              ),
+            ],
+          ),
+          if (widget.jugadorName.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              widget.jugadorName,
+              style: GoogleFonts.inter(
+                  fontSize: 13, color: const Color(0xFF64748B)),
+            ),
+          ],
+          const SizedBox(height: 20),
+
+          // Lista options
+          if (_listas.isEmpty && !_isCreatingList)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'Nenhuma lista criada ainda. Crie uma para continuar.',
+                style: GoogleFonts.inter(
+                    fontSize: 13, color: const Color(0xFF94A3B8)),
+              ),
+            )
+          else if (!_isCreatingList)
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.35,
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: _listas.length,
+                separatorBuilder: (_, __) =>
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                itemBuilder: (_, i) {
+                  final lista = _listas[i];
+                  final id = lista['id']?.toString() ?? '';
+                  final nome = lista['nombre']?.toString() ?? 'Lista';
+                  final isSelected = _selectedListaId == id;
+                  return ListTile(
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    leading: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFFEDE9FE)
+                            : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        isSelected ? Icons.check_circle : Icons.folder_outlined,
+                        size: 18,
+                        color: isSelected
+                            ? const Color(0xFF7C3AED)
+                            : const Color(0xFF64748B),
+                      ),
+                    ),
+                    title: Text(
+                      nome,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w500,
+                        color: isSelected
+                            ? const Color(0xFF6D28D9)
+                            : const Color(0xFF1E293B),
+                      ),
+                    ),
+                    onTap: () => setState(() => _selectedListaId = id),
+                  );
+                },
+              ),
+            ),
+
+          // Create new list toggle
+          if (!_isCreatingList)
+            TextButton.icon(
+              onPressed: () => setState(() => _isCreatingList = true),
+              icon: const Icon(Icons.add, size: 16, color: Color(0xFF0D3B66)),
+              label: Text(
+                'Nova lista',
+                style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: const Color(0xFF0D3B66),
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+
+          // Inline new list creation
+          if (_isCreatingList) ...[
+            const SizedBox(height: 8),
+            TextField(
+              controller: _newListNameCtrl,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Nome da lista...',
+                hintStyle: GoogleFonts.inter(
+                    fontSize: 14, color: const Color(0xFF94A3B8)),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFF7C3AED))),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () => setState(() {
+                    _isCreatingList = false;
+                    _newListNameCtrl.clear();
+                  }),
+                  child: Text('Cancelar',
+                      style: GoogleFonts.inter(color: const Color(0xFF64748B))),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _isSaving ? null : _createListAndSelect,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D3B66),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: Text('Criar',
+                      style: GoogleFonts.inter(color: Colors.white)),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: (_selectedListaId != null && !_isSaving)
+                  ? _addToScouting
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7C3AED),
+                disabledBackgroundColor: const Color(0xFFDDD6FE),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: _isSaving
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
+                  : Text(
+                      'Adicionar ao scouting',
+                      style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }
