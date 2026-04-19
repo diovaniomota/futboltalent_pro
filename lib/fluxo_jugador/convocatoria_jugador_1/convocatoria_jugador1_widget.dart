@@ -974,9 +974,22 @@ class _ConvocatoriaJugador1WidgetState
     final clubLeague = _resolveClubLeague(clubData);
     final clubCountry = _resolveClubCountry(clubData);
     final clubSecondary = clubLeague.isNotEmpty ? clubLeague : clubCountry;
-    final mode = _resolveConvocatoriaMode(convocatoria);
     final activeCount = convocatoria['active_convocatorias_count'] as int? ?? 0;
-    final requiredChallengesCount = _requiredChallengesCount(convocatoria);
+    final closingRaw = [
+      convocatoria['fecha_fin'],
+      convocatoria['fecha_cierre'],
+      convocatoria['due_date'],
+      convocatoria['closing_date'],
+    ].firstWhere(
+      (item) => item?.toString().trim().isNotEmpty == true,
+      orElse: () => null,
+    );
+    final closingDate = closingRaw == null
+        ? null
+        : DateTime.tryParse(closingRaw.toString())?.toLocal();
+    final closingText = closingDate == null
+        ? ''
+        : 'Cierra el ${closingDate.day}/${closingDate.month} a las ${closingDate.hour.toString().padLeft(2, '0')}:${closingDate.minute.toString().padLeft(2, '0')}';
 
     return GestureDetector(
       onTap: () => _navigateToDetail(convocatoria),
@@ -984,13 +997,13 @@ class _ConvocatoriaJugador1WidgetState
         margin: const EdgeInsets.only(bottom: 20),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0xFFE2E8F0)),
           boxShadow: const [
             BoxShadow(
-              color: Color(0x120D3B66),
-              blurRadius: 14,
-              offset: Offset(0, 5),
+              color: Color(0x0F0D3B66),
+              blurRadius: 8,
+              offset: Offset(0, 3),
             )
           ],
         ),
@@ -999,52 +1012,68 @@ class _ConvocatoriaJugador1WidgetState
           children: [
             ClipRRect(
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(20),
-                topRight: Radius.circular(20),
+                topLeft: Radius.circular(14),
+                topRight: Radius.circular(14),
               ),
-              child: Stack(
-                children: [
-                  imagenUrl.isNotEmpty
-                      ? Image.network(
-                          imagenUrl,
-                          width: double.infinity,
-                          height: 156,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _buildPlaceholderImage(),
-                        )
-                      : _buildPlaceholderImage(),
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _convocatoriaModeColor(mode)
-                            .withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        mode,
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: _convocatoriaModeColor(mode),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              child: imagenUrl.isNotEmpty
+                  ? Image.network(
+                      imagenUrl,
+                      width: double.infinity,
+                      height: 92,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildPlaceholderImage(),
+                    )
+                  : _buildPlaceholderImage(),
             ),
             Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(
+                    titulo,
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF0F172A),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (closingText.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      closingText,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (ubicacion.isNotEmpty)
+                        _buildInfoTag(
+                          Icons.location_on_outlined,
+                          ubicacion,
+                        ),
+                      if (posicion.isNotEmpty)
+                        _buildInfoTag(
+                          Icons.sports_soccer,
+                          posicion,
+                        ),
+                      if (categoria.isNotEmpty)
+                        _buildInfoTag(
+                          Icons.shield_outlined,
+                          categoria,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   GestureDetector(
                     onTap: () => _openClubProfile(convocatoria),
                     child: Container(
@@ -1125,45 +1154,6 @@ class _ConvocatoriaJugador1WidgetState
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    titulo,
-                    style: GoogleFonts.inter(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF0F172A),
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _buildInfoTag(
-                        Icons.badge_outlined,
-                        'Club: $clubName',
-                      ),
-                      _buildInfoTag(
-                        Icons.category_outlined,
-                        'Categoría: ${categoria.isNotEmpty ? categoria : 'N/A'}',
-                      ),
-                      _buildInfoTag(
-                        Icons.sports_soccer,
-                        'Posición: ${posicion.isNotEmpty ? posicion : 'Todas'}',
-                      ),
-                      _buildInfoTag(
-                        Icons.location_on_outlined,
-                        'Ubicación: $ubicacion',
-                      ),
-                      if (requiredChallengesCount > 0)
-                        _buildInfoTag(
-                          Icons.task_alt_rounded,
-                          'Desafíos requeridos: $requiredChallengesCount',
-                        ),
-                    ],
-                  ),
                 ],
               ),
             ),
@@ -1175,7 +1165,7 @@ class _ConvocatoriaJugador1WidgetState
 
   Widget _buildPlaceholderImage() => Container(
       width: double.infinity,
-      height: 156,
+      height: 92,
       color: const Color(0xFFE0E0E0),
       child: const Center(
           child:
@@ -1189,13 +1179,15 @@ class _ConvocatoriaJugador1WidgetState
   Widget _buildInfoTag(IconData icon, String text) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-          color: const Color(0xFFF0F4F8),
-          borderRadius: BorderRadius.circular(4)),
+          color: const Color(0xFFDCEEFF),
+          borderRadius: BorderRadius.circular(999)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 14, color: const Color(0xFF0D3B66)),
         const SizedBox(width: 4),
         Text(text,
-            style:
-                GoogleFonts.inter(fontSize: 12, color: const Color(0xFF0D3B66)))
+            style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF0D3B66)))
       ]));
 }

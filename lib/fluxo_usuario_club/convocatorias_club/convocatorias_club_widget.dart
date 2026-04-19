@@ -9,6 +9,7 @@ import '/index.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'convocatorias_club_model.dart';
 export 'convocatorias_club_model.dart';
 
@@ -1012,19 +1013,18 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                     ],
                     const SizedBox(height: 10),
                     // Stats inline
-                    Row(
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
                       children: [
                         _inlineStat(Icons.people_outline,
                             '$postulaciones postulacion${postulaciones != 1 ? 'es' : ''}'),
-                        const SizedBox(width: 14),
                         if (fechaCierre != '-')
                           _inlineStat(Icons.calendar_today_outlined,
                               'Cierra $fechaCierre'),
-                        if (challengeLabels.isNotEmpty) ...[
-                          const SizedBox(width: 14),
+                        if (challengeLabels.isNotEmpty)
                           _inlineStat(Icons.flag_outlined,
                               '${challengeLabels.length} desafío${challengeLabels.length != 1 ? 's' : ''}'),
-                        ],
                       ],
                     ),
                     if (challengeLabels.isNotEmpty) ...[
@@ -1107,15 +1107,15 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
 
   Widget _buildExerciseTag(String name) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: const Color(0xFFF0F4FF),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFBFD0FF)),
       ),
       child: Text(name,
-          style:
-              GoogleFonts.inter(fontSize: 11, color: const Color(0xFF3730A3))),
+          style: GoogleFonts.inter(
+              fontSize: 10.5, color: const Color(0xFF3730A3))),
     );
   }
 }
@@ -1149,7 +1149,9 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
   String _tipo = 'Abierta';
   DateTime _fechaCierre = DateTime.now().add(const Duration(days: 30));
   bool _isSaving = false;
+  bool _isUploadingImage = false;
   bool _isLoadingChallenges = true;
+  String? _imagenUrl;
   List<Map<String, dynamic>> _availableChallenges = [];
   List<Map<String, dynamic>> _selectedRequiredChallenges = [];
   bool get _isEditing => widget.existingData != null;
@@ -1174,6 +1176,9 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
           ? 'Sub-17'
           : normalizePlayerCategory(data['categoria']);
       _tipo = data['tipo'] ?? 'Abierta';
+      _imagenUrl = data['imagen_url']?.toString().trim().isNotEmpty == true
+          ? data['imagen_url'].toString().trim()
+          : null;
       _selectedRequiredChallenges =
           _convocatoriaRequiredChallengesFrom(data['required_challenges']);
       if (data['fecha_cierre'] != null) {
@@ -1291,6 +1296,16 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
       return;
     }
 
+    if (_isUploadingImage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Esperá a que termine la carga de la imagen.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSaving = true);
 
     try {
@@ -1330,6 +1345,8 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
         'titulo': _tituloController.text.trim(),
         'posicion': normalizedPosition,
         'descripcion': _descripcionController.text.trim(),
+        'imagen_url':
+            _imagenUrl?.trim().isNotEmpty == true ? _imagenUrl!.trim() : null,
         'categoria': normalizedCategory,
         'tipo': _tipo,
         'pais': normalizedCountry,
@@ -1441,6 +1458,60 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
     }
   }
 
+  Future<void> _pickAndUploadCoverImage() async {
+    try {
+      final picker = ImagePicker();
+      final image = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1600,
+        maxHeight: 900,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+
+      setState(() => _isUploadingImage = true);
+
+      final bytes = await image.readAsBytes();
+      final safeClubId =
+          widget.clubId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final fileName =
+          'convocatoria_cover_${safeClubId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      await SupaFlow.client.storage.from('Fotos').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: const FileOptions(contentType: 'image/jpeg'),
+          );
+
+      final publicUrl =
+          SupaFlow.client.storage.from('Fotos').getPublicUrl(fileName);
+
+      if (!mounted) return;
+      setState(() {
+        _imagenUrl = publicUrl;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Imagen de capa cargada'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al subir imagen: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingImage = false);
+      }
+    }
+  }
+
   Future<void> _selectDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -1517,6 +1588,8 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
                 children: [
                   _buildTextField('Título *', _tituloController,
                       'Ej: Mediocampistas Sub-17 para temporada 2026'),
+                  const SizedBox(height: 16),
+                  _buildCoverImageField(),
                   const SizedBox(height: 16),
                   _buildDropdown(
                     'Posición buscada',
@@ -1797,6 +1870,97 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildCoverImageField() {
+    final hasImage = _imagenUrl?.trim().isNotEmpty == true;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Imagen de capa',
+          style: GoogleFonts.inter(fontSize: 12, color: Colors.grey),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          width: double.infinity,
+          height: 120,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF5F5F5),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: hasImage
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    _imagenUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _buildCoverPlaceholder(),
+                  ),
+                )
+              : _buildCoverPlaceholder(),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            OutlinedButton.icon(
+              onPressed: (_isUploadingImage || _isSaving)
+                  ? null
+                  : _pickAndUploadCoverImage,
+              icon: _isUploadingImage
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.upload_file_outlined, size: 18),
+              label: Text(
+                _isUploadingImage
+                    ? 'Cargando...'
+                    : hasImage
+                        ? 'Cambiar imagen'
+                        : 'Subir imagen',
+              ),
+            ),
+            if (hasImage) ...[
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: (_isUploadingImage || _isSaving)
+                    ? null
+                    : () => setState(() => _imagenUrl = null),
+                icon: const Icon(Icons.delete_outline,
+                    size: 18, color: Color(0xFFDC2626)),
+                label: const Text(
+                  'Quitar',
+                  style: TextStyle(color: Color(0xFFDC2626)),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCoverPlaceholder() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.image_outlined, color: Colors.grey[500], size: 28),
+          const SizedBox(height: 6),
+          Text(
+            'Sin imagen de capa',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -2656,7 +2656,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                'Dashboard',
+                'Gestión de talento',
                 style: GoogleFonts.inter(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
@@ -2668,7 +2668,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         Padding(
           padding: const EdgeInsets.only(left: 12, bottom: 14),
           child: Text(
-            'Explorá jugadores y conectá con nuevos talentos',
+            'Explora jugadores y conecta talento',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
@@ -3777,17 +3777,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = _isCompactDashboard(context);
-        final stackedActions = _shouldStackDashboardActions(context);
         final maxWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : MediaQuery.of(context).size.width - 32;
         final cardWidth =
             compact ? (maxWidth - 4).clamp(248.0, 320.0).toDouble() : 286.0;
-        final sectionHeight = stackedActions
-            ? 220.0
-            : compact
-                ? 182.0
-                : 170.0;
+        final sectionHeight = compact ? 182.0 : 170.0;
 
         return SizedBox(
           height: sectionHeight,
@@ -3864,71 +3859,20 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    if (stackedActions) ...[
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () => _showCandidatesSheet(conv),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0D3B66),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
-                          child: _buildAdaptiveButtonLabel(
-                            'Ver candidatos',
-                            color: Colors.white,
-                          ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => _showCandidatesSheet(conv),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D3B66),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        child: _buildAdaptiveButtonLabel(
+                          'Ver candidatos',
+                          color: Colors.white,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton(
-                          onPressed: () =>
-                              context.pushNamed(PostulacionesWidget.routeName),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
-                          child: _buildAdaptiveButtonLabel(
-                            'Postulaciones',
-                            color: const Color(0xFF0D3B66),
-                          ),
-                        ),
-                      ),
-                    ] else
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () => _showCandidatesSheet(conv),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF0D3B66),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 10),
-                              ),
-                              child: _buildAdaptiveButtonLabel(
-                                'Ver candidatos',
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => context.pushNamed(
-                                PostulacionesWidget.routeName,
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 10),
-                              ),
-                              child: _buildAdaptiveButtonLabel(
-                                'Postulaciones',
-                                color: const Color(0xFF0D3B66),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                    ),
                   ],
                 ),
               );

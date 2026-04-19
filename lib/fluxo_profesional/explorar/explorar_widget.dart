@@ -9,6 +9,7 @@ import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/gamification/gamification_service.dart';
 import '/guardian/guardian_mvp_service.dart';
+import 'latam_taxonomy.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import '/index.dart';
@@ -101,18 +102,22 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   String? _scoutPosition;
   String? _scoutCategory;
   String? _scoutPlayerCountry;
+  String? _scoutPlayerState;
   String? _scoutPlayerCity;
   String? _scoutPlayerLevel;
   String? _scoutClubCountry;
+  String? _scoutClubState;
   String? _scoutClubCity;
   String? _scoutClubLeague;
   String? _scoutConvocatoriaCountry;
+  String? _scoutConvocatoriaState;
   String? _scoutConvocatoriaCity;
   String? _scoutConvocatoriaCategory;
   String? _scoutConvocatoriaPosition;
   String? _jugadorPlayerCategory;
   String? _jugadorPlayerPosition;
   String? _jugadorPlayerCountry;
+  String? _jugadorPlayerState;
   String? _jugadorPlayerCity;
   String? _jugadorPlayerLevel;
   String? _jugadorConvocatoriaCategory;
@@ -146,6 +151,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   List<String> _realConvocatoriaCountries = [];
   List<String> _realConvocatoriaCities = [];
   List<String> _realConvocatoriaLocations = [];
+
+  // Country→Cities maps for cooperative filtering
+  Map<String, Set<String>> _playerCountryCities = {};
+  Map<String, Set<String>> _clubCountryCities = {};
+  Map<String, Set<String>> _convocatoriaCountryCities = {};
 
   Widget _buildFeatureUnavailableState({
     required String title,
@@ -294,6 +304,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       _realPlayerCities =
           buildNormalizedOptions(listP.map(_resolveCity), normalizeCityName);
       _realPlayerLevels = _extractUniqueStrings(listP.map(_resolvePlayerLevel));
+      // Build country→cities map for players
+      _playerCountryCities = _buildCountryCityMap(
+        listP,
+        (row) => normalizeCountryName(_resolveCountryFromUser(row)),
+        (row) => normalizeCityName(_resolveCity(row)),
+      );
     } catch (_) {}
     try {
       final cRes = await SupaFlow.client.from('clubs').select().limit(1500);
@@ -309,6 +325,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       _realClubLeagues = buildNormalizedOptions(
         listC.map(_resolveClubLeague),
         normalizeLeagueName,
+      );
+      // Build country→cities map for clubs
+      _clubCountryCities = _buildCountryCityMap(
+        listC,
+        (row) => normalizeCountryName(_resolveCountryFromClub(row)),
+        (row) => normalizeCityName(_resolveCity(row)),
       );
     } catch (_) {}
     try {
@@ -338,7 +360,41 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         listConv.map(_resolveConvocatoriaLocationLabel),
         titleCaseLabel,
       );
+      // Build country→cities map for convocatorias
+      _convocatoriaCountryCities = _buildCountryCityMap(
+        listConv,
+        (row) => normalizeCountryName(_resolveConvocatoriaCountry(row)),
+        (row) => normalizeCityName(_resolveConvocatoriaCity(row)),
+      );
     } catch (_) {}
+  }
+
+  Map<String, Set<String>> _buildCountryCityMap(
+    List<Map<String, dynamic>> rows,
+    String Function(Map<String, dynamic>) countryResolver,
+    String Function(Map<String, dynamic>) cityResolver,
+  ) {
+    final map = <String, Set<String>>{};
+    for (final row in rows) {
+      final country = countryResolver(row);
+      final city = cityResolver(row);
+      if (country.isEmpty || city.isEmpty) continue;
+      map.putIfAbsent(country, () => <String>{}).add(city);
+    }
+    return map;
+  }
+
+  List<String> _citiesForCountry(
+    Map<String, Set<String>> countryCityMap,
+    List<String> allCities,
+    String? selectedCountry,
+  ) {
+    if (selectedCountry == null || selectedCountry.isEmpty) return allCities;
+    final cities = countryCityMap[selectedCountry];
+    if (cities == null || cities.isEmpty) return allCities;
+    final sorted = cities.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return sorted;
   }
 
   Future<void> _loadViewerContext() async {
@@ -1469,6 +1525,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           _scoutPlayerCountry!.toLowerCase());
     }
 
+    if (_scoutPlayerState != null) {
+      filtered = filtered.where((u) =>
+          _resolveState(u).toLowerCase() == _scoutPlayerState!.toLowerCase());
+    }
+
     if (_scoutPlayerCity != null) {
       filtered = filtered.where((u) =>
           _resolveCity(u).toLowerCase() == _scoutPlayerCity!.toLowerCase());
@@ -1502,6 +1563,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       filtered = filtered.where((club) =>
           _resolveCountryFromClub(club).toLowerCase() ==
           _scoutClubCountry!.toLowerCase());
+    }
+
+    if (_scoutClubState != null) {
+      filtered = filtered.where((club) =>
+          _resolveState(club).toLowerCase() == _scoutClubState!.toLowerCase());
     }
 
     if (_scoutClubCity != null) {
@@ -1571,6 +1637,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       filtered = filtered.where((u) =>
           _resolveCountryFromUser(u).toLowerCase() ==
           _jugadorPlayerCountry!.toLowerCase());
+    }
+
+    if (_jugadorPlayerState != null) {
+      filtered = filtered.where((u) =>
+          _resolveState(u).toLowerCase() == _jugadorPlayerState!.toLowerCase());
     }
 
     if (_jugadorPlayerCity != null) {
@@ -1691,6 +1762,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     _jugadorPlayerCategory = null;
     _jugadorPlayerPosition = null;
     _jugadorPlayerCountry = null;
+    _jugadorPlayerState = null;
     _jugadorPlayerCity = null;
     _jugadorPlayerLevel = null;
     _jugadorConvocatoriaCategory = null;
@@ -1736,6 +1808,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         return _jugadorPlayerCategory != null ||
             _jugadorPlayerPosition != null ||
             _jugadorPlayerCountry != null ||
+            _jugadorPlayerState != null ||
             _jugadorPlayerCity != null ||
             _jugadorPlayerLevel != null;
       case _JugadorSearchTab.convocatorias:
@@ -1766,6 +1839,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         add('Categoría', _jugadorPlayerCategory);
         add('Posición', _jugadorPlayerPosition);
         add('País', _jugadorPlayerCountry);
+        add('Provincia', _jugadorPlayerState);
         add('Ciudad', _jugadorPlayerCity);
         add('Nivel', _jugadorPlayerLevel);
         break;
@@ -1795,6 +1869,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         _jugadorPlayerCategory = null;
         _jugadorPlayerPosition = null;
         _jugadorPlayerCountry = null;
+        _jugadorPlayerState = null;
         _jugadorPlayerCity = null;
         _jugadorPlayerLevel = null;
         break;
@@ -2197,15 +2272,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   Widget _buildScoutExplorer() {
     final playerPositionOptions = _realPlayerPositions;
     final playerCategoryOptions = _realPlayerCategories;
-    final playerCountryOptions = _realPlayerCountries;
+    final playerCountryOptions = LatamTaxonomy.countries;
     final playerCityOptions = _realPlayerCities;
     final playerLevelOptions = GamificationService.allLevelNames;
 
-    final clubCountryOptions = _realClubCountries;
+    final clubCountryOptions = LatamTaxonomy.countries;
     final clubCityOptions = _realClubCities;
     final clubLeagueOptions = _realClubLeagues;
 
-    final convocatoriaCountryOptions = _realConvocatoriaCountries;
+    final convocatoriaCountryOptions = LatamTaxonomy.countries;
     final convocatoriaCityOptions = _realConvocatoriaCities;
     final convocatoriaCategoryOptions = _realConvocatoriaCategories;
     final convocatoriaPositionOptions = _realConvocatoriaPositions;
@@ -2813,17 +2888,22 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   Widget _buildJugadorSearchMode() {
     final playerCategoryOptions = _realPlayerCategories;
     final playerPositionOptions = _realPlayerPositions;
-    final playerCountryOptions = _realPlayerCountries;
-    final playerCityOptions = _realPlayerCities;
+    final playerCountryOptions = LatamTaxonomy.countries;
+    final playerStateOptions =
+        LatamTaxonomy.statesForCountry(_jugadorPlayerCountry);
+    final playerCityOptions = LatamTaxonomy.citiesForState(
+        _jugadorPlayerCountry, _jugadorPlayerState);
     final playerLevelOptions = GamificationService.allLevelNames;
 
     final convocatoriaCategoryOptions = _realConvocatoriaCategories;
     final convocatoriaPositionOptions = _realConvocatoriaPositions;
     final convocatoriaLocationOptions = _realConvocatoriaLocations;
 
-    final clubCountryOptions = _realClubCountries;
-    final clubStateOptions = _realClubStates;
-    final clubCityOptions = _realClubCities;
+    final clubCountryOptions = LatamTaxonomy.countries;
+    final clubStateOptions =
+        LatamTaxonomy.statesForCountry(_jugadorClubCountry);
+    final clubCityOptions =
+        LatamTaxonomy.citiesForState(_jugadorClubCountry, _jugadorClubState);
     final clubLeagueOptions = _realClubLeagues;
 
     final verifiedScouts = _users.where((user) {
@@ -2832,14 +2912,9 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               'profesional';
       return isScout && _isVerified(user);
     }).toList();
-    final scoutCountryOptions = buildNormalizedOptions(
-      verifiedScouts.map(_resolveCountryFromUser),
-      normalizeCountryName,
-    );
-    final scoutStateOptions = buildNormalizedOptions(
-      verifiedScouts.map(_resolveState),
-      normalizeStateName,
-    );
+    final scoutCountryOptions = LatamTaxonomy.countries;
+    final scoutStateOptions =
+        LatamTaxonomy.statesForCountry(_jugadorScoutCountry);
     final currentResults = _jugadorCurrentResults;
     final hasActiveCriteria = _searchQuery.trim().length >= 2 ||
         _jugadorCurrentTabHasActiveFilters ||
@@ -2887,6 +2962,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               playerCategoryOptions: playerCategoryOptions,
               playerPositionOptions: playerPositionOptions,
               playerCountryOptions: playerCountryOptions,
+              playerStateOptions: playerStateOptions,
               playerCityOptions: playerCityOptions,
               playerLevelOptions: playerLevelOptions,
               convocatoriaCategoryOptions: convocatoriaCategoryOptions,
@@ -3006,6 +3082,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     required List<String> playerCategoryOptions,
     required List<String> playerPositionOptions,
     required List<String> playerCountryOptions,
+    required List<String> playerStateOptions,
     required List<String> playerCityOptions,
     required List<String> playerLevelOptions,
     required List<String> convocatoriaCategoryOptions,
@@ -3041,7 +3118,20 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             label: 'País',
             value: _jugadorPlayerCountry,
             options: playerCountryOptions,
-            onChanged: (value) => setState(() => _jugadorPlayerCountry = value),
+            onChanged: (value) => setState(() {
+              _jugadorPlayerCountry = value;
+              _jugadorPlayerState = null;
+              _jugadorPlayerCity = null;
+            }),
+          ),
+          _ExplorerFilterDropdown(
+            label: 'Provincia/Estado',
+            value: _jugadorPlayerState,
+            options: playerStateOptions,
+            onChanged: (value) => setState(() {
+              _jugadorPlayerState = value;
+              _jugadorPlayerCity = null;
+            }),
           ),
           _ExplorerFilterDropdown(
             label: 'Ciudad',
@@ -3088,13 +3178,20 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             label: 'País',
             value: _jugadorClubCountry,
             options: clubCountryOptions,
-            onChanged: (value) => setState(() => _jugadorClubCountry = value),
+            onChanged: (value) => setState(() {
+              _jugadorClubCountry = value;
+              _jugadorClubState = null;
+              _jugadorClubCity = null;
+            }),
           ),
           _ExplorerFilterDropdown(
             label: 'Provincia/Estado',
             value: _jugadorClubState,
             options: clubStateOptions,
-            onChanged: (value) => setState(() => _jugadorClubState = value),
+            onChanged: (value) => setState(() {
+              _jugadorClubState = value;
+              _jugadorClubCity = null;
+            }),
           ),
           _ExplorerFilterDropdown(
             label: 'Ciudad',
@@ -3116,7 +3213,10 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             label: 'País',
             value: _jugadorScoutCountry,
             options: scoutCountryOptions,
-            onChanged: (value) => setState(() => _jugadorScoutCountry = value),
+            onChanged: (value) => setState(() {
+              _jugadorScoutCountry = value;
+              _jugadorScoutState = null;
+            }),
           ),
           _ExplorerFilterDropdown(
             label: 'Provincia/Estado',
@@ -3909,6 +4009,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           }
           return (item['club_id']?.toString().trim() ?? '') == clubRef;
         }).length;
+        final closingDate = _resolveConvocatoriaClosingDate(conv);
+        String closingText = '';
+        if (closingDate != null) {
+          closingText =
+              'Cierra el ${closingDate.day}/${closingDate.month} a las ${closingDate.hour.toString().padLeft(2, '0')}:${closingDate.minute.toString().padLeft(2, '0')}';
+        }
 
         return GestureDetector(
           onTap: () {
@@ -3935,6 +4041,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // --- Image ---
                 ClipRRect(
                   borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(20),
@@ -3952,37 +4059,92 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                                   _buildExplorerConvocatoriaPlaceholderImage(),
                             )
                           : _buildExplorerConvocatoriaPlaceholderImage(),
-                      Positioned(
-                        top: 12,
-                        right: 12,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _explorerConvocatoriaModeColor(mode)
-                                .withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            mode,
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: _explorerConvocatoriaModeColor(mode),
+                      if (mode.isNotEmpty)
+                        Positioned(
+                          top: 12,
+                          right: 12,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _explorerConvocatoriaModeColor(mode)
+                                  .withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              mode,
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: _explorerConvocatoriaModeColor(mode),
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
+                // --- Title + Closing + Tags + Club ---
                 Padding(
                   padding: const EdgeInsets.all(14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Title
+                      Text(
+                        '$titulo${ubicacion.isNotEmpty ? ' en $ubicacion' : ''}',
+                        style: GoogleFonts.inter(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F172A),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      // Closing date
+                      if (closingText.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          closingText,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                      // Tags
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (ubicacion.isNotEmpty)
+                            _buildInfoTag(
+                              Icons.location_on_outlined,
+                              ubicacion,
+                            ),
+                          if (posicion.isNotEmpty)
+                            _buildInfoTag(
+                              Icons.sports_soccer,
+                              posicion,
+                            ),
+                          if (categoria.isNotEmpty)
+                            _buildInfoTag(
+                              Icons.category_outlined,
+                              categoria,
+                            ),
+                          if (requiredChallengesCount > 0)
+                            _buildInfoTag(
+                              Icons.task_alt_rounded,
+                              '$requiredChallengesCount desafíos',
+                            ),
+                        ],
+                      ),
+                      // Club info (bottom)
+                      const SizedBox(height: 12),
                       GestureDetector(
                         onTap: clubRef.isEmpty
                             ? null
@@ -3994,124 +4156,74 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                                         'club_name': clubName,
                                       },
                                 ),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FBFF),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0xFFD9E6F5)),
-                          ),
-                          child: Row(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: clubImageUrl.isNotEmpty
-                                    ? Image.network(
-                                        clubImageUrl,
-                                        width: 42,
-                                        height: 42,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            _buildExplorerClubPlaceholderIcon(),
-                                      )
-                                    : _buildExplorerClubPlaceholderIcon(
-                                        size: 42,
-                                      ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      clubName,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w800,
-                                        color: const Color(0xFF0D3B66),
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                        child: Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: clubImageUrl.isNotEmpty
+                                  ? Image.network(
+                                      clubImageUrl,
+                                      width: 32,
+                                      height: 32,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) =>
+                                          _buildExplorerClubPlaceholderIcon(
+                                              size: 32),
+                                    )
+                                  : _buildExplorerClubPlaceholderIcon(
+                                      size: 32,
                                     ),
-                                    const SizedBox(height: 4),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    clubName,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF0F172A),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (clubSecondary.isNotEmpty)
                                     Text(
-                                      clubSecondary.isNotEmpty
-                                          ? clubSecondary
-                                          : 'Club verificado en plataforma',
+                                      clubSecondary,
                                       style: GoogleFonts.inter(
                                         fontSize: 12,
-                                        fontWeight: FontWeight.w600,
                                         color: const Color(0xFF64748B),
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                  ],
-                                ),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFE8F0FE),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  activeCount > 0
-                                      ? '$activeCount activas'
-                                      : 'Sin activas',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF0D3B66),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        titulo,
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF0F172A),
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _buildInfoTag(
-                            Icons.badge_outlined,
-                            'Club: $clubName',
-                          ),
-                          _buildInfoTag(
-                            Icons.category_outlined,
-                            'Categoría: ${categoria.isNotEmpty ? categoria : 'N/A'}',
-                          ),
-                          _buildInfoTag(
-                            Icons.sports_soccer,
-                            'Posición: ${posicion.isNotEmpty ? posicion : 'Todas'}',
-                          ),
-                          _buildInfoTag(
-                            Icons.location_on_outlined,
-                            'Ubicación: $ubicacion',
-                          ),
-                          if (requiredChallengesCount > 0)
-                            _buildInfoTag(
-                              Icons.task_alt_rounded,
-                              'Desafíos requeridos: $requiredChallengesCount',
                             ),
-                        ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F0FE),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                activeCount > 0
+                                    ? '$activeCount activas'
+                                    : 'Sin activas',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF0D3B66),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -4360,31 +4472,33 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                 spacing: 6,
                 runSpacing: 6,
                 children: [
-                  _simpleBadge(
-                    _isVerified(player) ? 'Verificado' : 'No verificado',
-                    color: _isVerified(player)
-                        ? const Color(0xFF2F855A)
-                        : const Color(0xFFB7791F),
-                  ),
-                  _simpleBadge(
-                    hasVideo ? 'Tiene video' : 'Sin video',
-                    color: hasVideo
-                        ? const Color(0xFF0D3B66)
-                        : const Color(0xFF718096),
-                  ),
+                  if (hasVideo)
+                    _simpleBadge(
+                      'Tiene video',
+                      color: const Color(0xFF0D3B66),
+                    ),
+                  if (position.isNotEmpty)
+                    _simpleBadge(
+                      position,
+                      color: const Color(0xFF7C3AED),
+                    ),
+                  if (rankingPosition != null)
+                    _simpleBadge(
+                      'Ranking #$rankingPosition',
+                      color: const Color(0xFF1D4ED8),
+                    ),
                   _simpleBadge(
                     '$totalXp XP',
-                    color: const Color(0xFF1D4ED8),
+                    color: const Color(0xFF0F766E),
                   ),
                   _simpleBadge(
                     levelName,
                     color: const Color(0xFF0F766E),
                   ),
-                  if (rankingPosition != null)
-                    _simpleBadge(
-                      'Ranking #$rankingPosition',
-                      color: const Color(0xFF7C3AED),
-                    ),
+                  _subtleBadge(
+                    _isVerified(player) ? 'Verificado' : 'No verificado',
+                  ),
+                  if (!hasVideo) _subtleBadge('Sin video'),
                 ],
               ),
               const SizedBox(height: 10),
@@ -4400,12 +4514,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        minimumSize: const Size.fromHeight(36),
+                        minimumSize: const Size.fromHeight(40),
                         padding: EdgeInsets.zero,
                       ),
                       child: Icon(
                         Icons.smart_display_rounded,
-                        size: 16,
+                        size: 20,
                         color: hasVideo
                             ? const Color(0xFF0D3B66)
                             : const Color(0xFF9CA3AF),
@@ -4422,13 +4536,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        minimumSize: const Size.fromHeight(36),
+                        minimumSize: const Size.fromHeight(40),
                         padding: EdgeInsets.zero,
                         elevation: 0,
                       ),
                       child: const Icon(
                         Icons.person_search_rounded,
-                        size: 16,
+                        size: 20,
                         color: Colors.white,
                       ),
                     ),
@@ -4748,12 +4862,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     String? tempPosition = _scoutPosition;
     String? tempCategory = _scoutCategory;
     String? tempPlayerCountry = _scoutPlayerCountry;
+    String? tempPlayerState = _scoutPlayerState;
     String? tempPlayerCity = _scoutPlayerCity;
     String? tempPlayerLevel = _scoutPlayerLevel;
     String? tempClubCountry = _scoutClubCountry;
+    String? tempClubState = _scoutClubState;
     String? tempClubCity = _scoutClubCity;
     String? tempClubLeague = _scoutClubLeague;
     String? tempConvCountry = _scoutConvocatoriaCountry;
+    String? tempConvState = _scoutConvocatoriaState;
     String? tempConvCity = _scoutConvocatoriaCity;
     String? tempConvCategory = _scoutConvocatoriaCategory;
     String? tempConvPosition = _scoutConvocatoriaPosition;
@@ -4793,14 +4910,28 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       label: 'País',
                       value: tempConvCountry,
                       options: convocatoriaCountryOptions,
-                      onChanged: (v) =>
-                          setSheetState(() => tempConvCountry = v),
+                      onChanged: (v) => setSheetState(() {
+                        tempConvCountry = v;
+                        tempConvState = null;
+                        tempConvCity = null;
+                      }),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'Provincia/Estado',
+                      value: tempConvState,
+                      options: LatamTaxonomy.statesForCountry(tempConvCountry),
+                      onChanged: (v) => setSheetState(() {
+                        tempConvState = v;
+                        tempConvCity = null;
+                      }),
                     ),
                     const SizedBox(height: 8),
                     _buildDropdownFilter(
                       label: 'Ciudad',
                       value: tempConvCity,
-                      options: convocatoriaCityOptions,
+                      options: LatamTaxonomy.citiesForState(
+                          tempConvCountry, tempConvState),
                       onChanged: (v) => setSheetState(() => tempConvCity = v),
                     ),
                     const SizedBox(height: 8),
@@ -4824,14 +4955,28 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       label: 'País',
                       value: tempClubCountry,
                       options: clubCountryOptions,
-                      onChanged: (v) =>
-                          setSheetState(() => tempClubCountry = v),
+                      onChanged: (v) => setSheetState(() {
+                        tempClubCountry = v;
+                        tempClubState = null;
+                        tempClubCity = null;
+                      }),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'Provincia/Estado',
+                      value: tempClubState,
+                      options: LatamTaxonomy.statesForCountry(tempClubCountry),
+                      onChanged: (v) => setSheetState(() {
+                        tempClubState = v;
+                        tempClubCity = null;
+                      }),
                     ),
                     const SizedBox(height: 8),
                     _buildDropdownFilter(
                       label: 'Ciudad',
                       value: tempClubCity,
-                      options: clubCityOptions,
+                      options: LatamTaxonomy.citiesForState(
+                          tempClubCountry, tempClubState),
                       onChanged: (v) => setSheetState(() => tempClubCity = v),
                     ),
                     const SizedBox(height: 8),
@@ -4860,14 +5005,29 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       label: 'País',
                       value: tempPlayerCountry,
                       options: playerCountryOptions,
-                      onChanged: (v) =>
-                          setSheetState(() => tempPlayerCountry = v),
+                      onChanged: (v) => setSheetState(() {
+                        tempPlayerCountry = v;
+                        tempPlayerState = null;
+                        tempPlayerCity = null;
+                      }),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdownFilter(
+                      label: 'Provincia/Estado',
+                      value: tempPlayerState,
+                      options:
+                          LatamTaxonomy.statesForCountry(tempPlayerCountry),
+                      onChanged: (v) => setSheetState(() {
+                        tempPlayerState = v;
+                        tempPlayerCity = null;
+                      }),
                     ),
                     const SizedBox(height: 8),
                     _buildDropdownFilter(
                       label: 'Ciudad',
                       value: tempPlayerCity,
-                      options: playerCityOptions,
+                      options: LatamTaxonomy.citiesForState(
+                          tempPlayerCountry, tempPlayerState),
                       onChanged: (v) => setSheetState(() => tempPlayerCity = v),
                     ),
                     const SizedBox(height: 8),
@@ -4888,17 +5048,20 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                             setSheetState(() {
                               if (_scoutTab == _ScoutTab.convocatorias) {
                                 tempConvCountry = null;
+                                tempConvState = null;
                                 tempConvCity = null;
                                 tempConvCategory = null;
                                 tempConvPosition = null;
                               } else if (_scoutTab == _ScoutTab.clubes) {
                                 tempClubCountry = null;
+                                tempClubState = null;
                                 tempClubCity = null;
                                 tempClubLeague = null;
                               } else {
                                 tempPosition = null;
                                 tempCategory = null;
                                 tempPlayerCountry = null;
+                                tempPlayerState = null;
                                 tempPlayerCity = null;
                                 tempPlayerLevel = null;
                               }
@@ -4914,17 +5077,20 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                             setState(() {
                               if (_scoutTab == _ScoutTab.convocatorias) {
                                 _scoutConvocatoriaCountry = tempConvCountry;
+                                _scoutConvocatoriaState = tempConvState;
                                 _scoutConvocatoriaCity = tempConvCity;
                                 _scoutConvocatoriaCategory = tempConvCategory;
                                 _scoutConvocatoriaPosition = tempConvPosition;
                               } else if (_scoutTab == _ScoutTab.clubes) {
                                 _scoutClubCountry = tempClubCountry;
+                                _scoutClubState = tempClubState;
                                 _scoutClubCity = tempClubCity;
                                 _scoutClubLeague = tempClubLeague;
                               } else {
                                 _scoutPosition = tempPosition;
                                 _scoutCategory = tempCategory;
                                 _scoutPlayerCountry = tempPlayerCountry;
+                                _scoutPlayerState = tempPlayerState;
                                 _scoutPlayerCity = tempPlayerCity;
                                 _scoutPlayerLevel = tempPlayerLevel;
                               }
@@ -4974,6 +5140,17 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
+      ),
+    );
+  }
+
+  Widget _subtleBadge(String label) {
+    return Text(
+      label,
+      style: GoogleFonts.inter(
+        color: const Color(0xFFA0AEC0),
+        fontSize: 10.5,
+        fontWeight: FontWeight.w500,
       ),
     );
   }

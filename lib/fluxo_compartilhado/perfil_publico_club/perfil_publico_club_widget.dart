@@ -13,7 +13,8 @@ class PerfilPublicoClubWidget extends StatefulWidget {
   final Map<String, dynamic>? initialClubData;
 
   @override
-  State<PerfilPublicoClubWidget> createState() => _PerfilPublicoClubWidgetState();
+  State<PerfilPublicoClubWidget> createState() =>
+      _PerfilPublicoClubWidgetState();
 }
 
 class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
@@ -63,7 +64,11 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
     Map<String, dynamic>? club;
 
     try {
-      club = await SupaFlow.client.from('clubs').select().eq('id', ref).maybeSingle();
+      club = await SupaFlow.client
+          .from('clubs')
+          .select()
+          .eq('id', ref)
+          .maybeSingle();
     } catch (_) {}
 
     if (club == null) {
@@ -137,11 +142,71 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
     final directText = direct?.toString().trim().toLowerCase() ?? '';
     if (directText == 'true') return true;
 
-    final status = club['verification_status']?.toString().trim().toLowerCase() ?? '';
+    final status =
+        club['verification_status']?.toString().trim().toLowerCase() ?? '';
     return status == 'verified' ||
         status == 'verificado' ||
         status == 'approved' ||
         status == 'aprobado';
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value,
+      {bool isLink = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF60A5FA)),
+          const SizedBox(width: 10),
+          Text(
+            '$label: ',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color:
+                    isLink ? const Color(0xFF60A5FA) : const Color(0xFFE2E8F0),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoChip(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF151B28),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF20293A)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: const Color(0xFF60A5FA)),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFFCBD5E1),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildMetricCard({
@@ -207,9 +272,8 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: selected
-                        ? const Color(0xFF1473E6)
-                        : Colors.transparent,
+                    color:
+                        selected ? const Color(0xFF1473E6) : Colors.transparent,
                     width: 2.5,
                   ),
                 ),
@@ -355,6 +419,7 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
           ),
         );
       case 'sobre':
+        final city = _firstNonEmpty([club['ciudad'], club['city']]);
         return _buildPanel(
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -368,28 +433,15 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
                   color: const Color(0xFFE2E8F0),
                 ),
               ),
-              if (website != null) ...[
-                const SizedBox(height: 16),
-                Text(
-                  website,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF60A5FA),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 14),
-              Text(
-                [country, league]
-                    .where((item) => item != null && item.trim().isNotEmpty)
-                    .join(' • '),
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF94A3B8),
-                ),
-              ),
+              const SizedBox(height: 18),
+              if (country != null) _buildInfoRow(Icons.public, 'País', country),
+              if (city != null)
+                _buildInfoRow(Icons.location_city, 'Ciudad', city),
+              if (league != null)
+                _buildInfoRow(Icons.emoji_events_outlined, 'Liga', league),
+              if (website != null)
+                _buildInfoRow(Icons.language, 'Sitio web', website,
+                    isLink: true),
             ],
           ),
         );
@@ -461,6 +513,13 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
     final verified = _isVerifiedClub(club);
     final staffCapacity = club['max_staff']?.toString() ?? '0';
     final convocatoriasCap = club['max_convocatorias']?.toString() ?? '0';
+    final city = _firstNonEmpty([club['ciudad'], club['city']]);
+    final country = _firstNonEmpty([club['pais'], club['country']]);
+    final league = _firstNonEmpty([club['liga'], club['league']]);
+    final locationParts =
+        [city, country].where((e) => e != null && e.trim().isNotEmpty).toList();
+    final locationLabel =
+        locationParts.isNotEmpty ? locationParts.join(', ') : null;
 
     return Scaffold(
       backgroundColor: const Color(0xFF050913),
@@ -592,6 +651,23 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
                     ),
                   ),
                 ),
+                if (locationLabel != null || league != null) ...[
+                  const SizedBox(height: 10),
+                  Center(
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        if (locationLabel != null)
+                          _buildInfoChip(
+                              Icons.location_on_outlined, locationLabel),
+                        if (league != null)
+                          _buildInfoChip(Icons.emoji_events_outlined, league),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 Center(
                   child: ConstrainedBox(

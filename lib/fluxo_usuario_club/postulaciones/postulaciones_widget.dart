@@ -775,7 +775,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
 
                                     // Título
                                     Text(
-                                      'Jugadores',
+                                      'Postulaciones',
                                       style: GoogleFonts.inter(
                                         fontSize: _responsive(context,
                                                 mobile: 24,
@@ -786,16 +786,14 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                                         color: Colors.black,
                                       ),
                                     ),
-                                    if (_clubName != null) ...[
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Club: $_clubName',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 14,
-                                          color: Colors.grey[600],
-                                        ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Resumen de actividad y candidatos',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        color: Colors.grey[500],
                                       ),
-                                    ],
+                                    ),
                                     SizedBox(height: 20 * scale),
 
                                     // Stats - Layout responsivo
@@ -831,28 +829,6 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
           Expanded(
             child: _buildStatCard(
               context: context,
-              title: 'Convocatorias\nActivas',
-              value: _convocatoriasActivas.toString(),
-              icon: Icons.groups_outlined,
-              subtitle: 'En curso',
-              trend: '+18%',
-            ),
-          ),
-          SizedBox(width: spacing),
-          Expanded(
-            child: _buildStatCard(
-              context: context,
-              title: 'Promedio por\nConvocatoria',
-              value: _promedioPostulaciones.toStringAsFixed(0),
-              icon: Icons.calendar_today_outlined,
-              subtitle: 'En curso',
-              trend: '+15%',
-            ),
-          ),
-          SizedBox(width: spacing),
-          Expanded(
-            child: _buildStatCard(
-              context: context,
               title: 'Total\nPostulaciones',
               value: _totalPostulaciones.toString(),
               icon: Icons.groups_outlined,
@@ -871,6 +847,28 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               trend: '+3%',
             ),
           ),
+          SizedBox(width: spacing),
+          Expanded(
+            child: _buildStatCard(
+              context: context,
+              title: 'Convocatorias\nActivas',
+              value: _convocatoriasActivas.toString(),
+              icon: Icons.groups_outlined,
+              subtitle: 'En curso',
+              trend: '+18%',
+            ),
+          ),
+          SizedBox(width: spacing),
+          Expanded(
+            child: _buildStatCard(
+              context: context,
+              title: 'Promedio por\nConvocatoria',
+              value: _promedioPostulaciones.toStringAsFixed(0),
+              icon: Icons.calendar_today_outlined,
+              subtitle: 'En curso',
+              trend: '+15%',
+            ),
+          ),
         ],
       );
     }
@@ -878,32 +876,6 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     // Em telas médias e pequenas, mostrar 2x2
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _buildStatCard(
-                context: context,
-                title: 'Convocatorias\nActivas',
-                value: _convocatoriasActivas.toString(),
-                icon: Icons.groups_outlined,
-                subtitle: 'En curso',
-                trend: '+18%',
-              ),
-            ),
-            SizedBox(width: spacing),
-            Expanded(
-              child: _buildStatCard(
-                context: context,
-                title: 'Promedio por\nConvocatoria',
-                value: _promedioPostulaciones.toStringAsFixed(0),
-                icon: Icons.calendar_today_outlined,
-                subtitle: 'En curso',
-                trend: '+15%',
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: spacing),
         Row(
           children: [
             Expanded(
@@ -925,6 +897,32 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                 icon: Icons.videocam_outlined,
                 subtitle: 'En curso',
                 trend: '+3%',
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: spacing),
+        Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                context: context,
+                title: 'Convocatorias\nActivas',
+                value: _convocatoriasActivas.toString(),
+                icon: Icons.groups_outlined,
+                subtitle: 'En curso',
+                trend: '+18%',
+              ),
+            ),
+            SizedBox(width: spacing),
+            Expanded(
+              child: _buildStatCard(
+                context: context,
+                title: 'Promedio por\nConvocatoria',
+                value: _promedioPostulaciones.toStringAsFixed(0),
+                icon: Icons.calendar_today_outlined,
+                subtitle: 'En curso',
+                trend: '+15%',
               ),
             ),
           ],
@@ -1138,12 +1136,13 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                       'Aún no hay postulaciones',
                       style: GoogleFonts.inter(
                         fontSize: 14 * scale,
-                        color: Colors.grey[400],
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[500],
                       ),
                     ),
                     SizedBox(height: 4 * scale),
                     Text(
-                      'Publicá una convocatoria y los jugadores interesados aparecerán acá.',
+                      'Cuando publiques una convocatoria activa, los jugadores interesados podrán postularse y aparecerán acá.',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.inter(
                         fontSize: 12 * scale,
@@ -1159,7 +1158,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               child: Padding(
                 padding: EdgeInsets.all(32 * scale),
                 child: Text(
-                  'Sin postulaciones con estado "${_getStatusLabel(_estadoFilter)}".',
+                  'No hay postulaciones con estado "${_getStatusLabel(_estadoFilter)}". Probá seleccionando otro estado.',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(
                     fontSize: 13 * scale,

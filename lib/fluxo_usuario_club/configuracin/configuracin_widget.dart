@@ -27,6 +27,8 @@ class ConfiguracinWidget extends StatefulWidget {
 class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
   late ConfiguracinModel _model;
   final scaffoldKey = GlobalKey<ScaffoldState>();
+  final _profileScrollController = ScrollController();
+  final _editSectionKey = GlobalKey();
 
   final TextEditingController _nombreController = TextEditingController();
   final TextEditingController _nombreCortoController = TextEditingController();
@@ -61,12 +63,14 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
   int _maxStaff = 10;
   String _selectedProfileTab = 'convocatorias';
   List<Map<String, dynamic>> _clubConvocatoriasPreview = [];
+  List<Map<String, dynamic>> _countries = [];
 
   @override
   void initState() {
     super.initState();
     _model = createModel(context, () => ConfiguracinModel());
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
+    _loadCountries();
     _loadData();
   }
 
@@ -165,6 +169,18 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       user?['country'],
       user?['country_name'],
     ]);
+    merged['estado'] = _firstNonEmptyText([
+      club?['estado'],
+      club?['state'],
+      user?['state'],
+      user?['estado'],
+    ]);
+    merged['ciudad'] = _firstNonEmptyText([
+      club?['ciudad'],
+      club?['city'],
+      user?['city'],
+      user?['ciudad'],
+    ]);
     merged['liga'] = _firstNonEmptyText([
       club?['liga'],
       user?['liga'],
@@ -247,6 +263,19 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
   }
 
   // ============ DATA LOADING ============
+  Future<void> _loadCountries() async {
+    try {
+      final response =
+          await SupaFlow.client.from('countrys').select().order('name');
+      if (mounted) {
+        setState(
+            () => _countries = List<Map<String, dynamic>>.from(response ?? []));
+      }
+    } catch (e) {
+      debugPrint('Error cargando países: $e');
+    }
+  }
+
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
@@ -303,6 +332,12 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
           mergedClub['id'],
         ]);
         _populateClubControllers(mergedClub);
+
+        // Pre-load states/cities for existing country
+        final existingCountry = _paisController.text.trim();
+        if (existingCountry.isNotEmpty) {
+          _loadStates(existingCountry);
+        }
 
         await _loadStats();
         // Staff usa o ID real do club na tabela clubs
@@ -670,9 +705,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         'nombre': _nombreController.text.trim(),
         'nombre_corto': _nombreCortoController.text.trim(),
         'pais': normalizedCountry,
-        'country': normalizedCountry,
-        'state': _estadoController.text.trim(),
-        'city': _ciudadController.text.trim(),
+        'estado': _estadoController.text.trim(),
+        'ciudad': _ciudadController.text.trim(),
         'liga': normalizedLeague,
         'descripcion': _descripcionController.text.trim(),
         'sitio_web': _sitioWebController.text.trim(),
@@ -1222,7 +1256,18 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         ),
         IconButton(
           onPressed: () {
-            setState(() => _isEditingClubProfile = !_isEditingClubProfile);
+            final willEdit = !_isEditingClubProfile;
+            setState(() => _isEditingClubProfile = willEdit);
+            if (willEdit) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                final ctx = _editSectionKey.currentContext;
+                if (ctx != null) {
+                  Scrollable.ensureVisible(ctx,
+                      duration: const Duration(milliseconds: 350),
+                      curve: Curves.easeInOut);
+                }
+              });
+            }
           },
           icon: Icon(
             _isEditingClubProfile
@@ -1770,44 +1815,61 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 18),
-                          Row(
-                            children: [
-                              _buildProfileActionButton(
-                                label: _isEditingClubProfile
-                                    ? 'Cancelar'
-                                    : 'Editar Perfil',
-                                primary: true,
-                                onPressed: () {
-                                  setState(() {
-                                    if (_isEditingClubProfile) {
-                                      _populateClubControllers(_clubData);
-                                    }
-                                    _isEditingClubProfile =
-                                        !_isEditingClubProfile;
-                                  });
-                                },
-                              ),
-                              const SizedBox(width: 12),
-                              _buildProfileActionButton(
-                                label: _isEditingClubProfile
-                                    ? 'Guardar'
-                                    : 'Gestionar',
-                                onPressed: _isEditingClubProfile
-                                    ? () {
-                                        _saveChanges();
-                                      }
-                                    : () => _showClubMenu(context),
-                              ),
-                            ],
-                          ),
                           const SizedBox(height: 24),
                           _buildProfileTabs(),
                           const SizedBox(height: 18),
                           _buildOwnProfileTabContent(),
                           if (_isEditingClubProfile) ...[
                             const SizedBox(height: 20),
-                            _buildClubInfoSection(context),
+                            Container(
+                              key: _editSectionKey,
+                              child: _buildClubInfoSection(context),
+                            ),
+                            const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _populateClubControllers(_clubData);
+                                        _isEditingClubProfile = false;
+                                      });
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF1E293B),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: Text('Cancelar',
+                                        style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white)),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: () => _saveChanges(),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF0D3B66),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: Text('Guardar',
+                                        style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white)),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ],
                       ),
@@ -2209,23 +2271,55 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         SizedBox(height: 16 * scale),
         _buildTextField(context, 'Nombre Corto', _nombreCortoController),
         SizedBox(height: 16 * scale),
-        _buildTextField(
-          context,
-          'País',
-          _paisController,
-          onChanged: (value) {
-            final country = value.trim();
-            setState(() {
-              _estadoController.text = '';
-              _ciudadController.text = '';
-              _states = [];
-              _cities = [];
-            });
-            if (country.isNotEmpty) {
-              _loadStates(country);
-            }
-          },
-        ),
+        // País dropdown
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('País', style: TextStyle(color: Colors.grey[700])),
+          const SizedBox(height: 5),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[400]!),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                isExpanded: true,
+                value: _countries.any((c) =>
+                        normalizeCountryName(c['name']) ==
+                        _paisController.text.trim())
+                    ? _paisController.text.trim()
+                    : null,
+                hint: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Text('Selecciona un país'),
+                ),
+                items: _countries.map((c) {
+                  final name = normalizeCountryName(c['name'] ?? '');
+                  return DropdownMenuItem(
+                    value: name,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(name),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() {
+                    _paisController.text = v;
+                    _estadoController.text = '';
+                    _ciudadController.text = '';
+                    _states = [];
+                    _cities = [];
+                    _stateFreeText = false;
+                    _cityFreeText = false;
+                  });
+                  _loadStates(v);
+                },
+              ),
+            ),
+          ),
+        ]),
         SizedBox(height: 16 * scale),
         // Estado
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2392,8 +2486,10 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
           const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Escudo del Club',
                 style: TextStyle(fontWeight: FontWeight.w500)),
+            Text('Foto de perfil (cuadrada)',
+                style: TextStyle(fontSize: 12, color: Colors.grey)),
             Text('Toca para subir',
-                style: TextStyle(fontSize: 12, color: Colors.grey))
+                style: TextStyle(fontSize: 11, color: Colors.grey))
           ])
         ]));
   }
@@ -2428,8 +2524,10 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
             children: [
               Text('Banner del Club',
                   style: TextStyle(fontWeight: FontWeight.w500)),
+              Text('Imagen de portada (horizontal)',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
               Text('Toca para subir',
-                  style: TextStyle(fontSize: 12, color: Colors.grey))
+                  style: TextStyle(fontSize: 11, color: Colors.grey))
             ],
           ),
         ],

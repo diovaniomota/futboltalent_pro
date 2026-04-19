@@ -628,10 +628,13 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   Widget _buildDrawerItem(BuildContext context, IconData icon, String label,
       bool isSelected, Future Function() onTap) {
     return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
       leading: Icon(icon,
+          size: 22,
           color: isSelected ? const Color(0xFF0D3B66) : Colors.grey[600]),
       title: Text(label,
           style: GoogleFonts.inter(
+              fontSize: 16,
               fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
               color: isSelected ? const Color(0xFF0D3B66) : Colors.grey[800])),
       trailing: isSelected
