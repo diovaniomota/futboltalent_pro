@@ -3,6 +3,7 @@ import '/auth/supabase_auth/auth_util.dart';
 import '/fluxo_compartilhado/club_identity_utils.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
+import '/fluxo_compartilhado/scouting_metadata_utils.dart';
 import 'package:flutter/material.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
@@ -121,6 +122,59 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
       initials += lastname[0].toUpperCase();
     }
     return initials.isEmpty ? '?' : initials;
+  }
+
+  static const List<String> _scoutingStates = ScoutingMetadataUtils.states;
+
+  String _scoutingStateLabel(String state) {
+    if (state == 'en_acompanamiento') {
+      return 'En evaluación';
+    }
+    return ScoutingMetadataUtils.labelFromState(state);
+  }
+
+  Color _scoutingStateColor(String state) {
+    switch (state) {
+      case 'descubierto':
+        return const Color(0xFF2563EB);
+      case 'en_acompanamiento':
+        return const Color(0xFFF59E0B);
+      case 'prioridad':
+        return const Color(0xFF0F766E);
+      case 'descartado':
+        return const Color(0xFFB91C1C);
+      default:
+        return const Color(0xFF64748B);
+    }
+  }
+
+  int _ratingFromScoutingState(String state) =>
+      ScoutingMetadataUtils.ratingFromState(state);
+
+  String _scoutingStateFromItem(Map<String, dynamic> item) =>
+      ScoutingMetadataUtils.stateFromItem(item);
+
+  List<String> _parseScoutingTags(dynamic raw) =>
+      ScoutingMetadataUtils.parseTags(raw);
+
+  Widget _buildStatePill(String state) {
+    final color = _scoutingStateColor(state);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.28)),
+      ),
+      child: Text(
+        _scoutingStateLabel(state),
+        style: GoogleFonts.inter(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
   }
 
   List<String> _clubRefsForQueries() {
@@ -751,7 +805,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                 color: const Color(0xFF111827))),
         SizedBox(height: 4 * scale),
         Text(
-          'Organizá y etiquetá jugadores para seguimiento',
+          'Pipeline del club para evaluar y decidir jugadores',
           style: GoogleFonts.inter(
             fontSize: 13 * scale,
             color: const Color(0xFF64748B),
@@ -821,8 +875,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           SizedBox(height: 12 * scale),
           Text(
             hasSelectedList
-                ? 'Ya podés agregar jugadores y editar tus notas en esta lista.'
-                : '1. Crea una lista. 2. Selecciónala. 3. Agrega jugadores con nota y calificación.',
+                ? 'Ya podés agregar jugadores y editar estado, etiquetas y notas.'
+                : '1. Crea una lista. 2. Selecciónala. 3. Agrega jugadores con estado, etiquetas y notas.',
             style: GoogleFonts.inter(
               fontSize: 13 * scale,
               height: 1.35,
@@ -955,7 +1009,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
             textAlign: TextAlign.center),
         SizedBox(height: 10 * scale),
         Text(
-          'Después podrás agregar jugadores, editar notas y calificaciones.',
+          'Después podrás agregar jugadores, editar estado, etiquetas y notas.',
           style: GoogleFonts.inter(
             fontSize: 12 * scale,
             color: Colors.grey[500],
@@ -1113,7 +1167,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                       fontWeight: FontWeight.w700,
                       color: Colors.black)),
               SizedBox(height: 4 * scale),
-              Text('Gestiona jugadores, notas y calificaciones desde aquí.',
+              Text('Gestiona jugadores, estados, etiquetas y notas desde aquí.',
                   style: GoogleFonts.inter(
                       fontSize: 12 * scale, color: const Color(0xFF6B7280))),
             ],
@@ -1202,7 +1256,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     );
     final age = _calculateAge(jugador?['birthday']);
     final photo = jugador?['photo_url'];
-    final rating = item['calificacion'] ?? 0;
+    final scoutingState = _scoutingStateFromItem(item);
+    final customTags = _parseScoutingTags(item['scouting_tags']);
     final positionLabel = position.isNotEmpty ? position : 'Sin posición';
 
     return Container(
@@ -1244,15 +1299,38 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                 Text('$positionLabel • $age años',
                     style: GoogleFonts.inter(
                         fontSize: 12 * scale, color: Colors.grey)),
-                Row(
-                    children: List.generate(
-                        5,
-                        (i) => Icon(Icons.circle,
-                            size: 10 * scale,
-                            color:
-                                i < rating ? Colors.amber : Colors.grey[300]))),
+                SizedBox(height: 6 * scale),
+                _buildStatePill(scoutingState),
               ]))
         ]),
+        if (customTags.isNotEmpty) ...[
+          SizedBox(height: 8 * scale),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: customTags
+                .map(
+                  (tag) => Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F0FE),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0xFFC5D7F2)),
+                    ),
+                    child: Text(
+                      '#$tag',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF0D3B66),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
         if (item['nota'] != null && item['nota'].toString().isNotEmpty) ...[
           const Divider(),
           Container(
@@ -1382,8 +1460,9 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
         .toSet();
     List<Map<String, dynamic>> results = [];
     Map<String, dynamic>? selected;
-    int rating = 0;
+    String scoutingState = 'descubierto';
     final notaCtrl = TextEditingController();
+    final tagsCtrl = TextEditingController();
     String source = 'todos';
     bool isSearchingGlobal = false;
     String? helperMessage;
@@ -1586,26 +1665,53 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                         onPressed: () => setStates(() => selected = null)),
                   ),
                 const SizedBox(height: 16),
-                const Text('Calificación'),
-                Row(
-                    children: List.generate(
-                        5,
-                        (i) => IconButton(
-                            icon: Icon(Icons.circle,
-                                color: i < rating
-                                    ? Colors.amber
-                                    : Colors.grey[300]),
-                            onPressed: () => setStates(() => rating = i + 1)))),
+                const Text('Estado'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _scoutingStates
+                      .map((state) => ChoiceChip(
+                            label: Text(_scoutingStateLabel(state)),
+                            selected: scoutingState == state,
+                            onSelected: (_) =>
+                                setStates(() => scoutingState = state),
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 10),
+                _buildTextField(
+                  ctx,
+                  'Etiquetas (separadas por coma)',
+                  tagsCtrl,
+                ),
                 _buildTextField(ctx, 'Nota', notaCtrl, maxLines: 3),
               ], () async {
                 if (selected == null) return;
-                await SupaFlow.client.from('listas_jugadores').insert({
-                  'lista_id': _selectedLista!['id'],
-                  'jugador_id': selected!['user_id'],
-                  'calificacion': rating,
-                  'nota': notaCtrl.text,
-                  'created_at': DateTime.now().toIso8601String()
-                });
+                final tags = tagsCtrl.text
+                    .split(',')
+                    .map((tag) => tag.trim())
+                    .where((tag) => tag.isNotEmpty)
+                    .toSet()
+                    .toList();
+                try {
+                  await SupaFlow.client.from('listas_jugadores').insert({
+                    'lista_id': _selectedLista!['id'],
+                    'jugador_id': selected!['user_id'],
+                    'calificacion': _ratingFromScoutingState(scoutingState),
+                    'scouting_state': scoutingState,
+                    'scouting_tags': tags,
+                    'nota': notaCtrl.text,
+                    'created_at': DateTime.now().toIso8601String()
+                  });
+                } catch (_) {
+                  await SupaFlow.client.from('listas_jugadores').insert({
+                    'lista_id': _selectedLista!['id'],
+                    'jugador_id': selected!['user_id'],
+                    'calificacion': _ratingFromScoutingState(scoutingState),
+                    'nota': notaCtrl.text,
+                    'created_at': DateTime.now().toIso8601String()
+                  });
+                }
                 Navigator.pop(ctx);
                 _loadJugadoresEnLista(_selectedLista!['id'].toString());
                 _loadListas();
@@ -1614,24 +1720,36 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   }
 
   void _showEditJugadorModal(Map<String, dynamic> item) {
-    int rating = item['calificacion'] ?? 0;
+    String scoutingState = _scoutingStateFromItem(item);
     final notaCtrl = TextEditingController(text: item['nota']);
+    final tagsCtrl = TextEditingController(
+      text: _parseScoutingTags(item['scouting_tags']).join(', '),
+    );
     showModalBottomSheet(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         builder: (ctx) => StatefulBuilder(builder: (ctx, setStates) {
               return _buildModalContent(ctx, 'Editar Nota', [
-                const Text('Calificación'),
-                Row(
-                    children: List.generate(
-                        5,
-                        (i) => IconButton(
-                            icon: Icon(Icons.circle,
-                                color: i < rating
-                                    ? Colors.amber
-                                    : Colors.grey[300]),
-                            onPressed: () => setStates(() => rating = i + 1)))),
+                const Text('Estado'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _scoutingStates
+                      .map((state) => ChoiceChip(
+                            label: Text(_scoutingStateLabel(state)),
+                            selected: scoutingState == state,
+                            onSelected: (_) =>
+                                setStates(() => scoutingState = state),
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 10),
+                _buildTextField(
+                  ctx,
+                  'Etiquetas (separadas por coma)',
+                  tagsCtrl,
+                ),
                 _buildTextField(ctx, 'Nota', notaCtrl, maxLines: 3),
                 const SizedBox(height: 10),
                 TextButton(
@@ -1647,10 +1765,26 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                       _loadListas();
                     })
               ], () async {
-                await SupaFlow.client.from('listas_jugadores').update({
-                  'calificacion': rating,
-                  'nota': notaCtrl.text,
-                }).eq('id', item['id']);
+                final tags = tagsCtrl.text
+                    .split(',')
+                    .map((tag) => tag.trim())
+                    .where((tag) => tag.isNotEmpty)
+                    .toSet()
+                    .toList();
+
+                try {
+                  await SupaFlow.client.from('listas_jugadores').update({
+                    'calificacion': _ratingFromScoutingState(scoutingState),
+                    'scouting_state': scoutingState,
+                    'scouting_tags': tags,
+                    'nota': notaCtrl.text,
+                  }).eq('id', item['id']);
+                } catch (_) {
+                  await SupaFlow.client.from('listas_jugadores').update({
+                    'calificacion': _ratingFromScoutingState(scoutingState),
+                    'nota': notaCtrl.text,
+                  }).eq('id', item['id']);
+                }
                 Navigator.pop(ctx);
                 _loadJugadoresEnLista(_selectedLista!['id'].toString());
               }, 'Guardar');

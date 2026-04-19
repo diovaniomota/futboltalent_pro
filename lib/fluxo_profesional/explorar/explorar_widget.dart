@@ -2309,7 +2309,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   onPressed: () =>
                       context.pushNamed(ListaYNotasWidget.routeName),
                   icon: const Icon(Icons.bookmarks_rounded),
-                  label: const Text('Mis listas'),
+                  label: const Text('Mi scouting'),
                 ),
               ],
             ),

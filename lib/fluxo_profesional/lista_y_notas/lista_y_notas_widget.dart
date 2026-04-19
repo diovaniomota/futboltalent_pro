@@ -1,5 +1,6 @@
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
+import '/fluxo_compartilhado/scouting_metadata_utils.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -109,42 +110,37 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     return value?.toString().trim() ?? '';
   }
 
-  String _tagLabelFromRating(int rating) {
-    switch (rating) {
-      case 1:
-        return 'Nuevos';
-      case 2:
-        return 'En revisión';
-      case 3:
-        return 'Interesados';
-      case 4:
-        return 'Seguimiento';
-      case 5:
-        return 'Seleccionados';
-      default:
-        return 'Sin etiqueta';
-    }
-  }
+  static const List<String> _scoutingStates = ScoutingMetadataUtils.states;
 
-  Color _tagColorFromRating(int rating) {
-    switch (rating) {
-      case 1:
+  String _scoutingStateLabel(String state) =>
+      ScoutingMetadataUtils.labelFromState(state);
+
+  String _scoutingStateFromItem(Map<String, dynamic> item) =>
+      ScoutingMetadataUtils.stateFromItem(item);
+
+  int _ratingFromScoutingState(String state) =>
+      ScoutingMetadataUtils.ratingFromState(state);
+
+  List<String> _parseScoutingTags(dynamic raw) =>
+      ScoutingMetadataUtils.parseTags(raw);
+
+  Color _scoutingStateColor(String state) {
+    switch (state) {
+      case 'descubierto':
         return const Color(0xFF2563EB);
-      case 2:
+      case 'en_acompanamiento':
         return const Color(0xFFF59E0B);
-      case 3:
-        return const Color(0xFF7C3AED);
-      case 4:
+      case 'prioridad':
         return const Color(0xFF0F766E);
-      case 5:
-        return const Color(0xFF15803D);
+      case 'descartado':
+        return const Color(0xFFB91C1C);
       default:
         return const Color(0xFF64748B);
     }
   }
 
-  Widget _buildTagPill(int rating) {
-    final color = _tagColorFromRating(rating);
+  Widget _buildStatePill(String state) {
+    final color = _scoutingStateColor(state);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -153,7 +149,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
         border: Border.all(color: color.withOpacity(0.28)),
       ),
       child: Text(
-        _tagLabelFromRating(rating),
+        _scoutingStateLabel(state),
         style: GoogleFonts.inter(
           fontSize: 11,
           fontWeight: FontWeight.w700,
@@ -906,89 +902,138 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
   Future<void> _editarNotaJugador(Map<String, dynamic> jugadorEnLista) async {
     final notaController =
         TextEditingController(text: jugadorEnLista['nota'] ?? '');
-    int rating = jugadorEnLista['calificacion'] ?? 1;
+    final tagsController = TextEditingController(
+      text: _parseScoutingTags(jugadorEnLista['scouting_tags']).join(', '),
+    );
+    String scoutingState = _scoutingStateFromItem(jugadorEnLista);
 
     final result = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (ctx) => StatefulBuilder(
             builder: (ctx, setDialogState) => AlertDialog(
                     title: const Text('Editar seguimiento'),
-                    content: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Etiqueta',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF334155),
+                    content: SingleChildScrollView(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Estado',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF334155),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: List.generate(5, (index) {
-                          final current = index + 1;
-                          final isSelected = rating == current;
-                          final color = _tagColorFromRating(current);
-                          return ChoiceChip(
-                            label: Text(_tagLabelFromRating(current)),
-                            selected: isSelected,
-                            selectedColor: color.withOpacity(0.16),
-                            side: BorderSide(
-                              color:
-                                  isSelected ? color : const Color(0xFFD0D7DE),
-                            ),
-                            labelStyle: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color:
-                                  isSelected ? color : const Color(0xFF475569),
-                            ),
-                            onSelected: (_) =>
-                                setDialogState(() => rating = current),
-                          );
-                        }),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                          controller: notaController,
-                          maxLines: 3,
-                          decoration: const InputDecoration(
-                              hintText: 'Notas', border: OutlineInputBorder())),
-                    ]),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _scoutingStates.map((state) {
+                            final isSelected = scoutingState == state;
+                            final color = _scoutingStateColor(state);
+                            return ChoiceChip(
+                              label: Text(_scoutingStateLabel(state)),
+                              selected: isSelected,
+                              selectedColor: color.withOpacity(0.16),
+                              side: BorderSide(
+                                color: isSelected
+                                    ? color
+                                    : const Color(0xFFD0D7DE),
+                              ),
+                              labelStyle: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: isSelected
+                                    ? color
+                                    : const Color(0xFF475569),
+                              ),
+                              onSelected: (_) =>
+                                  setDialogState(() => scoutingState = state),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                            controller: tagsController,
+                            decoration: const InputDecoration(
+                                hintText: 'Etiquetas (separadas por coma)',
+                                border: OutlineInputBorder())),
+                        const SizedBox(height: 10),
+                        TextField(
+                            controller: notaController,
+                            maxLines: 3,
+                            decoration: const InputDecoration(
+                                hintText: 'Notas',
+                                border: OutlineInputBorder())),
+                      ]),
+                    ),
                     actions: [
                       TextButton(
                           onPressed: () => Navigator.pop(ctx),
                           child: const Text('Cancelar')),
                       ElevatedButton(
-                          onPressed: () => Navigator.pop(ctx,
-                              {'notas': notaController.text, 'rating': rating}),
+                          onPressed: () {
+                            final tags = tagsController.text
+                                .split(',')
+                                .map((tag) => tag.trim())
+                                .where((tag) => tag.isNotEmpty)
+                                .toSet()
+                                .toList();
+                            Navigator.pop(ctx, {
+                              'notas': notaController.text,
+                              'state': scoutingState,
+                              'tags': tags,
+                            });
+                          },
                           child: const Text('Guardar')),
                     ])));
 
     if (result != null) {
       try {
-        await SupaFlow.client.from('listas_jugadores').update({
+        final state = (result['state']?.toString().trim().isNotEmpty ?? false)
+            ? result['state'].toString().trim()
+            : 'descubierto';
+        final tags = List<String>.from((result['tags'] as List?) ?? const []);
+        final payload = {
           'nota': result['notas'],
-          'calificacion': result['rating'],
+          'scouting_state': state,
+          'scouting_tags': tags,
+          // Keep legacy field in sync for backward compatibility.
+          'calificacion': _ratingFromScoutingState(state),
           'updated_at': DateTime.now().toIso8601String(),
-        }).eq('id', jugadorEnLista['id']);
+        };
+
+        try {
+          await SupaFlow.client
+              .from('listas_jugadores')
+              .update(payload)
+              .eq('id', jugadorEnLista['id']);
+        } catch (_) {
+          // Fallback when migrations have not been applied yet.
+          await SupaFlow.client.from('listas_jugadores').update({
+            'nota': result['notas'],
+            'calificacion': _ratingFromScoutingState(state),
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('id', jugadorEnLista['id']);
+        }
         if (mounted) {
           setState(() {
             for (final item in _jugadoresEnLista) {
               if (item['id']?.toString() == jugadorEnLista['id']?.toString()) {
                 item['nota'] = result['notas'];
-                item['calificacion'] = result['rating'];
+                item['scouting_state'] = state;
+                item['scouting_tags'] = tags;
+                item['calificacion'] = _ratingFromScoutingState(state);
                 item['updated_at'] = DateTime.now().toIso8601String();
               }
             }
             for (final item in _filteredJugadores) {
               if (item['id']?.toString() == jugadorEnLista['id']?.toString()) {
                 item['nota'] = result['notas'];
-                item['calificacion'] = result['rating'];
+                item['scouting_state'] = state;
+                item['scouting_tags'] = tags;
+                item['calificacion'] = _ratingFromScoutingState(state);
                 item['updated_at'] = DateTime.now().toIso8601String();
               }
             }
@@ -1034,7 +1079,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                                     fontWeight: FontWeight.bold)),
                             SizedBox(height: 4 * scale),
                             Text(
-                              'Tu flujo unificado para seguir y organizar jugadores',
+                              'Uso individual: organizá y seguí jugadores de forma flexible',
                               style: GoogleFonts.inter(
                                 fontSize: 13 * scale,
                                 color: const Color(0xFF64748B),
@@ -1042,7 +1087,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                               ),
                             ),
                             SizedBox(height: 16 * scale),
-                            // Toggle Mis Listas / Guardados
+                            // Toggle de secciones internas de Mi scouting
                             Container(
                               decoration: BoxDecoration(
                                 color: Colors.grey[200],
@@ -1090,7 +1135,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Center(
-                                        child: Text('Mi scouting',
+                                        child: Text('Guardados',
                                             style: TextStyle(
                                               color: _showGuardados
                                                   ? Colors.white
@@ -1594,7 +1639,8 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     final position = j?['posicion']?.toString().trim() ?? '';
     final city = j?['city']?.toString().trim() ?? '';
     final note = item['nota']?.toString().trim() ?? '';
-    final rating = (item['calificacion'] as int?) ?? 1;
+    final scoutingState = _scoutingStateFromItem(item);
+    final customTags = _parseScoutingTags(item['scouting_tags']);
     final userId = item['jugador_id']?.toString().trim() ?? '';
 
     return Container(
@@ -1640,8 +1686,36 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                 ],
               ),
             ),
-            _buildTagPill(rating),
+            _buildStatePill(scoutingState),
           ]),
+          if (customTags.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: customTags
+                  .map(
+                    (tag) => Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F0FE),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: const Color(0xFFC5D7F2)),
+                      ),
+                      child: Text(
+                        '#$tag',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF0D3B66),
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
@@ -1701,46 +1775,65 @@ class _AddJugadorModal extends StatefulWidget {
 class _AddJugadorModalState extends State<_AddJugadorModal> {
   final _searchCtrl = TextEditingController();
   final _notaCtrl = TextEditingController();
+  final _tagsCtrl = TextEditingController();
   List<Map<String, dynamic>> _results = <Map<String, dynamic>>[];
   Map<String, dynamic>? _selected;
   bool _searching = false;
   bool _saving = false;
   String? _errorMsg;
-  int _rating = 1;
+  String _scoutingState = 'descubierto';
 
   String _normalizeId(dynamic value) {
     return value?.toString().trim() ?? '';
   }
 
-  String _tagLabelFromRating(int rating) {
-    switch (rating) {
-      case 1:
-        return 'Nuevos';
-      case 2:
-        return 'En revisión';
-      case 3:
-        return 'Interesados';
-      case 4:
-        return 'Seguimiento';
-      case 5:
-        return 'Seleccionados';
+  static const List<String> _scoutingStates = [
+    'descubierto',
+    'en_acompanamiento',
+    'prioridad',
+    'descartado',
+  ];
+
+  String _scoutingStateLabel(String state) {
+    switch (state) {
+      case 'descubierto':
+        return 'Descubierto';
+      case 'en_acompanamiento':
+        return 'En acompañamiento';
+      case 'prioridad':
+        return 'Prioridad';
+      case 'descartado':
+        return 'Descartado';
       default:
-        return 'Sin etiqueta';
+        return 'Descubierto';
     }
   }
 
-  Color _tagColorFromRating(int rating) {
-    switch (rating) {
-      case 1:
+  int _ratingFromScoutingState(String state) {
+    switch (state) {
+      case 'descubierto':
+        return 1;
+      case 'en_acompanamiento':
+        return 2;
+      case 'prioridad':
+        return 4;
+      case 'descartado':
+        return 5;
+      default:
+        return 1;
+    }
+  }
+
+  Color _scoutingStateColor(String state) {
+    switch (state) {
+      case 'descubierto':
         return const Color(0xFF2563EB);
-      case 2:
+      case 'en_acompanamiento':
         return const Color(0xFFF59E0B);
-      case 3:
-        return const Color(0xFF7C3AED);
-      case 4:
+      case 'prioridad':
         return const Color(0xFF0F766E);
-      case 5:
-        return const Color(0xFF15803D);
+      case 'descartado':
+        return const Color(0xFFB91C1C);
       default:
         return const Color(0xFF64748B);
     }
@@ -1777,6 +1870,14 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
       return 'Este jugador ya está en la lista.';
     }
     return 'No se pudo guardar. Intentá nuevamente.';
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _notaCtrl.dispose();
+    _tagsCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _search(String q) async {
@@ -1877,12 +1978,29 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
         }
         return;
       }
-      await SupaFlow.client.from('listas_jugadores').insert({
-        'lista_id': listaId,
-        'jugador_id': jugadorId,
-        'nota': _notaCtrl.text.trim(),
-        'calificacion': _rating,
-      });
+      final tags = _tagsCtrl.text
+          .split(',')
+          .map((tag) => tag.trim())
+          .where((tag) => tag.isNotEmpty)
+          .toSet()
+          .toList();
+      try {
+        await SupaFlow.client.from('listas_jugadores').insert({
+          'lista_id': listaId,
+          'jugador_id': jugadorId,
+          'nota': _notaCtrl.text.trim(),
+          'calificacion': _ratingFromScoutingState(_scoutingState),
+          'scouting_state': _scoutingState,
+          'scouting_tags': tags,
+        });
+      } catch (_) {
+        await SupaFlow.client.from('listas_jugadores').insert({
+          'lista_id': listaId,
+          'jugador_id': jugadorId,
+          'nota': _notaCtrl.text.trim(),
+          'calificacion': _ratingFromScoutingState(_scoutingState),
+        });
+      }
       if (mounted) Navigator.pop(context, <String, dynamic>{'saved': true});
     } catch (e) {
       if (mounted) {
@@ -2017,7 +2135,7 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Etiqueta',
+                'Estado',
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -2029,12 +2147,11 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: List.generate(5, (index) {
-                final current = index + 1;
-                final isSelected = _rating == current;
-                final color = _tagColorFromRating(current);
+              children: _scoutingStates.map((state) {
+                final isSelected = _scoutingState == state;
+                final color = _scoutingStateColor(state);
                 return ChoiceChip(
-                  label: Text(_tagLabelFromRating(current)),
+                  label: Text(_scoutingStateLabel(state)),
                   selected: isSelected,
                   selectedColor: color.withOpacity(0.16),
                   side: BorderSide(
@@ -2045,10 +2162,17 @@ class _AddJugadorModalState extends State<_AddJugadorModal> {
                     fontWeight: FontWeight.w700,
                     color: isSelected ? color : const Color(0xFF475569),
                   ),
-                  onSelected: (_) => setState(() => _rating = current),
+                  onSelected: (_) => setState(() => _scoutingState = state),
                 );
-              }),
+              }).toList(),
             ),
+            const SizedBox(height: 8),
+            TextField(
+                controller: _tagsCtrl,
+                decoration: InputDecoration(
+                    hintText: 'Etiquetas (separadas por coma)',
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)))),
             const SizedBox(height: 8),
             TextField(
                 controller: _notaCtrl,
