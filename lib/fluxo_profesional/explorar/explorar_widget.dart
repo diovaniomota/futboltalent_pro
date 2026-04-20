@@ -2301,11 +2301,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Explorer',
+                        'Explorer · Scout',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(
-                          fontSize: 20,
+                          fontSize: 17,
                           fontWeight: FontWeight.bold,
                           color: const Color(0xFF0D3B66),
                         ),
@@ -2315,7 +2315,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         'Explorar jugadores y oportunidades',
                         style: GoogleFonts.inter(
                           color: const Color(0xFF4A5568),
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight: FontWeight.w500,
                         ),
                       ),

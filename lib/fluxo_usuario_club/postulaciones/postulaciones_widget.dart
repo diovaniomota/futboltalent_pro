@@ -841,14 +841,6 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                                         color: Colors.black,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Resumen de actividad y candidatos',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        color: Colors.grey[500],
-                                      ),
-                                    ),
                                     SizedBox(height: 20 * scale),
 
                                     // Stats - Layout responsivo
@@ -887,7 +879,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               title: 'Total\nPostulaciones',
               value: _totalPostulaciones.toString(),
               icon: Icons.groups_outlined,
-              subtitle: 'Todas las convocatorias',
+              subtitle: '',
               trend: '+25%',
             ),
           ),
@@ -898,7 +890,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               title: 'Total videos\nSubidos',
               value: _totalVideos.toString(),
               icon: Icons.videocam_outlined,
-              subtitle: 'En curso',
+              subtitle: '',
               trend: '+3%',
             ),
           ),
@@ -909,7 +901,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               title: 'Convocatorias\nActivas',
               value: _convocatoriasActivas.toString(),
               icon: Icons.groups_outlined,
-              subtitle: 'En curso',
+              subtitle: '',
               trend: '+18%',
             ),
           ),
@@ -920,7 +912,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               title: 'Promedio por\nConvocatoria',
               value: _promedioPostulaciones.toStringAsFixed(0),
               icon: Icons.calendar_today_outlined,
-              subtitle: 'En curso',
+              subtitle: '',
               trend: '+15%',
             ),
           ),
@@ -939,7 +931,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                 title: 'Total\nPostulaciones',
                 value: _totalPostulaciones.toString(),
                 icon: Icons.groups_outlined,
-                subtitle: 'Todas las convocatorias\nactivas',
+                subtitle: '',
                 trend: '+25%',
               ),
             ),
@@ -950,7 +942,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                 title: 'Total videos\nSubidos',
                 value: _totalVideos.toString(),
                 icon: Icons.videocam_outlined,
-                subtitle: 'En curso',
+                subtitle: '',
                 trend: '+3%',
               ),
             ),
@@ -965,7 +957,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                 title: 'Convocatorias\nActivas',
                 value: _convocatoriasActivas.toString(),
                 icon: Icons.groups_outlined,
-                subtitle: 'En curso',
+                subtitle: '',
                 trend: '+18%',
               ),
             ),
@@ -976,7 +968,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                 title: 'Promedio por\nConvocatoria',
                 value: _promedioPostulaciones.toStringAsFixed(0),
                 icon: Icons.calendar_today_outlined,
-                subtitle: 'En curso',
+                subtitle: '',
                 trend: '+15%',
               ),
             ),
@@ -1088,15 +1080,17 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               ],
             ],
           ),
-          SizedBox(height: 6 * scale),
-          Text(
-            subtitle,
-            style: GoogleFonts.inter(
-              fontSize: subtitleSize,
-              color: Colors.grey[500],
-              height: 1.3,
+          if (subtitle.isNotEmpty) ...[
+            SizedBox(height: 6 * scale),
+            Text(
+              subtitle,
+              style: GoogleFonts.inter(
+                fontSize: subtitleSize,
+                color: Colors.grey[500],
+                height: 1.3,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1107,8 +1101,6 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final padding = _responsive(context, mobile: 16, tablet: 20, desktop: 24);
     final titleSize =
         _responsive(context, mobile: 18, tablet: 20, desktop: 22) * scale;
-    final subtitleSize =
-        _responsive(context, mobile: 12, tablet: 13, desktop: 14) * scale;
     final borderRadius =
         _responsive(context, mobile: 18, tablet: 20, desktop: 22);
 
@@ -1158,15 +1150,6 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                         color: const Color(0xFF0F172A),
                       ),
                     ),
-                    SizedBox(height: 3 * scale),
-                    Text(
-                      '${_postulacionesRecientes.length} jugadores postulados',
-                      style: GoogleFonts.inter(
-                        fontSize: subtitleSize,
-                        color: const Color(0xFF64748B),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -1188,20 +1171,11 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                         size: 48 * scale, color: Colors.grey[300]),
                     SizedBox(height: 8 * scale),
                     Text(
-                      'Aún no hay postulaciones',
+                      'Todavía no tenés postulaciones',
                       style: GoogleFonts.inter(
                         fontSize: 14 * scale,
                         fontWeight: FontWeight.w600,
                         color: Colors.grey[500],
-                      ),
-                    ),
-                    SizedBox(height: 4 * scale),
-                    Text(
-                      'Cuando publiques una convocatoria activa, los jugadores interesados podrán postularse y aparecerán acá.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontSize: 12 * scale,
-                        color: Colors.grey[400],
                       ),
                     ),
                   ],

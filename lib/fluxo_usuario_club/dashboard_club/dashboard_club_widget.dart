@@ -2665,18 +2665,6 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             ),
           ],
         ),
-        Padding(
-          padding: const EdgeInsets.only(left: 12, bottom: 14),
-          child: Text(
-            'Explora jugadores y conecta talento',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              color: const Color(0xFF4A5568),
-              fontSize: 12.5,
-            ),
-          ),
-        ),
         _buildSearchBar(),
         const SizedBox(height: 16),
         _buildSectionHeader(
@@ -3725,22 +3713,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             ),
             const SizedBox(height: 14),
             Text(
-              'Creá tu primera convocatoria para empezar a recibir jugadores',
+              'Crea tu primera convocatoria y empieza a encontrar talentos',
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF1A202C),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Publicá una convocatoria con posición, categoría y requisitos. Los jugadores podrán postularse directamente.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 12.5,
-                color: const Color(0xFF718096),
-                height: 1.4,
               ),
             ),
             const SizedBox(height: 18),
@@ -3887,9 +3865,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (_recentPostulaciones.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.people_outline,
-        title: 'Aún no hay postulaciones',
-        subtitle:
-            'Publicá una convocatoria y los jugadores interesados aparecerán acá automáticamente.',
+        title: 'Todavía no tenés postulaciones',
+        subtitle: '',
       );
     }
 
@@ -4175,9 +4152,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     if (_suggestedPlayers.isEmpty) {
       return _buildInlineStatus(
         icon: Icons.workspace_premium_outlined,
-        title: 'Sin jugadores verificados todavía',
-        subtitle:
-            'Cuando haya jugadores verificados activos, aparecerán acá para que los explores.',
+        title: 'Todavía no hay jugadores verificados',
+        subtitle: '',
       );
     }
 
@@ -4301,8 +4277,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       return _buildInlineStatus(
         icon: Icons.alt_route,
         title: 'Sin seguimiento activo',
-        subtitle:
-            'Creá una convocatoria para empezar a ver el seguimiento de jugadores postulados.',
+        subtitle: '',
       );
     }
 
@@ -4510,15 +4485,17 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               color: const Color(0xFF2D3748),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: const Color(0xFF718096),
+          if (subtitle.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: const Color(0xFF718096),
+              ),
             ),
-          ),
+          ],
           if (onRetry != null) ...[
             const SizedBox(height: 10),
             OutlinedButton(

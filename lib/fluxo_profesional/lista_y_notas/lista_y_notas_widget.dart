@@ -1146,13 +1146,16 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                                       fontSize: 24 * scale,
                                       fontWeight: FontWeight.bold)),
                             ),
-                            SizedBox(height: 4 * scale),
-                            Text(
-                              'Gestioná y evaluá talento de forma profesional',
-                              style: GoogleFonts.inter(
-                                fontSize: 13 * scale,
-                                color: const Color(0xFF64748B),
-                                fontWeight: FontWeight.w500,
+                            SizedBox(height: 6 * scale),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Gestioná y evaluá talento de forma profesional',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13 * scale,
+                                  color: const Color(0xFF64748B),
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
                             SizedBox(height: 16 * scale),
@@ -1204,7 +1207,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Center(
-                                        child: Text('Salvos',
+                                        child: Text('Guardados',
                                             style: TextStyle(
                                               color: _showGuardados
                                                   ? Colors.white
@@ -1304,7 +1307,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
           child: Column(children: [
             Icon(Icons.bookmark_border, size: 48, color: Colors.grey[400]),
             const SizedBox(height: 12),
-            Text('Salvos vazio',
+            Text('No hay guardados todavía',
                 style: TextStyle(color: Colors.grey[600], fontSize: 16)),
             const SizedBox(height: 8),
             Text(
@@ -1318,7 +1321,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('${_jugadoresGuardados.length} jogador(es) em salvos',
+        Text('${_jugadoresGuardados.length} jugador(es) en guardados',
             style: TextStyle(color: Colors.grey[600], fontSize: 13 * scale)),
         SizedBox(height: 12 * scale),
         ..._jugadoresGuardados.map((g) => _buildGuardadoCard(context, g)),
@@ -1457,8 +1460,29 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('Listas', style: TextStyle(fontWeight: FontWeight.bold)),
         if (_listas.isEmpty)
-          const Padding(
-              padding: EdgeInsets.all(20), child: Text('No hay listas'))
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                const Text(
+                  'Crea listas para hacer seguimiento de jugadores',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                ElevatedButton(
+                  onPressed: _createNewLista,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D3B66),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: const Text('Crear primera lista',
+                      style: TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          )
         else
           ..._listas.map((l) => _buildListaCard(context, l)),
       ]),
@@ -1504,7 +1528,12 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.grey[300]!)),
-      child: const Center(child: Text('Selecciona una lista')),
+      child: const Center(
+        child: Text(
+          'Crea listas para organizar jugadores y seguir su estado.',
+          textAlign: TextAlign.center,
+        ),
+      ),
     );
   }
 
@@ -1532,24 +1561,12 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                 onPressed: _deleteLista),
           ]),
         ]),
-        if (!_isClubStaff)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              'Compartir solo está habilitado para staff de club.',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12),
-            ),
-          ),
         const Divider(),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text(
-              'Lista seleccionada. Podés agregar jugadores directamente acá.',
-              style: TextStyle(color: Colors.grey[700], fontSize: 12),
-            ),
             OutlinedButton.icon(
               onPressed: _createNewNota,
               icon: const Icon(Icons.person_add_alt_1, size: 18),

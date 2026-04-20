@@ -995,7 +995,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                 color: const Color(0xFF111827))),
         SizedBox(height: 4 * scale),
         Text(
-          'Pipeline de decisão do clube para avaliar jogadores',
+          'Organiza, evalúa y construye tu cantera',
           style: GoogleFonts.inter(
             fontSize: 13 * scale,
             color: const Color(0xFF64748B),
@@ -1051,8 +1051,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
               Expanded(
                 child: Text(
                   hasSelectedList
-                      ? 'Lista ativa: ${_selectedLista?['nombre'] ?? 'Lista'}'
-                      : 'Pipeline do clube',
+                      ? 'Lista activa: ${_selectedLista?['nombre'] ?? 'Lista'}'
+                      : 'Pipeline del club',
                   style: GoogleFonts.inter(
                     fontSize: 15 * scale,
                     fontWeight: FontWeight.w700,
@@ -1065,8 +1065,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           SizedBox(height: 12 * scale),
           Text(
             hasSelectedList
-                ? 'Avalie jogadores desta lista atualizando estado, etiquetas e notas de avaliação.'
-                : '1. Crie uma lista por necessidade do clube. 2. Selecione a lista. 3. Avalie jogadores com estado, etiquetas e notas.',
+                ? 'Evalúa jugadores de esta lista actualizando estado, etiquetas y notas de evaluación.'
+                : '1. Crea una lista según la necesidad del club. 2. Selecciona la lista. 3. Evalúa jugadores con estado, etiquetas y notas.',
             style: GoogleFonts.inter(
               fontSize: 13 * scale,
               height: 1.35,
@@ -1079,7 +1079,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
             runSpacing: 10 * scale,
             children: [
               _buildActionButton(
-                'Nova lista',
+                'Nueva lista',
                 () => _showCreateListaModal(),
                 null,
                 _responsive(context, mobile: 42, tablet: 44, desktop: 46),
@@ -1114,7 +1114,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _buildActionButton(
-          '+ Nova lista',
+          '+ Nueva lista',
           () => _showCreateListaModal(),
           null,
           height,
@@ -1179,7 +1179,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                 ),
                 child: Center(
                   child: Text(
-                    'Salvos',
+                    'Guardados',
                     style: GoogleFonts.inter(
                       fontSize: 14 * scale,
                       fontWeight: FontWeight.w700,
@@ -1265,20 +1265,10 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         Icon(Icons.touch_app, size: 48 * scale, color: Colors.grey[400]),
         SizedBox(height: 12 * scale),
-        Text('Selecionar uma lista para avaliar jogadores',
+        Text('Crea listas para organizar jugadores y seguir su estado.',
             style: GoogleFonts.inter(
                 fontSize: 14 * scale, color: Colors.grey[500]),
             textAlign: TextAlign.center),
-        SizedBox(height: 10 * scale),
-        Text(
-          'Depois você poderá adicionar jogadores e avaliar cada um com estado, etiquetas e notas.',
-          style: GoogleFonts.inter(
-            fontSize: 12 * scale,
-            color: Colors.grey[500],
-            height: 1.3,
-          ),
-          textAlign: TextAlign.center,
-        ),
       ]),
     );
   }
@@ -1297,7 +1287,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Salvos',
+            'Guardados',
             style: GoogleFonts.inter(
               fontSize: 18 * scale,
               fontWeight: FontWeight.w700,
@@ -1306,7 +1296,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           ),
           SizedBox(height: 4 * scale),
           Text(
-            '${_savedPlayersDirectory.length} jogador(es) salvos para organizar em listas',
+            '${_savedPlayersDirectory.length} jugador(es) guardados para organizar en listas',
             style: GoogleFonts.inter(
               fontSize: 12 * scale,
               color: const Color(0xFF6B7280),
@@ -1323,7 +1313,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
               controller: _savedSearchController,
               style: GoogleFonts.inter(fontSize: 14 * scale),
               decoration: InputDecoration(
-                hintText: 'Buscar em salvos...',
+                hintText: 'Buscar en guardados...',
                 prefixIcon:
                     Icon(Icons.search, size: 20 * scale, color: Colors.grey),
                 border: InputBorder.none,
@@ -1339,7 +1329,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
               padding: EdgeInsets.symmetric(vertical: 20 * scale),
               child: Center(
                 child: Text(
-                  'Nenhum jogador salvo encontrado.',
+                  'No se encontraron jugadores guardados.',
                   style: GoogleFonts.inter(
                       fontSize: 13 * scale, color: const Color(0xFF6B7280)),
                 ),
@@ -1364,9 +1354,9 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     final age = _calculateAge(player['birthday']?.toString());
     final city = normalizeCityName(player['city'] ?? player['ciudad']);
     final photo = player['photo_url'];
-    final positionLabel = position.isNotEmpty ? position : 'Posição indefinida';
+    final positionLabel = position.isNotEmpty ? position : 'Posición indefinida';
     final meta = [
-      if (age > 0) '$age anos',
+      if (age > 0) '$age años',
       positionLabel,
       if (city.isNotEmpty) city,
     ].join(' • ');
@@ -1397,7 +1387,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      name.isNotEmpty ? name : 'Jogador',
+                      name.isNotEmpty ? name : 'Jugador',
                       style: GoogleFonts.inter(
                           fontSize: 14 * scale, fontWeight: FontWeight.w700),
                     ),
@@ -1420,7 +1410,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
               OutlinedButton.icon(
                 onPressed: () => _showAddSavedToListaModal(player),
                 icon: const Icon(Icons.playlist_add_rounded, size: 18),
-                label: const Text('Adicionar à lista'),
+                label: const Text('Agregar a la lista'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF0D3B66),
                   side: const BorderSide(color: Color(0xFF0D3B66)),
@@ -1456,14 +1446,14 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
         Row(children: [
           Icon(Icons.list_alt, color: Colors.black, size: 20 * scale),
           SizedBox(width: 8 * scale),
-          Text('Listas do clube',
+          Text('Listas del club',
               style: GoogleFonts.inter(
                   fontSize: 16 * scale,
                   fontWeight: FontWeight.w500,
                   color: Colors.black))
         ]),
         SizedBox(height: 4 * scale),
-        Text('${_listas.length} listas criadas',
+        Text('${_listas.length} listas creadas',
             style: GoogleFonts.inter(fontSize: 12 * scale, color: Colors.grey)),
         SizedBox(height: 16 * scale),
         if (_listas.isEmpty)
@@ -1473,7 +1463,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                   child: Column(
                     children: [
                       Text(
-                          'Criar uma lista para organizar o pipeline de jogadores do clube',
+                          'Crea listas para hacer seguimiento de jugadores',
                           style: GoogleFonts.inter(
                               fontSize: 14 * scale, color: Colors.grey),
                           textAlign: TextAlign.center),
@@ -1481,7 +1471,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                       OutlinedButton.icon(
                         onPressed: _showCreateListaModal,
                         icon: const Icon(Icons.playlist_add_rounded),
-                        label: const Text('Criar primeira lista'),
+                        label: const Text('Crear primera lista'),
                       ),
                     ],
                   )))
@@ -1589,7 +1579,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                       fontWeight: FontWeight.w700,
                       color: Colors.black)),
               SizedBox(height: 4 * scale),
-              Text('Gerencie jogadores, estados, etiquetas e notas por lista.',
+              Text('Gestiona jugadores, estados, etiquetas y notas por lista.',
                   style: GoogleFonts.inter(
                       fontSize: 12 * scale, color: const Color(0xFF6B7280))),
             ],
@@ -1654,8 +1644,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                     children: [
                       Text(
                           _stateFilter != null
-                              ? 'Nenhum jogador com estado "${_scoutingStateLabel(_stateFilter!)}" nesta lista.'
-                              : 'Adicione jogadores para iniciar o pipeline de avaliação.',
+                              ? 'Ningún jugador con estado "${_scoutingStateLabel(_stateFilter!)}" en esta lista.'
+                              : 'Agrega jugadores para iniciar el pipeline de evaluación.',
                           style: GoogleFonts.inter(
                               fontSize: 14 * scale, color: Colors.grey),
                           textAlign: TextAlign.center),
@@ -1664,7 +1654,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                         OutlinedButton.icon(
                           onPressed: _showAddJugadorModal,
                           icon: const Icon(Icons.person_add_alt_1_rounded),
-                          label: const Text('Adicionar jogador à lista'),
+                          label: const Text('Agregar jugador a la lista'),
                         ),
                     ],
                   )))
@@ -1687,7 +1677,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     final scoutingState = _scoutingStateFromItem(item);
     final customTags = _parseScoutingTags(item['scouting_tags']);
     final positionLabel =
-        position.isNotEmpty ? position : 'Posição não definida';
+        position.isNotEmpty ? position : 'Posición no definida';
     final stateColor = _scoutingStateColor(scoutingState);
     final userId = item['jugador_id']?.toString().trim() ?? '';
 
@@ -1739,7 +1729,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                                 fontSize: 14 * scale,
                                 fontWeight: FontWeight.w700)),
                         SizedBox(height: 2 * scale),
-                        Text('$positionLabel • $age anos',
+                        Text('$positionLabel • $age años',
                             style: GoogleFonts.inter(
                                 fontSize: 12 * scale, color: Colors.grey[600])),
                         if (customTags.isNotEmpty) ...[
@@ -1807,7 +1797,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                   OutlinedButton.icon(
                     onPressed: () => _showEditJugadorModal(item),
                     icon: const Icon(Icons.assessment_outlined, size: 18),
-                    label: const Text('Avaliar jogador'),
+                    label: const Text('Evaluar jugador'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF0D3B66),
                       side: const BorderSide(color: Color(0xFF0D3B66)),
@@ -1840,7 +1830,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (ctx) => _buildModalContent(ctx, 'Nova lista', [
+        builder: (ctx) => _buildModalContent(ctx, 'Nueva lista', [
               _buildTextField(ctx, 'Nombre *', nombreCtrl),
               const SizedBox(height: 16),
               _buildTextField(ctx, 'Descripción', descCtrl, maxLines: 3),
@@ -1924,7 +1914,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setStates) {
-          return _buildModalContent(ctx, 'Adicionar aos Salvos', [
+          return _buildModalContent(ctx, 'Agregar a Guardados', [
             DropdownButtonFormField<String>(
               value: selectedListaId,
               decoration: const InputDecoration(labelText: 'Lista destino *'),
@@ -1995,12 +1985,12 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Jogador adicionado à lista.'),
+                  content: Text('Jugador agregado a la lista.'),
                   backgroundColor: Color(0xFF16A34A),
                 ),
               );
             }
-          }, 'Adicionar');
+          }, 'Agregar');
         },
       ),
     );
@@ -2254,7 +2244,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                         onPressed: () => setStates(() => selected = null)),
                   ),
                 const SizedBox(height: 16),
-                const Text('Estado (obrigatório)'),
+                const Text('Estado (obligatorio)'),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -2269,7 +2259,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Use os estados para priorizar decisões no pipeline do clube: Descoberto, Em avaliação, Prioridade ou Descartado.',
+                  'Usa los estados para priorizar decisiones en el pipeline del club: Descubierto, En evaluación, Prioridad o Descartado.',
                   style: TextStyle(color: Colors.grey[600], fontSize: 12),
                 ),
                 const SizedBox(height: 10),
@@ -2325,7 +2315,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
         backgroundColor: Colors.transparent,
         builder: (ctx) => StatefulBuilder(builder: (ctx, setStates) {
               return _buildModalContent(ctx, 'Editar Nota', [
-                const Text('Estado (obrigatório)'),
+                const Text('Estado (obligatorio)'),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -2340,7 +2330,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Mantenha o estado atualizado para apoiar decisões do clube sobre cada jogador.',
+                  'Mantén el estado actualizado para apoyar las decisiones del club sobre cada jugador.',
                   style: TextStyle(color: Colors.grey[600], fontSize: 12),
                 ),
                 const SizedBox(height: 10),

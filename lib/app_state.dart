@@ -169,7 +169,7 @@ class FFAppState extends ChangeNotifier {
         return;
       }
 
-      final sanitizedType = normalizeUserType(response?['userType']);
+      final sanitizedType = normalizeUserType(response['userType']);
       if (sanitizedType.isNotEmpty) {
         debugPrint('FFAppState: userType = "$sanitizedType"');
         userType = sanitizedType;

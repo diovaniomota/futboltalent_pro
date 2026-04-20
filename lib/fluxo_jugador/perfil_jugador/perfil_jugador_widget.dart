@@ -8,6 +8,7 @@ import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:video_player/video_player.dart';
@@ -27,6 +28,221 @@ class PerfilJugadorWidget extends StatefulWidget {
 
 class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     with SingleTickerProviderStateMixin {
+  String? _extractVideoStoragePath(String? rawUrl) {
+    final url = rawUrl?.trim() ?? '';
+    if (url.isEmpty) return null;
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) return null;
+
+    final segments = uri.pathSegments;
+    final publicIndex = segments.indexOf('public');
+    if (publicIndex == -1) return null;
+
+    final bucketIndex = publicIndex + 1;
+    if (bucketIndex >= segments.length || segments[bucketIndex] != 'Videos') {
+      return null;
+    }
+
+    final objectSegments = segments.skip(bucketIndex + 1).toList();
+    if (objectSegments.isEmpty) return null;
+
+    return objectSegments.map(Uri.decodeComponent).join('/');
+  }
+
+  Future<void> _deleteVideoStorageAsset(String? rawUrl) async {
+    final storagePath = _extractVideoStoragePath(rawUrl);
+    if (storagePath == null || storagePath.isEmpty) return;
+
+    try {
+      await SupaFlow.client.storage.from('Videos').remove([storagePath]);
+    } catch (e) {
+      debugPrint('Storage delete failed for $storagePath: $e');
+    }
+  }
+
+  Future<void> _cleanupVideoRelations(String videoId) async {
+    final cleanupOperations = <Future<void> Function()>[
+      () async {
+        await SupaFlow.client.from('comments').delete().eq('video_id', videoId);
+      },
+      () async {
+        await SupaFlow.client.from('likes').delete().eq('video_id', videoId);
+      },
+      () async {
+        await SupaFlow.client
+            .from('saved_videos')
+            .delete()
+            .eq('video_id', videoId);
+      },
+      () async {
+        await SupaFlow.client
+            .from('user_challenge_attempts')
+            .delete()
+            .eq('video_id', videoId);
+      },
+    ];
+
+    for (final operation in cleanupOperations) {
+      try {
+        await operation();
+      } catch (e) {
+        debugPrint('Related cleanup failed for video $videoId: $e');
+      }
+    }
+  }
+
+  Future<void> _deleteOwnVideo(Map<String, dynamic> video) async {
+    final videoId = (video['id'] ?? '').toString().trim();
+    final ownerId = (video['user_id'] ?? '').toString().trim();
+
+    if (videoId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo identificar el video.')),
+      );
+      return;
+    }
+
+    if (ownerId.isNotEmpty && ownerId != currentUserUid) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Solo podés eliminar videos publicados por tu cuenta.'),
+        ),
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar video'),
+        content: Text(
+          '¿Querés eliminar "${video['title'] ?? 'este video'}" desde tu perfil? Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+    if (!mounted) return;
+
+    try {
+      bool removed = false;
+      bool hardDeleted = false;
+      setState(() => _deletingVideoId = videoId);
+
+      // Try direct delete first in case the DB already cascades related rows.
+      try {
+        final deleteResponse = await SupaFlow.client
+            .from('videos')
+            .delete()
+            .eq('user_id', currentUserUid)
+            .eq('id', videoId)
+            .select('id');
+        removed = (deleteResponse as List).isNotEmpty;
+        hardDeleted = removed;
+      } catch (e) {
+        debugPrint('Direct delete failed for video $videoId: $e');
+      }
+
+      if (!removed) {
+        await _cleanupVideoRelations(videoId);
+
+        try {
+          final deleteResponse = await SupaFlow.client
+              .from('videos')
+              .delete()
+              .eq('user_id', currentUserUid)
+              .eq('id', videoId)
+              .select('id');
+          removed = (deleteResponse as List).isNotEmpty;
+          hardDeleted = removed;
+        } catch (e) {
+          debugPrint('Delete after cleanup failed for video $videoId: $e');
+        }
+      }
+
+      // Last fallback: hide the video from the profile/feed if SQL policies
+      // don't allow a hard delete in production yet.
+      if (!removed) {
+        try {
+          final updateResponse = await SupaFlow.client
+              .from('videos')
+              .update({
+                'is_public': false,
+              })
+              .eq('user_id', currentUserUid)
+              .eq('id', videoId)
+              .select('id, is_public');
+          removed = (updateResponse as List).isNotEmpty;
+        } catch (e) {
+          debugPrint('Soft hide failed for video $videoId: $e');
+        }
+      }
+
+      if (removed) {
+        if (hardDeleted) {
+          final storageUrls = <String>{
+            (video['video_url'] ?? '').toString().trim(),
+            (video['thumbnail_url'] ?? '').toString().trim(),
+            (video['thumbnail'] ?? '').toString().trim(),
+            (video['cover_url'] ?? '').toString().trim(),
+          }..removeWhere((url) => url.isEmpty);
+
+          for (final url in storageUrls) {
+            await _deleteVideoStorageAsset(url);
+          }
+        }
+
+        await GamificationService.recalculateUserProgress(
+            userId: currentUserUid);
+        if (!mounted) return;
+        setState(() {
+          _videos.removeWhere((item) => item['id']?.toString() == videoId);
+          _savedVideos.removeWhere((item) => item['id']?.toString() == videoId);
+          if (_updatingFeaturedVideoId == videoId) {
+            _updatingFeaturedVideoId = null;
+          }
+          _deletingVideoId = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              hardDeleted
+                  ? 'El video se eliminó de tu perfil.'
+                  : 'El video se quitó de tu perfil.',
+            ),
+          ),
+        );
+      } else {
+        if (!mounted) return;
+        setState(() => _deletingVideoId = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo eliminar el video desde tu perfil.'),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error deleting video: $e');
+      if (!mounted) return;
+      setState(() => _deletingVideoId = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al eliminar el video: $e')),
+      );
+    }
+  }
+
   late PerfilJugadorModel _model;
   final scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -37,6 +253,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   List<Map<String, dynamic>> _savedVideos = [];
   List<Map<String, dynamic>> _contactRequests = [];
   bool _isLoadingSavedVideos = false;
+  String? _deletingVideoId;
   String? _removingSavedVideoId;
   String? _updatingFeaturedVideoId;
   int _userRanking = 0;
@@ -1562,65 +1779,103 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
               final video = orderedVideos[index];
               final videoId = video['id']?.toString() ?? '';
               final isFeatured = _isVideoFeatured(video);
+              final isDeleting = _deletingVideoId == videoId;
               final isUpdating = _updatingFeaturedVideoId == videoId;
               final originalIndex = _videos.indexWhere(
                 (item) => item['id']?.toString() == videoId,
               );
-              return _VideoCard(
-                videoUrl: video['video_url']?.toString() ?? '',
-                thumbnailUrl: (video['thumbnail_url'] ??
-                        video['thumbnail'] ??
-                        video['cover_url'] ??
-                        '')
-                    .toString(),
-                onTap: () => _openVideoFeed(
-                  originalIndex >= 0 ? originalIndex : index,
-                  _videos,
-                ),
-                badge: isFeatured
-                    ? Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0F766E),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          'Destacado',
-                          style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      )
-                    : null,
-                topRightAction: GestureDetector(
-                  onTap: isUpdating ? null : () => _toggleFeaturedVideo(video),
-                  child: Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      shape: BoxShape.circle,
+              return Stack(
+                children: [
+                  _VideoCard(
+                    videoUrl: video['video_url']?.toString() ?? '',
+                    thumbnailUrl: (video['thumbnail_url'] ??
+                            video['thumbnail'] ??
+                            video['cover_url'] ??
+                            '')
+                        .toString(),
+                    title: video['title']?.toString() ?? '',
+                    onTap: () => _openVideoFeed(
+                      originalIndex >= 0 ? originalIndex : index,
+                      _videos,
                     ),
-                    child: isUpdating
-                        ? const Padding(
-                            padding: EdgeInsets.all(7),
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
+                    badge: isFeatured
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F766E),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'Destacado',
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           )
-                        : Icon(
-                            isFeatured ? Icons.star : Icons.star_border,
-                            color: Colors.white,
-                            size: 18,
-                          ),
+                        : null,
+                    topRightAction: GestureDetector(
+                      onTap:
+                          isUpdating ? null : () => _toggleFeaturedVideo(video),
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.6),
+                          shape: BoxShape.circle,
+                        ),
+                        child: isUpdating
+                            ? const Padding(
+                                padding: EdgeInsets.all(7),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Icon(
+                                isFeatured ? Icons.star : Icons.star_border,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                      ),
+                    ),
                   ),
-                ),
+                  // Botão de exclusão (canto superior esquerdo)
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: GestureDetector(
+                      onTap: isDeleting || isUpdating
+                          ? null
+                          : () => _deleteOwnVideo(video),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.85),
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(6),
+                        child: isDeleting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.delete,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                      ),
+                    ),
+                  ),
+                ],
               );
             },
           ),
@@ -2842,9 +3097,10 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   }
 }
 
-class _VideoCard extends StatelessWidget {
+class _VideoCard extends StatefulWidget {
   final String videoUrl;
   final String thumbnailUrl;
+  final String title;
   final VoidCallback onTap;
   final Widget? badge;
   final Widget? topRightAction;
@@ -2852,17 +3108,149 @@ class _VideoCard extends StatelessWidget {
   const _VideoCard({
     required this.videoUrl,
     required this.thumbnailUrl,
+    required this.title,
     required this.onTap,
     this.badge,
     this.topRightAction,
   });
 
   @override
+  State<_VideoCard> createState() => _VideoCardState();
+}
+
+class _VideoCardState extends State<_VideoCard> {
+  VideoPlayerController? _previewController;
+  bool _isPreviewReady = false;
+
+  bool get _hasThumbnail => widget.thumbnailUrl.trim().isNotEmpty;
+
+  String get _displayTitle {
+    final rawTitle = widget.title.trim();
+    if (rawTitle.isNotEmpty) return rawTitle;
+
+    final uri = Uri.tryParse(widget.videoUrl.trim());
+    final fileName = uri?.pathSegments.isNotEmpty == true
+        ? uri!.pathSegments.last
+        : widget.videoUrl.trim();
+    final sanitized = fileName
+        .replaceAll(RegExp(r'\.[A-Za-z0-9]+$'), '')
+        .replaceAll(RegExp(r'[_\-]+'), ' ')
+        .trim();
+    return sanitized.isNotEmpty ? sanitized : 'Video sin título';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _preparePreview();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VideoCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videoUrl != widget.videoUrl ||
+        oldWidget.thumbnailUrl != widget.thumbnailUrl) {
+      _disposePreviewController();
+      _preparePreview();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposePreviewController();
+    super.dispose();
+  }
+
+  Future<void> _preparePreview() async {
+    if (_hasThumbnail || widget.videoUrl.trim().isEmpty) return;
+
+    final uri = Uri.tryParse(widget.videoUrl.trim());
+    if (uri == null) return;
+
+    final controller = VideoPlayerController.networkUrl(
+      uri,
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
+    _previewController = controller;
+
+    try {
+      await controller.setVolume(0);
+      await controller.setLooping(false);
+      await controller.initialize();
+      await controller.pause();
+      await controller.seekTo(Duration.zero);
+      if (!mounted || !identical(_previewController, controller)) return;
+      setState(() => _isPreviewReady = true);
+    } catch (e) {
+      debugPrint('Video preview unavailable for ${widget.videoUrl}: $e');
+      if (identical(_previewController, controller)) {
+        await controller.dispose();
+        _previewController = null;
+      }
+    }
+  }
+
+  void _disposePreviewController() {
+    final controller = _previewController;
+    _previewController = null;
+    _isPreviewReady = false;
+    controller?.dispose();
+  }
+
+  Widget _buildVideoPreview() {
+    final controller = _previewController;
+    if (controller == null ||
+        !_isPreviewReady ||
+        !controller.value.isInitialized) {
+      return Container(
+        color: const Color(0xFF1E293B),
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.video_library_rounded,
+          color: Colors.white.withOpacity(0.24),
+          size: 30,
+        ),
+      );
+    }
+
+    final size = controller.value.size;
+    if (size.isEmpty) {
+      return Container(color: const Color(0xFF1E293B));
+    }
+
+    return ColoredBox(
+      color: const Color(0xFF0F172A),
+      child: FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: VideoPlayer(controller),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThumbnailLayer() {
+    if (_hasThumbnail) {
+      return CachedNetworkImage(
+        imageUrl: widget.thumbnailUrl.trim(),
+        fit: BoxFit.cover,
+        placeholder: (_, __) => _buildVideoPreview(),
+        errorWidget: (_, __, ___) => _buildVideoPreview(),
+      );
+    }
+
+    return _buildVideoPreview();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final hasThumbnail = thumbnailUrl.trim().isNotEmpty;
+    final title = _displayTitle;
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         decoration: BoxDecoration(
           color: const Color(0xFF0F172A),
@@ -2876,16 +3264,7 @@ class _VideoCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (hasThumbnail)
-                    Image.network(
-                      thumbnailUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: const Color(0xFF1E293B),
-                      ),
-                    )
-                  else
-                    Container(color: const Color(0xFF1E293B)),
+                  _buildThumbnailLayer(),
                   Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -2899,6 +3278,32 @@ class _VideoCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  Positioned(
+                    left: 8,
+                    right: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.42),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
                   const Center(
                     child: Icon(
                       Icons.play_circle_fill_rounded,
@@ -2909,17 +3314,17 @@ class _VideoCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (badge != null)
+            if (widget.badge != null)
               Positioned(
                 left: 8,
                 top: 8,
-                child: badge!,
+                child: widget.badge!,
               ),
-            if (topRightAction != null)
+            if (widget.topRightAction != null)
               Positioned(
                 right: 8,
                 top: 8,
-                child: topRightAction!,
+                child: widget.topRightAction!,
               ),
           ],
         ),
