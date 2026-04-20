@@ -2294,15 +2294,32 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Text(
-                    'Explorer · Scout',
-                    style: GoogleFonts.inter(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF0D3B66),
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Explorer',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF0D3B66),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Explorar jugadores y oportunidades',
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFF4A5568),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 TextButton.icon(
@@ -2310,6 +2327,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       context.pushNamed(ListaYNotasWidget.routeName),
                   icon: const Icon(Icons.bookmarks_rounded),
                   label: const Text('Mi scouting'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF0D3B66),
+                    textStyle: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -4364,20 +4388,20 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         ].where((v) => v.toString().isNotEmpty).join(' • ');
 
         return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color:
                   isSaved ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
@@ -4385,23 +4409,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 4,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: isSaved
-                          ? const Color(0xFF0D3B66)
-                          : const Color(0xFF0D3B66).withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
                   InkWell(
                     onTap: () => _openPublicPlayerProfile(player),
                     borderRadius: BorderRadius.circular(999),
                     child: CircleAvatar(
-                      radius: 22,
+                      radius: 18,
                       backgroundImage:
                           (player['photo_url']?.toString().isNotEmpty ?? false)
                               ? NetworkImage(player['photo_url'])
@@ -4418,90 +4432,101 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                             ),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
-                    child: InkWell(
-                      onTap: () => _openPublicPlayerProfile(player),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            Text(
-                              fullName.isNotEmpty ? fullName : 'Jugador',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: const Color(0xFF0F172A),
+                            Expanded(
+                              child: Text(
+                                fullName.isNotEmpty ? fullName : 'Jugador',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13.5,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              subtitle,
-                              style: GoogleFonts.inter(
-                                color: const Color(0xFF718096),
-                                fontSize: 12,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+                            const SizedBox(width: 4),
+                            _buildPlayerCardActionButton(
+                              icon: isSaved
+                                  ? Icons.bookmark
+                                  : Icons.bookmark_border,
+                              tooltip: isSaved
+                                  ? 'En mi scouting'
+                                  : 'Agregar a scouting',
+                              onPressed: () =>
+                                  _toggleSavePlayerForScout(player),
+                              backgroundColor: isSaved
+                                  ? const Color(0xFF0F9D58)
+                                  : Colors.white,
+                              foregroundColor: isSaved
+                                  ? Colors.white
+                                  : const Color(0xFF0D3B66),
+                              borderColor: isSaved
+                                  ? const Color(0xFF0F9D58)
+                                  : const Color(0xFFD6DEE8),
+                              isLoading: isSaving,
                             ),
                           ],
                         ),
-                      ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: GoogleFonts.inter(
+                            color: const Color(0xFF718096),
+                            fontSize: 11.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              if (hasVideo)
+                                _simpleBadge(
+                                  'Tiene video',
+                                  color: const Color(0xFF0D3B66),
+                                ),
+                              if (position.isNotEmpty)
+                                _simpleBadge(
+                                  position,
+                                  color: const Color(0xFF7C3AED),
+                                ),
+                              if (rankingPosition != null)
+                                _simpleBadge(
+                                  'Ranking #$rankingPosition',
+                                  color: const Color(0xFF1D4ED8),
+                                ),
+                              _simpleBadge(
+                                '$totalXp XP',
+                                color: const Color(0xFF0F766E),
+                              ),
+                              _simpleBadge(
+                                levelName,
+                                color: const Color(0xFF0F766E),
+                              ),
+                              _subtleBadge(
+                                _isVerified(player)
+                                    ? 'Verificado'
+                                    : 'No verificado',
+                              ),
+                              if (!hasVideo) _subtleBadge('Sin video'),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  _buildPlayerCardActionButton(
-                    icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
-                    tooltip: isSaved ? 'En mi scouting' : 'Agregar a scouting',
-                    onPressed: () => _toggleSavePlayerForScout(player),
-                    backgroundColor:
-                        isSaved ? const Color(0xFF0F9D58) : Colors.white,
-                    foregroundColor:
-                        isSaved ? Colors.white : const Color(0xFF0D3B66),
-                    borderColor: isSaved
-                        ? const Color(0xFF0F9D58)
-                        : const Color(0xFFD6DEE8),
-                    isLoading: isSaving,
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  if (hasVideo)
-                    _simpleBadge(
-                      'Tiene video',
-                      color: const Color(0xFF0D3B66),
-                    ),
-                  if (position.isNotEmpty)
-                    _simpleBadge(
-                      position,
-                      color: const Color(0xFF7C3AED),
-                    ),
-                  if (rankingPosition != null)
-                    _simpleBadge(
-                      'Ranking #$rankingPosition',
-                      color: const Color(0xFF1D4ED8),
-                    ),
-                  _simpleBadge(
-                    '$totalXp XP',
-                    color: const Color(0xFF0F766E),
-                  ),
-                  _simpleBadge(
-                    levelName,
-                    color: const Color(0xFF0F766E),
-                  ),
-                  _subtleBadge(
-                    _isVerified(player) ? 'Verificado' : 'No verificado',
-                  ),
-                  if (!hasVideo) _subtleBadge('Sin video'),
-                ],
-              ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
@@ -4511,13 +4536,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         foregroundColor: const Color(0xFF0D3B66),
                         side: const BorderSide(color: Color(0xFFDCE3EC)),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        minimumSize: const Size.fromHeight(42),
+                        minimumSize: const Size.fromHeight(36),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                            horizontal: 8, vertical: 6),
                       ),
-                      icon: const Icon(Icons.person_outline_rounded, size: 16),
+                      icon: const Icon(Icons.person_outline_rounded, size: 15),
                       label: FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
@@ -4525,7 +4550,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.inter(
-                            fontSize: 12,
+                            fontSize: 11.5,
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF0D3B66),
                           ),
@@ -4533,7 +4558,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed:
@@ -4545,14 +4570,14 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                         disabledBackgroundColor: const Color(0xFFF1F5F9),
                         disabledForegroundColor: const Color(0xFF94A3B8),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        minimumSize: const Size.fromHeight(42),
+                        minimumSize: const Size.fromHeight(36),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                            horizontal: 8, vertical: 6),
                       ),
                       icon: Icon(Icons.play_circle_outline_rounded,
-                          size: 16,
+                          size: 15,
                           color: hasVideo
                               ? Colors.white
                               : const Color(0xFF94A3B8)),
@@ -4563,7 +4588,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.inter(
-                            fontSize: 12,
+                            fontSize: 11.5,
                             fontWeight: FontWeight.w700,
                             color: hasVideo
                                 ? Colors.white

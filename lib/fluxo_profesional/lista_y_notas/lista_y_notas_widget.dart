@@ -1204,7 +1204,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Center(
-                                        child: Text('Inbox',
+                                        child: Text('Salvos',
                                             style: TextStyle(
                                               color: _showGuardados
                                                   ? Colors.white
@@ -1304,7 +1304,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
           child: Column(children: [
             Icon(Icons.bookmark_border, size: 48, color: Colors.grey[400]),
             const SizedBox(height: 12),
-            Text('Inbox vacío',
+            Text('Salvos vazio',
                 style: TextStyle(color: Colors.grey[600], fontSize: 16)),
             const SizedBox(height: 8),
             Text(
@@ -1318,7 +1318,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('${_jugadoresGuardados.length} jugador(es) en inbox',
+        Text('${_jugadoresGuardados.length} jogador(es) em salvos',
             style: TextStyle(color: Colors.grey[600], fontSize: 13 * scale)),
         SizedBox(height: 12 * scale),
         ..._jugadoresGuardados.map((g) => _buildGuardadoCard(context, g)),

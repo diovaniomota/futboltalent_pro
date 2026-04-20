@@ -35,14 +35,20 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   List<Map<String, dynamic>> _jugadoresEnLista = [];
   List<Map<String, dynamic>> _filteredJugadores = [];
   String? _stateFilter; // null = all
+  bool _showSavedDirectory = false;
+  bool _isLoadingSavedDirectory = false;
+  List<Map<String, dynamic>> _savedPlayersDirectory = [];
+  List<Map<String, dynamic>> _filteredSavedPlayersDirectory = [];
 
   final _searchController = TextEditingController();
+  final _savedSearchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _model = createModel(context, () => ListaYNotaModel());
     _searchController.addListener(_filterJugadores);
+    _savedSearchController.addListener(_filterSavedPlayersDirectory);
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
     _loadData();
   }
@@ -51,6 +57,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   void dispose() {
     _model.dispose();
     _searchController.dispose();
+    _savedSearchController.dispose();
     super.dispose();
   }
 
@@ -333,6 +340,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
       } catch (e) {
         debugPrint('Error cargando listas: $e');
       }
+      await _loadSavedPlayersDirectory();
     }
 
     if (mounted) setState(() => _isLoading = false);
@@ -470,6 +478,21 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _loadSavedPlayersDirectory() async {
+    if (!mounted) return;
+    setState(() => _isLoadingSavedDirectory = true);
+    final savedPlayers = await _fetchSavedPlayersForClub();
+    if (!mounted) return;
+    setState(() {
+      _savedPlayersDirectory = savedPlayers;
+      _filteredSavedPlayersDirectory = List<Map<String, dynamic>>.from(
+        savedPlayers,
+      );
+      _isLoadingSavedDirectory = false;
+    });
+    _filterSavedPlayersDirectory();
+  }
+
   void _filterJugadores() {
     final query = normalizeLookupKey(_searchController.text);
     setState(() {
@@ -491,6 +514,30 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           ));
           final city = normalizeLookupKey(normalizeCityName(
             jugador['city'] ?? jugador['ciudad'],
+          ));
+          return name.contains(query) ||
+              posicion.contains(query) ||
+              city.contains(query);
+        }).toList();
+      }
+    });
+  }
+
+  void _filterSavedPlayersDirectory() {
+    final query = normalizeLookupKey(_savedSearchController.text);
+    setState(() {
+      if (query.isEmpty) {
+        _filteredSavedPlayersDirectory =
+            List<Map<String, dynamic>>.from(_savedPlayersDirectory);
+      } else {
+        _filteredSavedPlayersDirectory = _savedPlayersDirectory.where((player) {
+          final name = normalizeLookupKey(
+              '${player['name'] ?? ''} ${player['lastname'] ?? ''}');
+          final posicion = normalizeLookupKey(normalizePlayerPosition(
+            player['posicion'] ?? player['position'],
+          ));
+          final city = normalizeLookupKey(normalizeCityName(
+            player['city'] ?? player['ciudad'],
           ));
           return name.contains(query) ||
               posicion.contains(query) ||
@@ -885,10 +932,14 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _buildHeader(context),
+                              SizedBox(height: 14 * scale),
+                              _buildSectionTabs(context),
                               SizedBox(height: 16 * scale),
                               _buildActionButtons(context),
                               SizedBox(height: 20 * scale),
-                              if (_isLargeScreen(context))
+                              if (_showSavedDirectory)
+                                _buildSavedDirectoryCard(context)
+                              else if (_isLargeScreen(context))
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -1074,6 +1125,78 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     );
   }
 
+  Widget _buildSectionTabs(BuildContext context) {
+    final scale = _scaleFactor(context);
+    return Container(
+      width: double.infinity,
+      height: 44 * scale,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => setState(() => _showSavedDirectory = false),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: !_showSavedDirectory
+                      ? const Color(0xFF0D3B66)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Text(
+                    'Listas',
+                    style: GoogleFonts.inter(
+                      fontSize: 14 * scale,
+                      fontWeight: FontWeight.w700,
+                      color: !_showSavedDirectory
+                          ? Colors.white
+                          : const Color(0xFF6B7280),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () {
+                setState(() => _showSavedDirectory = true);
+                _loadSavedPlayersDirectory();
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: _showSavedDirectory
+                      ? const Color(0xFF0D3B66)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Text(
+                    'Salvos',
+                    style: GoogleFonts.inter(
+                      fontSize: 14 * scale,
+                      fontWeight: FontWeight.w700,
+                      color: _showSavedDirectory
+                          ? Colors.white
+                          : const Color(0xFF6B7280),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActionButton(
     String text,
     VoidCallback onTap,
@@ -1157,6 +1280,166 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           textAlign: TextAlign.center,
         ),
       ]),
+    );
+  }
+
+  Widget _buildSavedDirectoryCard(BuildContext context) {
+    final scale = _scaleFactor(context);
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(16 * scale),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFB5BECA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Salvos',
+            style: GoogleFonts.inter(
+              fontSize: 18 * scale,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF111827),
+            ),
+          ),
+          SizedBox(height: 4 * scale),
+          Text(
+            '${_savedPlayersDirectory.length} jogador(es) salvos para organizar em listas',
+            style: GoogleFonts.inter(
+              fontSize: 12 * scale,
+              color: const Color(0xFF6B7280),
+            ),
+          ),
+          SizedBox(height: 14 * scale),
+          Container(
+            height: 40 * scale,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: TextField(
+              controller: _savedSearchController,
+              style: GoogleFonts.inter(fontSize: 14 * scale),
+              decoration: InputDecoration(
+                hintText: 'Buscar em salvos...',
+                prefixIcon:
+                    Icon(Icons.search, size: 20 * scale, color: Colors.grey),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 10 * scale),
+              ),
+            ),
+          ),
+          SizedBox(height: 14 * scale),
+          if (_isLoadingSavedDirectory)
+            const Center(child: CircularProgressIndicator())
+          else if (_filteredSavedPlayersDirectory.isEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 20 * scale),
+              child: Center(
+                child: Text(
+                  'Nenhum jogador salvo encontrado.',
+                  style: GoogleFonts.inter(
+                      fontSize: 13 * scale, color: const Color(0xFF6B7280)),
+                ),
+              ),
+            )
+          else
+            ..._filteredSavedPlayersDirectory
+                .map((player) => _buildSavedPlayerCard(context, player)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSavedPlayerCard(
+      BuildContext context, Map<String, dynamic> player) {
+    final scale = _scaleFactor(context);
+    final userId = player['user_id']?.toString().trim() ?? '';
+    final name = '${player['name'] ?? ''} ${player['lastname'] ?? ''}'.trim();
+    final position = normalizePlayerPosition(
+      player['posicion'] ?? player['position'],
+    );
+    final age = _calculateAge(player['birthday']?.toString());
+    final city = normalizeCityName(player['city'] ?? player['ciudad']);
+    final photo = player['photo_url'];
+    final positionLabel = position.isNotEmpty ? position : 'Posição indefinida';
+    final meta = [
+      if (age > 0) '$age anos',
+      positionLabel,
+      if (city.isNotEmpty) city,
+    ].join(' • ');
+
+    return Container(
+      margin: EdgeInsets.only(bottom: 10 * scale),
+      padding: EdgeInsets.all(12 * scale),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20 * scale,
+                backgroundImage: photo != null ? NetworkImage(photo) : null,
+                child: photo == null
+                    ? Text(_getInitials(player['name'], player['lastname']))
+                    : null,
+              ),
+              SizedBox(width: 10 * scale),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name.isNotEmpty ? name : 'Jogador',
+                      style: GoogleFonts.inter(
+                          fontSize: 14 * scale, fontWeight: FontWeight.w700),
+                    ),
+                    SizedBox(height: 3 * scale),
+                    Text(
+                      meta,
+                      style: GoogleFonts.inter(
+                          fontSize: 12 * scale, color: const Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 10 * scale),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _showAddSavedToListaModal(player),
+                icon: const Icon(Icons.playlist_add_rounded, size: 18),
+                label: const Text('Adicionar à lista'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0D3B66),
+                  side: const BorderSide(color: Color(0xFF0D3B66)),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: userId.isEmpty
+                    ? null
+                    : () => context.pushNamed(
+                          'perfil_profesional_solicitar_Contato',
+                          queryParameters: {'userId': userId},
+                        ),
+                icon: const Icon(Icons.person_outline, size: 18),
+                label: const Text('Ver perfil'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -1618,6 +1901,109 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
               Navigator.pop(ctx);
               _loadListas();
             }, 'Guardar Cambios'));
+  }
+
+  void _showAddSavedToListaModal(Map<String, dynamic> player) {
+    if (_listas.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Crie uma lista primeiro para organizar os salvos.'),
+          backgroundColor: Color(0xFF0D3B66),
+        ),
+      );
+      return;
+    }
+
+    String? selectedListaId = _selectedLista?['id']?.toString();
+    String scoutingState = 'descubierto';
+    final notaCtrl = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStates) {
+          return _buildModalContent(ctx, 'Adicionar aos Salvos', [
+            DropdownButtonFormField<String>(
+              value: selectedListaId,
+              decoration: const InputDecoration(labelText: 'Lista destino *'),
+              items: _listas
+                  .map((l) => DropdownMenuItem<String>(
+                        value: l['id']?.toString(),
+                        child: Text(l['nombre']?.toString() ?? 'Lista'),
+                      ))
+                  .toList(),
+              onChanged: (v) => setStates(() => selectedListaId = v),
+            ),
+            const SizedBox(height: 12),
+            const Text('Estado inicial'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _scoutingStates
+                  .map((state) => ChoiceChip(
+                        label: Text(_scoutingStateLabel(state)),
+                        selected: scoutingState == state,
+                        onSelected: (_) =>
+                            setStates(() => scoutingState = state),
+                      ))
+                  .toList(),
+            ),
+            const SizedBox(height: 10),
+            _buildTextField(ctx, 'Nota (opcional)', notaCtrl, maxLines: 3),
+          ], () async {
+            if (selectedListaId == null || selectedListaId!.isEmpty) return;
+            final playerId = player['user_id']?.toString().trim() ?? '';
+            if (playerId.isEmpty) return;
+
+            final exists = await SupaFlow.client
+                .from('listas_jugadores')
+                .select('id')
+                .eq('lista_id', selectedListaId!)
+                .eq('jugador_id', playerId)
+                .maybeSingle();
+
+            if (exists != null) {
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Jogador já está nesta lista.'),
+                    backgroundColor: Color(0xFF6B7280),
+                  ),
+                );
+              }
+              Navigator.pop(ctx);
+              return;
+            }
+
+            await SupaFlow.client.from('listas_jugadores').insert({
+              'lista_id': selectedListaId,
+              'jugador_id': playerId,
+              'calificacion': _ratingFromScoutingState(scoutingState),
+              'scouting_state': scoutingState,
+              'nota': notaCtrl.text,
+              'created_at': DateTime.now().toIso8601String(),
+            });
+
+            Navigator.pop(ctx);
+            await _loadListas();
+            if (_selectedLista != null &&
+                _selectedLista!['id']?.toString() == selectedListaId) {
+              await _loadJugadoresEnLista(selectedListaId!);
+            }
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Jogador adicionado à lista.'),
+                  backgroundColor: Color(0xFF16A34A),
+                ),
+              );
+            }
+          }, 'Adicionar');
+        },
+      ),
+    );
   }
 
   void _confirmDeleteLista() {

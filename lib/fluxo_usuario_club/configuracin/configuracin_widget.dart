@@ -2393,7 +2393,10 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Ciudad', style: TextStyle(color: Colors.grey[700])),
           const SizedBox(height: 5),
-          if (_isCitiesLoading)
+          // Só mostra o campo cidade se um estado foi selecionado
+          if (_estadoController.text.isEmpty)
+            const SizedBox.shrink()
+          else if (_isCitiesLoading)
             Container(
               height: 50,
               decoration: BoxDecoration(
@@ -2441,15 +2444,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
               ),
             )
           else
-            TextField(
-              controller: _ciudadController,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.grey[100],
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-            ),
+            const SizedBox.shrink(),
         ]),
         SizedBox(height: 16 * scale),
         _buildTextField(context, 'Liga', _ligaController),

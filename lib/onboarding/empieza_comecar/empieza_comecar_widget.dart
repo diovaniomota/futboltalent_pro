@@ -4286,6 +4286,10 @@ Para cualquier consulta sobre privacidad: info@futboltalent.pro
   Widget _buildCityDropdown(BuildContext context) {
     final scale = _scaleFactor(context);
     final fontSize = 13 * scale;
+    // Só mostra o campo cidade se um estado foi selecionado
+    if (_selectedState == null || _selectedState!.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4359,27 +4363,7 @@ Para cualquier consulta sobre privacidad: info@futboltalent.pro
             ),
           )
         else
-          TextField(
-            controller: _cidadeController,
-            focusNode: _cidadeFocusNode,
-            textCapitalization: TextCapitalization.words,
-            style: GoogleFonts.inter(fontSize: fontSize),
-            decoration: InputDecoration(
-              hintText: 'Escribe el nombre de la ciudad',
-              hintStyle: GoogleFonts.inter(
-                  fontSize: fontSize, color: const Color(0xFF2F3336)),
-              filled: true,
-              fillColor: Colors.white,
-              contentPadding: EdgeInsets.symmetric(
-                  horizontal: 16 * scale, vertical: 14 * scale),
-              enabledBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Color(0xFFA0AEC0)),
-                  borderRadius: BorderRadius.circular(8)),
-              focusedBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Color(0xFF2B6CB0)),
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
+          const SizedBox.shrink(),
       ],
     );
   }

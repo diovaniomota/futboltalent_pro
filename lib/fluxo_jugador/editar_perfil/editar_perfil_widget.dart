@@ -6,6 +6,7 @@ import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
@@ -111,6 +112,59 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   // URLs das fotos (para atualizar localmente antes de salvar)
   String? _photoUrl;
   String? _coverUrl;
+  bool _isFormattingPhone = false;
+
+  static const Map<String, String> _latamCountryDialCode = {
+    'Argentina': '54',
+    'Bolivia': '591',
+    'Brasil': '55',
+    'Brazil': '55',
+    'Chile': '56',
+    'Colombia': '57',
+    'Costa Rica': '506',
+    'Cuba': '53',
+    'Ecuador': '593',
+    'El Salvador': '503',
+    'Guatemala': '502',
+    'Honduras': '504',
+    'México': '52',
+    'Mexico': '52',
+    'Nicaragua': '505',
+    'Panamá': '507',
+    'Panama': '507',
+    'Paraguay': '595',
+    'Perú': '51',
+    'Peru': '51',
+    'República Dominicana': '1',
+    'Republica Dominicana': '1',
+    'Puerto Rico': '1',
+    'Uruguay': '598',
+    'Venezuela': '58',
+  };
+
+  static const List<String> _latamDialCodes = [
+    '598',
+    '595',
+    '593',
+    '591',
+    '590',
+    '587',
+    '58',
+    '57',
+    '56',
+    '55',
+    '54',
+    '53',
+    '52',
+    '51',
+    '507',
+    '506',
+    '505',
+    '504',
+    '503',
+    '502',
+    '1',
+  ];
 
   @override
   void initState() {
@@ -322,6 +376,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       );
       _phoneController =
           TextEditingController(text: merged['telephone']?.toString() ?? '');
+      _phoneController?.text = _formatLatamPhone(_phoneController?.text ?? '');
+      _phoneController?.addListener(_handlePhoneInputChange);
       _professionalUrlController = TextEditingController(
           text: merged['url_profesional']?.toString() ?? '');
       _dniController = TextEditingController(text: _stringValue(merged['dni']));
@@ -3045,6 +3101,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       );
       final normalizedFoot =
           normalizeDominantFoot(_pieDominanteController?.text);
+      final normalizedPhone = _validateAndNormalizeLatamPhone(
+        _phoneController?.text ?? '',
+      );
+      final normalizedProfessionalUrl = _validateAndNormalizeProfessionalUrl(
+        _professionalUrlController?.text ?? '',
+      );
 
       final userPayload = <String, dynamic>{
         'name': _nomeController?.text.trim() ?? '',
@@ -3112,7 +3174,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       if (_currentUserType == 'profesional') {
         final scoutPayload = <String, dynamic>{
           'biography': _bioController?.text.trim() ?? '',
-          'telephone': _phoneController?.text.trim() ?? '',
+          'telephone': normalizedPhone,
           'club': _clubController?.text.trim() ?? '',
           'organization_type': _selectedOrganizationType ?? '',
           'current_role': _currentRoleController?.text.trim() ?? '',
@@ -3120,7 +3182,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           'interest_categories':
               _interestCategoriesController?.text.trim() ?? '',
           'interest_positions': _interestPositionsController?.text.trim() ?? '',
-          'url_profesional': _professionalUrlController?.text.trim() ?? '',
+          'url_profesional': normalizedProfessionalUrl,
           'dni': _tryParseInt(_dniController?.text),
           'city': city,
           'country': country,
@@ -3139,7 +3201,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         } else {
           final scoutInsertPayload = <String, dynamic>{
             'biography': _bioController?.text.trim() ?? '',
-            'telephone': _phoneController?.text.trim() ?? '',
+            'telephone': normalizedPhone,
             'club': _clubController?.text.trim() ?? '',
             'organization_type': _selectedOrganizationType ?? '',
             'current_role': _currentRoleController?.text.trim() ?? '',
@@ -3148,7 +3210,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 _interestCategoriesController?.text.trim() ?? '',
             'interest_positions':
                 _interestPositionsController?.text.trim() ?? '',
-            'url_profesional': _professionalUrlController?.text.trim() ?? '',
+            'url_profesional': normalizedProfessionalUrl,
             'dni': _tryParseInt(_dniController?.text),
           };
           await SupaFlow.client.from('scouts').insert({
@@ -3273,6 +3335,139 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       default:
         return null;
     }
+  }
+
+  String _digitsOnly(String value) => value.replaceAll(RegExp(r'\D'), '');
+
+  String? _dialCodeFromCountrySelection() {
+    final country = normalizeCountryName(_countryController?.text);
+    if (country.isEmpty) return null;
+    return _latamCountryDialCode[country];
+  }
+
+  String _chunkBySize(String input, List<int> chunkSizes) {
+    if (input.isEmpty) return '';
+    final chunks = <String>[];
+    var cursor = 0;
+    for (final size in chunkSizes) {
+      if (cursor >= input.length) break;
+      final end = (cursor + size > input.length) ? input.length : cursor + size;
+      chunks.add(input.substring(cursor, end));
+      cursor = end;
+    }
+    if (cursor < input.length) {
+      chunks.add(input.substring(cursor));
+    }
+    return chunks.join(' ');
+  }
+
+  String _formatLatamPhone(String rawValue) {
+    final raw = rawValue.trim();
+    if (raw.isEmpty) return '';
+
+    final hasExplicitPlus = raw.startsWith('+');
+    final digits = _digitsOnly(raw);
+    if (digits.isEmpty) return '';
+
+    String? dialCode;
+    String localDigits = digits;
+
+    if (hasExplicitPlus) {
+      for (final code in _latamDialCodes) {
+        if (digits.startsWith(code)) {
+          dialCode = code;
+          localDigits = digits.substring(code.length);
+          break;
+        }
+      }
+      dialCode ??= _dialCodeFromCountrySelection();
+      if (dialCode != null && digits.startsWith(dialCode!)) {
+        localDigits = digits.substring(dialCode!.length);
+      }
+    } else {
+      dialCode = _dialCodeFromCountrySelection();
+    }
+
+    if (dialCode == null || dialCode.isEmpty) {
+      // Without selected country, preserve a generic international-like mask.
+      if (hasExplicitPlus) {
+        return '+${_chunkBySize(digits, [3, 3, 4])}';
+      }
+      return _chunkBySize(digits, [3, 3, 4]);
+    }
+
+    final formattedLocal = _chunkBySize(localDigits, [3, 3, 4]);
+    return formattedLocal.isEmpty ? '+$dialCode' : '+$dialCode $formattedLocal';
+  }
+
+  void _handlePhoneInputChange() {
+    if (_isFormattingPhone) return;
+    final controller = _phoneController;
+    if (controller == null) return;
+
+    final formatted = _formatLatamPhone(controller.text);
+    if (formatted == controller.text) return;
+
+    _isFormattingPhone = true;
+    controller.value = TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+    _isFormattingPhone = false;
+  }
+
+  String _validateAndNormalizeLatamPhone(String rawValue) {
+    final raw = rawValue.trim();
+    if (raw.isEmpty) return '';
+
+    final formatted = _formatLatamPhone(raw);
+    final digits = _digitsOnly(formatted);
+    if (digits.length < 10 || digits.length > 14) {
+      throw Exception(
+        'Teléfono inválido. Usa formato internacional LATAM, por ejemplo +54 911 1234 5678.',
+      );
+    }
+
+    if (!formatted.startsWith('+')) {
+      throw Exception(
+        'Teléfono inválido. Incluye código de país de América Latina (ej: +54, +55, +52).',
+      );
+    }
+
+    final withoutPlus = digits;
+    final hasKnownDialCode = _latamDialCodes.any(
+      (code) => withoutPlus.startsWith(code),
+    );
+    if (!hasKnownDialCode) {
+      throw Exception(
+        'Código de país no reconocido para LATAM. Revisa el prefijo internacional.',
+      );
+    }
+
+    return formatted;
+  }
+
+  String _validateAndNormalizeProfessionalUrl(String rawValue) {
+    final raw = rawValue.trim();
+    if (raw.isEmpty) return '';
+
+    final normalized = raw.startsWith('http://') || raw.startsWith('https://')
+        ? raw
+        : 'https://$raw';
+
+    final uri = Uri.tryParse(normalized);
+    final isValid = uri != null &&
+        uri.hasScheme &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        (uri.host.isNotEmpty && uri.host.contains('.'));
+
+    if (!isValid) {
+      throw Exception(
+        'Link profesional inválido. Ingresa una URL válida, por ejemplo https://linkedin.com/in/usuario.',
+      );
+    }
+
+    return normalized;
   }
 
   String _stringValue(dynamic value) {
@@ -3519,6 +3714,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     TextInputType? keyboardType,
     int maxLines = 1,
     TextCapitalization textCapitalization = TextCapitalization.sentences,
+    List<TextInputFormatter>? inputFormatters,
+    ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(top: 16.0),
@@ -3542,10 +3739,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             autofocus: false,
             readOnly: readOnly,
             onTap: onTap,
+            onChanged: onChanged,
             obscureText: false,
             keyboardType: keyboardType,
             maxLines: maxLines,
             textCapitalization: textCapitalization,
+            inputFormatters: inputFormatters,
             decoration: _buildInputDecoration(hintText, suffixIcon: suffixIcon),
             style: GoogleFonts.inter(
               fontSize: 16,
@@ -4002,20 +4201,21 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               }
             },
             items: _states),
-        _buildSearchableField(
-            label: 'Ciudad',
-            hintText: _isCitiesLoading
-                ? 'Cargando ciudades...'
-                : 'Selecciona tu ciudad',
-            value: _cities.contains(_selectedCity) ? _selectedCity : null,
-            enabled: !_isCitiesLoading && _cities.isNotEmpty,
-            onSelected: (value) {
-              setState(() {
-                _selectedCity = value;
-                _cityController?.text = value;
-              });
-            },
-            items: _cities),
+        if (_selectedState != null && _selectedState!.isNotEmpty)
+          _buildSearchableField(
+              label: 'Ciudad',
+              hintText: _isCitiesLoading
+                  ? 'Cargando ciudades...'
+                  : 'Selecciona tu ciudad',
+              value: _cities.contains(_selectedCity) ? _selectedCity : null,
+              enabled: !_isCitiesLoading && _cities.isNotEmpty,
+              onSelected: (value) {
+                setState(() {
+                  _selectedCity = value;
+                  _cityController?.text = value;
+                });
+              },
+              items: _cities),
         _buildDropdownField(
             label: 'Posición principal',
             hintText: 'Selecciona tu posición',
@@ -4136,20 +4336,21 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               }
             },
             items: _states),
-        _buildSearchableField(
-            label: 'Ciudad',
-            hintText: _isCitiesLoading
-                ? 'Cargando ciudades...'
-                : 'Selecciona tu ciudad',
-            value: _cities.contains(_selectedCity) ? _selectedCity : null,
-            enabled: !_isCitiesLoading && _cities.isNotEmpty,
-            onSelected: (value) {
-              setState(() {
-                _selectedCity = value;
-                _cityController?.text = value;
-              });
-            },
-            items: _cities),
+        if (_selectedState != null && _selectedState!.isNotEmpty)
+          _buildSearchableField(
+              label: 'Ciudad',
+              hintText: _isCitiesLoading
+                  ? 'Cargando ciudades...'
+                  : 'Selecciona tu ciudad',
+              value: _cities.contains(_selectedCity) ? _selectedCity : null,
+              enabled: !_isCitiesLoading && _cities.isNotEmpty,
+              onSelected: (value) {
+                setState(() {
+                  _selectedCity = value;
+                  _cityController?.text = value;
+                });
+              },
+              items: _cities),
         _buildTextField(
             label: 'Fecha de nacimiento',
             controller: _birthdayController,
@@ -4191,7 +4392,11 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             controller: _phoneController,
             focusNode: null,
             hintText: '+351910000201',
-            keyboardType: TextInputType.phone),
+            keyboardType: TextInputType.phone,
+            textCapitalization: TextCapitalization.none,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9+\s()\-]')),
+            ]),
         _buildTextField(
             label: 'Link profesional',
             controller: _professionalUrlController,

@@ -6,6 +6,7 @@ import '/auth/supabase_auth/auth_util.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
@@ -46,6 +47,57 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
   bool _isCitiesLoading = false;
   bool _stateFreeText = false;
   bool _cityFreeText = false;
+  bool _isFormattingPhone = false;
+
+  static const Map<String, String> _latamCountryDialCode = {
+    'Argentina': '54',
+    'Bolivia': '591',
+    'Brasil': '55',
+    'Brazil': '55',
+    'Chile': '56',
+    'Colombia': '57',
+    'Costa Rica': '506',
+    'Cuba': '53',
+    'Ecuador': '593',
+    'El Salvador': '503',
+    'Guatemala': '502',
+    'Honduras': '504',
+    'México': '52',
+    'Mexico': '52',
+    'Nicaragua': '505',
+    'Panamá': '507',
+    'Panama': '507',
+    'Paraguay': '595',
+    'Perú': '51',
+    'Peru': '51',
+    'República Dominicana': '1',
+    'Republica Dominicana': '1',
+    'Puerto Rico': '1',
+    'Uruguay': '598',
+    'Venezuela': '58',
+  };
+
+  static const List<String> _latamDialCodes = [
+    '598',
+    '595',
+    '593',
+    '591',
+    '58',
+    '57',
+    '56',
+    '55',
+    '54',
+    '53',
+    '52',
+    '51',
+    '507',
+    '506',
+    '505',
+    '504',
+    '503',
+    '502',
+    '1',
+  ];
 
   // Controllers Etapa 2
   final _aboutClubController = TextEditingController();
@@ -66,6 +118,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
     super.initState();
     _model = createModel(context, () => RegistroClubModel());
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
+    _phoneController.addListener(_handlePhoneInputChange);
     _loadCountries();
   }
 
@@ -3207,16 +3260,175 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       _showError('Por favor, ingresa un teléfono de contacto');
       return false;
     }
+    final emailRegex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+    if (!emailRegex.hasMatch(_emailController.text.trim())) {
+      _showError('Email de contacto inválido.');
+      return false;
+    }
+    try {
+      _phoneController.text =
+          _validateAndNormalizeLatamPhone(_phoneController.text);
+    } catch (e) {
+      _showError(e.toString().replaceFirst('Exception: ', ''));
+      return false;
+    }
     return true;
+  }
+
+  bool _validateStep2() {
+    final checks = [
+      (_instagramController, 'Instagram'),
+      (_facebookController, 'Facebook'),
+      (_websiteController, 'Sitio web'),
+      (_otherUrlController, 'Otros'),
+    ];
+
+    for (final entry in checks) {
+      final controller = entry.$1;
+      final label = entry.$2;
+      if (controller.text.trim().isEmpty) continue;
+      try {
+        controller.text = _validateAndNormalizeUrl(
+          controller.text,
+          label: label,
+        );
+      } catch (e) {
+        _showError(e.toString().replaceFirst('Exception: ', ''));
+        return false;
+      }
+    }
+    return true;
+  }
+
+  String _digitsOnly(String value) => value.replaceAll(RegExp(r'\D'), '');
+
+  String? _dialCodeFromCountrySelection() {
+    final country = normalizeCountryName(_countryController.text);
+    if (country.isEmpty) return null;
+    return _latamCountryDialCode[country];
+  }
+
+  String _chunkBySize(String input, List<int> chunkSizes) {
+    if (input.isEmpty) return '';
+    final chunks = <String>[];
+    var cursor = 0;
+    for (final size in chunkSizes) {
+      if (cursor >= input.length) break;
+      final end = (cursor + size > input.length) ? input.length : cursor + size;
+      chunks.add(input.substring(cursor, end));
+      cursor = end;
+    }
+    if (cursor < input.length) chunks.add(input.substring(cursor));
+    return chunks.join(' ');
+  }
+
+  String _formatLatamPhone(String rawValue) {
+    final raw = rawValue.trim();
+    if (raw.isEmpty) return '';
+    final hasExplicitPlus = raw.startsWith('+');
+    final digits = _digitsOnly(raw);
+    if (digits.isEmpty) return '';
+
+    String? dialCode;
+    String localDigits = digits;
+
+    if (hasExplicitPlus) {
+      for (final code in _latamDialCodes) {
+        if (digits.startsWith(code)) {
+          dialCode = code;
+          localDigits = digits.substring(code.length);
+          break;
+        }
+      }
+      dialCode ??= _dialCodeFromCountrySelection();
+      if (dialCode != null && digits.startsWith(dialCode!)) {
+        localDigits = digits.substring(dialCode!.length);
+      }
+    } else {
+      dialCode = _dialCodeFromCountrySelection();
+    }
+
+    if (dialCode == null || dialCode.isEmpty) {
+      return hasExplicitPlus
+          ? '+${_chunkBySize(digits, [3, 3, 4])}'
+          : _chunkBySize(digits, [3, 3, 4]);
+    }
+
+    final formattedLocal = _chunkBySize(localDigits, [3, 3, 4]);
+    return formattedLocal.isEmpty ? '+$dialCode' : '+$dialCode $formattedLocal';
+  }
+
+  void _handlePhoneInputChange() {
+    if (_isFormattingPhone) return;
+    final formatted = _formatLatamPhone(_phoneController.text);
+    if (formatted == _phoneController.text) return;
+
+    _isFormattingPhone = true;
+    _phoneController.value = TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+    _isFormattingPhone = false;
+  }
+
+  String _validateAndNormalizeLatamPhone(String rawValue) {
+    final formatted = _formatLatamPhone(rawValue);
+    final digits = _digitsOnly(formatted);
+    if (formatted.isEmpty) {
+      throw Exception('Por favor, ingresa un teléfono de contacto');
+    }
+    if (!formatted.startsWith('+')) {
+      throw Exception(
+          'Teléfono inválido. Incluye código de país LATAM, por ejemplo +54 o +55.');
+    }
+    if (digits.length < 10 || digits.length > 14) {
+      throw Exception(
+          'Teléfono inválido. Usa formato internacional, por ejemplo +54 911 1234 5678.');
+    }
+    final hasKnownDialCode =
+        _latamDialCodes.any((code) => digits.startsWith(code));
+    if (!hasKnownDialCode) {
+      throw Exception('Código de país no reconocido para América Latina.');
+    }
+    return formatted;
+  }
+
+  String _validateAndNormalizeUrl(String rawValue, {required String label}) {
+    final value = rawValue.trim();
+    if (value.isEmpty) return '';
+    final normalized =
+        value.startsWith('http://') || value.startsWith('https://')
+            ? value
+            : 'https://$value';
+    final uri = Uri.tryParse(normalized);
+    final isValid = uri != null &&
+        uri.hasScheme &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.isNotEmpty &&
+        uri.host.contains('.');
+    if (!isValid) {
+      throw Exception('$label inválido. Ingresa un link válido (https://...).');
+    }
+    return normalized;
   }
 
   Future<void> _saveClub() async {
     if (!_validateStep3()) return;
     setState(() => _isLoading = true);
     try {
+      final normalizedWebsite = _validateAndNormalizeUrl(
+        _websiteController.text,
+        label: 'Sitio web',
+      );
+      final normalizedOtherUrl = _validateAndNormalizeUrl(
+        _otherUrlController.text,
+        label: 'Link externo',
+      );
       final sitioWeb = _websiteController.text.isNotEmpty
-          ? _websiteController.text
-          : _otherUrlController.text;
+          ? normalizedWebsite
+          : normalizedOtherUrl;
+      final normalizedPhone =
+          _validateAndNormalizeLatamPhone(_phoneController.text);
       final normalizedCountry = normalizeCountryName(_countryController.text);
       final normalizedState = _stateController.text.trim();
       final normalizedCity = normalizeCityName(_cityController.text);
@@ -3283,7 +3495,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
           .maybeSingle();
       final clubData = {
         'email': _emailController.text,
-        'telephone': _phoneController.text,
+        'telephone': normalizedPhone,
         'dni': _dniController.text.isNotEmpty
             ? int.tryParse(_dniController.text)
             : null,
@@ -3296,7 +3508,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
         'state': normalizedState,
         'city': normalizedCity,
         'country': normalizedCountry,
-        'sitio_web': sitioWeb.isNotEmpty ? sitioWeb : '',
+        'sitio_web': sitioWeb,
       };
       if (existingClub != null) {
         await _safeUpdate('clubes', clubData, 'id', currentUserUid);
@@ -3322,7 +3534,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
         'descripcion': _aboutClubController.text.isNotEmpty
             ? _aboutClubController.text
             : '',
-        'sitio_web': sitioWeb.isNotEmpty ? sitioWeb : '',
+        'sitio_web': sitioWeb,
         'logo_url': _logoUrl,
         'owner_id': currentUserUid,
       };
@@ -3458,8 +3670,10 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       const SizedBox(height: 20),
       _buildStateDropdown(),
       const SizedBox(height: 20),
-      _buildLabel('Ciudad'),
-      _buildCityDropdown(),
+      if (_selectedState != null && _selectedState!.isNotEmpty) ...[
+        _buildLabel('Ciudad'),
+        _buildCityDropdown(),
+      ],
     ]);
   }
 
@@ -3524,10 +3738,12 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
   }
 
   Widget _buildTextField(TextEditingController ctrl, String hint,
-      {TextInputType? keyboardType}) {
+      {TextInputType? keyboardType,
+      List<TextInputFormatter>? inputFormatters}) {
     return TextField(
         controller: ctrl,
         keyboardType: keyboardType,
+        inputFormatters: inputFormatters,
         decoration: _inputDecoration(hint));
   }
 
@@ -3641,6 +3857,11 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
   }
 
   Widget _buildCityDropdown() {
+    // Só mostra o campo cidade se um estado foi selecionado
+    if (_selectedState == null || _selectedState!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     if (_isCitiesLoading) {
       return Container(
         width: double.infinity,
@@ -3664,14 +3885,11 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       );
     }
 
+    // Só permite seleção, nunca digitação manual
     if (_cities.isNotEmpty && !_cityFreeText) {
       return _buildSearchableSelector(
         value: _selectedCity,
-        hint: _selectedCountryId == null
-            ? 'Selecciona primero el país'
-            : (_selectedState == null && !_stateFreeText)
-                ? 'Selecciona primero el estado'
-                : 'Selecciona la ciudad',
+        hint: 'Selecciona la ciudad',
         items: _cities,
         onSelected: (v) {
           setState(() {
@@ -3682,7 +3900,8 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       );
     }
 
-    return _buildTextField(_cityController, 'Escribe la ciudad');
+    // Se não houver cidades disponíveis, não mostra nada
+    return const SizedBox.shrink();
   }
 
   Widget _buildSearchableSelector({
@@ -3774,7 +3993,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
                       : () {
                           if (_currentStep == 0 && _validateStep1()) {
                             setState(() => _currentStep++);
-                          } else if (_currentStep == 1)
+                          } else if (_currentStep == 1 && _validateStep2())
                             setState(() => _currentStep++);
                           else if (_currentStep == 2) _saveClub();
                         },
@@ -3825,7 +4044,6 @@ class _SearchableListSheetState extends State<_SearchableListSheet> {
           const SizedBox(height: 8),
           Container(
             width: 40,
-            height: 4,
             decoration: BoxDecoration(
               color: Colors.grey[300],
               borderRadius: BorderRadius.circular(2),

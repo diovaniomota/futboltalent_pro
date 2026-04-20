@@ -666,7 +666,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
           backgroundColor: const Color(0xFF0D3B66),
           icon: const Icon(Icons.add, color: Colors.white),
           label: Text(
-            '+ Nova convocatória',
+            'Nueva convocatoria',
             style: GoogleFonts.inter(
                 color: Colors.white, fontWeight: FontWeight.w600),
           ),
@@ -856,41 +856,11 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
             ),
             const SizedBox(height: 16),
             Text(
-              'Publicá tu primera convocatoria y empezá a encontrar talentos',
+              'Crea tu primera convocatoria y empieza a encontrar talentos',
               style: GoogleFonts.inter(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: const Color(0xFF2D3748)),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Definí posición, categoría y requisitos.\nLos jugadores podrán postularse directamente.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                  fontSize: 13, color: const Color(0xFF718096), height: 1.4),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 46,
-              child: ElevatedButton.icon(
-                onPressed: _showCreateConvocatoriaModal,
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: Text(
-                  'Crear convocatoria',
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0D3B66),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
             ),
           ],
         ),
