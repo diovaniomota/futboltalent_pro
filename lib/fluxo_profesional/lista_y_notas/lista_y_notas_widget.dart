@@ -1811,7 +1811,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
               OutlinedButton.icon(
                 onPressed: () => _editarNotaJugador(item),
                 icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('Avaliar jugador'),
+                label: const Text('Evaluar jugador'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF0D3B66),
                   side: const BorderSide(color: Color(0xFF0D3B66)),

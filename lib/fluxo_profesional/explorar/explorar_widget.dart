@@ -1915,7 +1915,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         content: Text(
           added
               ? 'Jugador agregado a mi Scouting'
-              : 'Jugador removido de mi Scouting',
+              : 'Jugador eliminado de mi Scouting',
         ),
         backgroundColor: added ? Colors.green : const Color(0xFF475569),
         action: added
@@ -1983,7 +1983,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         SnackBar(
           content: Text(
             wasSaved
-                ? 'No se pudo remover de mi Scouting'
+                ? 'No se pudo eliminar de mi Scouting'
                 : 'No se pudo agregar a mi Scouting',
           ),
         ),
@@ -4386,10 +4386,39 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           position,
           city,
         ].where((v) => v.toString().isNotEmpty).join(' • ');
+        final badges = <Widget>[
+          if (hasVideo)
+            _simpleBadge(
+              'Tiene video',
+              color: const Color(0xFF0D3B66),
+            ),
+          if (position.isNotEmpty)
+            _simpleBadge(
+              position,
+              color: const Color(0xFF7C3AED),
+            ),
+          if (rankingPosition != null)
+            _simpleBadge(
+              'Ranking #$rankingPosition',
+              color: const Color(0xFF1D4ED8),
+            ),
+          _simpleBadge(
+            '$totalXp XP',
+            color: const Color(0xFF0F766E),
+          ),
+          _simpleBadge(
+            levelName,
+            color: const Color(0xFF0F766E),
+          ),
+          _subtleBadge(
+            _isVerified(player) ? 'Verificado' : 'No verificado',
+          ),
+          if (!hasVideo) _subtleBadge('Sin video'),
+        ];
 
         return Container(
           margin: const EdgeInsets.only(bottom: 6),
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
@@ -4399,7 +4428,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha: 0.03),
                 blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
@@ -4434,97 +4463,56 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                fullName.isNotEmpty ? fullName : 'Jugador',
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13.5,
-                                  color: const Color(0xFF0F172A),
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                        Expanded(
+                          child: Text(
+                            fullName.isNotEmpty ? fullName : 'Jugador',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                              color: const Color(0xFF0F172A),
                             ),
-                            const SizedBox(width: 4),
-                            _buildPlayerCardActionButton(
-                              icon: isSaved
-                                  ? Icons.bookmark
-                                  : Icons.bookmark_border,
-                              tooltip: isSaved
-                                  ? 'En mi scouting'
-                                  : 'Agregar a scouting',
-                              onPressed: () =>
-                                  _toggleSavePlayerForScout(player),
-                              backgroundColor: isSaved
-                                  ? const Color(0xFF0F9D58)
-                                  : Colors.white,
-                              foregroundColor: isSaved
-                                  ? Colors.white
-                                  : const Color(0xFF0D3B66),
-                              borderColor: isSaved
-                                  ? const Color(0xFF0F9D58)
-                                  : const Color(0xFFD6DEE8),
-                              isLoading: isSaving,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle,
-                          style: GoogleFonts.inter(
-                            color: const Color(0xFF718096),
-                            fontSize: 11.5,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 4),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              if (hasVideo)
-                                _simpleBadge(
-                                  'Tiene video',
-                                  color: const Color(0xFF0D3B66),
-                                ),
-                              if (position.isNotEmpty)
-                                _simpleBadge(
-                                  position,
-                                  color: const Color(0xFF7C3AED),
-                                ),
-                              if (rankingPosition != null)
-                                _simpleBadge(
-                                  'Ranking #$rankingPosition',
-                                  color: const Color(0xFF1D4ED8),
-                                ),
-                              _simpleBadge(
-                                '$totalXp XP',
-                                color: const Color(0xFF0F766E),
-                              ),
-                              _simpleBadge(
-                                levelName,
-                                color: const Color(0xFF0F766E),
-                              ),
-                              _subtleBadge(
-                                _isVerified(player)
-                                    ? 'Verificado'
-                                    : 'No verificado',
-                              ),
-                              if (!hasVideo) _subtleBadge('Sin video'),
-                            ],
-                          ),
+                        const SizedBox(width: 4),
+                        _buildPlayerCardActionButton(
+                          icon:
+                              isSaved ? Icons.bookmark : Icons.bookmark_border,
+                          tooltip:
+                              isSaved ? 'En mi scouting' : 'Agregar a scouting',
+                          onPressed: () => _toggleSavePlayerForScout(player),
+                          backgroundColor:
+                              isSaved ? const Color(0xFF0F9D58) : Colors.white,
+                          foregroundColor:
+                              isSaved ? Colors.white : const Color(0xFF0D3B66),
+                          borderColor: isSaved
+                              ? const Color(0xFF0F9D58)
+                              : const Color(0xFFD6DEE8),
+                          isLoading: isSaving,
                         ),
                       ],
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 5),
+              Text(
+                subtitle,
+                style: GoogleFonts.inter(
+                  color: const Color(0xFF718096),
+                  fontSize: 11.5,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 5),
+              Wrap(
+                spacing: 5,
+                runSpacing: 4,
+                children: badges,
               ),
               const SizedBox(height: 8),
               Row(
@@ -5177,31 +5165,45 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     );
   }
 
-  Widget _simpleBadge(String label, {required Color color}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.inter(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
+  Widget _simpleBadge(
+    String label, {
+    required Color color,
+    double maxWidth = 132,
+  }) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.inter(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );
   }
 
   Widget _subtleBadge(String label) {
-    return Text(
-      label,
-      style: GoogleFonts.inter(
-        color: const Color(0xFFA0AEC0),
-        fontSize: 10.5,
-        fontWeight: FontWeight.w500,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 116),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.inter(
+          color: const Color(0xFFA0AEC0),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }

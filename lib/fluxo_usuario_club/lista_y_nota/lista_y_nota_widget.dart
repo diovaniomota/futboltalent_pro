@@ -137,11 +137,11 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   String _scoutingStateLabel(String state) {
     switch (state) {
       case 'descubierto':
-        return 'Descoberto';
+        return 'Descubierto';
       case 'en_acompanamiento':
-        return 'Em avaliação';
+        return 'En evaluación';
       case 'prioridad':
-        return 'Prioridade';
+        return 'Prioridad';
       case 'descartado':
         return 'Descartado';
       default:
@@ -305,7 +305,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                 Icon(Icons.filter_alt_off,
                     size: 14 * scale, color: const Color(0xFF0D3B66)),
                 SizedBox(width: 4 * scale),
-                Text('Limpar filtro',
+                Text('Limpiar filtro',
                     style: GoogleFonts.inter(
                         fontSize: 12 * scale,
                         color: const Color(0xFF0D3B66),
@@ -1296,7 +1296,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
           ),
           SizedBox(height: 4 * scale),
           Text(
-            '${_savedPlayersDirectory.length} jugador(es) guardados para organizar en listas',
+            '${_savedPlayersDirectory.length} ${_savedPlayersDirectory.length == 1 ? 'jugador guardado' : 'jugadores guardados'} para organizar en listas',
             style: GoogleFonts.inter(
               fontSize: 12 * scale,
               color: const Color(0xFF6B7280),
@@ -1354,7 +1354,8 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     final age = _calculateAge(player['birthday']?.toString());
     final city = normalizeCityName(player['city'] ?? player['ciudad']);
     final photo = player['photo_url'];
-    final positionLabel = position.isNotEmpty ? position : 'Posición indefinida';
+    final positionLabel =
+        position.isNotEmpty ? position : 'Posición indefinida';
     final meta = [
       if (age > 0) '$age años',
       positionLabel,
@@ -1462,8 +1463,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
                   padding: EdgeInsets.all(24 * scale),
                   child: Column(
                     children: [
-                      Text(
-                          'Crea listas para hacer seguimiento de jugadores',
+                      Text('Crea listas para hacer seguimiento de jugadores',
                           style: GoogleFonts.inter(
                               fontSize: 14 * scale, color: Colors.grey),
                           textAlign: TextAlign.center),
@@ -1897,7 +1897,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
     if (_listas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Crie uma lista primeiro para organizar os salvos.'),
+          content: Text('Crea una lista primero para organizar los guardados.'),
           backgroundColor: Color(0xFF0D3B66),
         ),
       );
@@ -1958,7 +1958,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
               if (ctx.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Jogador já está nesta lista.'),
+                    content: Text('El jugador ya está en esta lista.'),
                     backgroundColor: Color(0xFF6B7280),
                   ),
                 );

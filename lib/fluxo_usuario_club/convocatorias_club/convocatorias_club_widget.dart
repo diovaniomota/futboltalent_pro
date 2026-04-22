@@ -379,7 +379,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Convocatória fechada'),
+            content: Text('Convocatoria cerrada'),
             backgroundColor: Color(0xFF6B7280),
           ),
         );
@@ -388,7 +388,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erro ao fechar: $e'),
+            content: Text('Error al cerrar: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -407,7 +407,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Convocatória reaberta'),
+            content: Text('Convocatoria reabierta'),
             backgroundColor: Color(0xFF16A34A),
           ),
         );
@@ -416,7 +416,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erro ao reabrir: $e'),
+            content: Text('Error al reabrir: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -855,12 +855,16 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                   size: 40, color: Color(0xFF0D3B66)),
             ),
             const SizedBox(height: 16),
-            Text(
-              'Crea tu primera convocatoria y empieza a encontrar talentos',
-              style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF2D3748)),
+            SizedBox(
+              width: double.infinity,
+              child: Text(
+                'Crea tu primera convocatoria y empieza a encontrar talentos',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF2D3748)),
+              ),
             ),
           ],
         ),
@@ -991,7 +995,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                                 const Icon(Icons.bookmark_add_outlined,
                                     size: 16, color: Color(0xFF7C3AED)),
                                 const SizedBox(width: 10),
-                                Text('Adicionar ao scouting',
+                                Text('Agregar al scouting',
                                     style: GoogleFonts.inter(
                                         fontSize: 13,
                                         color: const Color(0xFF7C3AED))),
@@ -1148,7 +1152,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                                   ? Icons.lock_outline
                                   : Icons.lock_open_outlined,
                               size: 14),
-                          label: Text(isActive ? 'Fechar' : 'Reabrir',
+                          label: Text(isActive ? 'Cerrar' : 'Reabrir',
                               style: GoogleFonts.inter(
                                   fontSize: 12, fontWeight: FontWeight.w600)),
                           style: OutlinedButton.styleFrom(

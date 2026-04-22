@@ -61,6 +61,51 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     }
   }
 
+  String _profileLocationText() {
+    final country = normalizeCountryName(
+      _userData?['country'] ??
+          _userData?['pais'] ??
+          _userData?['nationality'] ??
+          _userData?['nacionalidad'] ??
+          '',
+    );
+    final state = normalizeStateName(
+      _userData?['state'] ??
+          _userData?['estado'] ??
+          _userData?['province'] ??
+          _userData?['provincia'] ??
+          _userData?['region'] ??
+          '',
+    );
+    final city = normalizeCityName(
+      _userData?['city'] ??
+          _userData?['ciudad'] ??
+          _userData?['location'] ??
+          _userData?['ubicacion'] ??
+          '',
+    );
+    final parts = <String>[];
+    for (final value in [city, state, country]) {
+      if (value.isEmpty) continue;
+      if (parts.any((part) => part.toLowerCase() == value.toLowerCase())) {
+        continue;
+      }
+      parts.add(value);
+    }
+    return parts.join(' · ');
+  }
+
+  String _profileNationalityText() {
+    final country = normalizeCountryName(
+      _userData?['nationality'] ??
+          _userData?['nacionalidad'] ??
+          _userData?['country'] ??
+          _userData?['pais'] ??
+          '',
+    );
+    return country.isEmpty ? 'No definido' : country;
+  }
+
   Future<void> _cleanupVideoRelations(String videoId) async {
     final cleanupOperations = <Future<void> Function()>[
       () async {
@@ -520,7 +565,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
         _removingSavedVideoId = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Video removido de Guardados')),
+        const SnackBar(content: Text('Video eliminado de Guardados')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -596,7 +641,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           content: Text(
             shouldFeature
                 ? 'Video destacado seleccionado para Explorer'
-                : 'Video destacado removido',
+                : 'Video destacado eliminado',
           ),
           backgroundColor:
               shouldFeature ? const Color(0xFF0F766E) : const Color(0xFF475569),
@@ -1899,16 +1944,8 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
         _userData?['fecha_nacimiento'] ??
         _userData?['birthday'] ??
         '';
-    final nationality = normalizeCountryName(_userData?['nationality'] ??
-                _userData?['nacionalidad'] ??
-                _userData?['country'] ??
-                _userData?['pais']) ==
-            ''
-        ? 'No definido'
-        : normalizeCountryName(_userData?['nationality'] ??
-            _userData?['nacionalidad'] ??
-            _userData?['country'] ??
-            _userData?['pais']);
+    final nationality = _profileNationalityText();
+    final location = _profileLocationText();
     final height = _userData?['height'] ?? _userData?['altura'] ?? '';
     final weight = _userData?['weight'] ?? _userData?['peso'] ?? '';
     final playerStatus = _userData?['player_status']?.toString().trim() ?? '';
@@ -1944,6 +1981,10 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                 : 'No definido',
           ),
           _buildInfoRow(Icons.flag, nationality.toString()),
+          _buildInfoRow(
+            Icons.location_on_outlined,
+            location.isNotEmpty ? location : 'Ubicación no definida',
+          ),
           _buildInfoRow(
             Icons.height,
             height.toString().isNotEmpty ? '$height cm' : 'No definido',
@@ -2432,12 +2473,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       _userData?['dominant_foot'] ?? _userData?['pie_dominante'] ?? '',
     );
     final playerStatus = _userData?['player_status']?.toString().trim() ?? '';
-    final location = titleCaseLabel(
-      _userData?['location'] ??
-          _userData?['ubicacion'] ??
-          _userData?['club'] ??
-          '',
-    );
+    final location = _profileLocationText();
     final followers =
         _userData?['followers_count'] ?? _userData?['seguidores'] ?? 0;
     final screenSize = MediaQuery.sizeOf(context);

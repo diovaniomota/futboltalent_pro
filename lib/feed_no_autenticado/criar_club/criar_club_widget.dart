@@ -1,11 +1,6 @@
-import '/auth/supabase_auth/auth_util.dart';
-import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
-import '/flutter_flow/flutter_flow_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
 import 'criar_club_model.dart';
 export 'criar_club_model.dart';
 
@@ -82,23 +77,20 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
     setState(() => _isLoading = true);
 
     try {
-      GoRouter.of(context).prepareAuthEvent();
-      final user = await authManager.createAccountWithEmail(
-        context,
-        _emailController.text.trim(),
-        _senhaController.text,
-      );
-
-      if (user == null) {
-        _showError('Error al crear la cuenta');
-        setState(() => _isLoading = false);
-        return;
+      FFAppState().registrationFlowActive = true;
+      _showSuccess('Datos de acceso listos. Completa el perfil del club.');
+      if (mounted) {
+        context.pushNamed(
+          'registro_club',
+          extra: {
+            'signupEmail': _emailController.text.trim(),
+            'signupPassword': _senhaController.text,
+          },
+        );
       }
-
-      _showSuccess('Cuenta creada con éxito!');
-      if (mounted) context.pushNamed('registro_club');
     } catch (e) {
       debugPrint('Erro ao registrar: $e');
+      FFAppState().registrationFlowActive = false;
       _showError('Error: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -120,15 +112,24 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
                 padding: const EdgeInsets.only(top: 80),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Container(
+                  child: Image.asset(
+                    'assets/images/logoftp_1.png',
                     width: 193,
                     height: 193,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      borderRadius: BorderRadius.circular(8),
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      width: 193,
+                      height: 193,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0D3B66),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.sports_soccer,
+                        size: 80,
+                        color: Colors.white,
+                      ),
                     ),
-                    child: const Icon(Icons.sports_soccer,
-                        size: 80, color: Color(0xFF0D3B66)),
                   ),
                 ),
               ),

@@ -121,7 +121,8 @@ class AdminCreateManagedUserInput {
     if (emailValue.contains('@')) {
       return emailValue.split('@').first;
     }
-    final base = displayName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_');
+    final base =
+        displayName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_');
     return base.isEmpty ? 'usuario' : base;
   }
 }
@@ -144,8 +145,12 @@ class AdminUserManagementService {
   AdminUserManagementService._();
 
   static const String _fullUserCatalogSelect =
+      'user_id, name, lastname, username, photo_url, city, country, pais, userType, is_admin, plan_id, banned_until, verification_status, is_verified, full_profile, is_test_account';
+  static const String _fullUserCatalogSelectLegacy =
       'user_id, name, lastname, username, photo_url, city, country, pais, userType, plan_id, banned_until, verification_status, is_verified, full_profile, is_test_account';
   static const String _compactUserCatalogSelect =
+      'user_id, name, lastname, username, userType, is_admin';
+  static const String _compactUserCatalogSelectLegacy =
       'user_id, name, lastname, username, userType';
 
   static Future<AdminUserManagementCapabilities> loadCapabilities() async {
@@ -166,10 +171,13 @@ class AdminUserManagementService {
 
   static Future<List<Map<String, dynamic>>> loadUsersCatalog({
     bool includeOperationalFields = true,
+    bool includeAdminUsers = true,
   }) async {
     final attempts = <String>[
       if (includeOperationalFields) _fullUserCatalogSelect,
+      if (includeOperationalFields) _fullUserCatalogSelectLegacy,
       _compactUserCatalogSelect,
+      _compactUserCatalogSelectLegacy,
     ];
 
     for (final fields in attempts) {
@@ -178,13 +186,19 @@ class AdminUserManagementService {
             .from('users')
             .select(fields)
             .order('name', ascending: true);
-        final orderedRows = _normalizeUserCatalogResponse(orderedResponse);
+        final orderedRows = _filterCatalogRows(
+          _normalizeUserCatalogResponse(orderedResponse),
+          includeAdminUsers: includeAdminUsers,
+        );
         if (orderedRows.isNotEmpty) return orderedRows;
       } catch (_) {}
 
       try {
         final response = await SupaFlow.client.from('users').select(fields);
-        final rows = _normalizeUserCatalogResponse(response);
+        final rows = _filterCatalogRows(
+          _normalizeUserCatalogResponse(response),
+          includeAdminUsers: includeAdminUsers,
+        );
         if (rows.isNotEmpty) return rows;
       } catch (_) {}
     }
@@ -209,39 +223,91 @@ class AdminUserManagementService {
     if (trimmedUserId.isEmpty) {
       throw Exception('Usuario invalido para eliminar.');
     }
+    final currentUid = SupaFlow.client.auth.currentUser?.id.trim() ?? '';
+    if (currentUid.isNotEmpty && trimmedUserId == currentUid) {
+      throw Exception('No puedes eliminar tu propio usuario admin.');
+    }
+    if (await _isAdminUserProfile(trimmedUserId)) {
+      throw Exception(
+        'Los usuarios admin no pueden eliminarse desde esta pantalla.',
+      );
+    }
 
-    if (deleteAuthAccount) {
-      try {
-        final response = await SupaFlow.client.rpc(
-          'admin_delete_managed_user',
-          params: <String, dynamic>{
-            'p_user_id': trimmedUserId,
-            'p_delete_auth_user': true,
-          },
-        );
-        final payload = _responseMap(response);
-        return AdminUserOperationResult(
-          userId: payload?['user_id']?.toString() ?? trimmedUserId,
-          message: payload?['message']?.toString() ??
-              'Usuario y acceso eliminados correctamente.',
-          deletedAuthAccount: payload?['deleted_auth_account'] != false,
-        );
-      } catch (e) {
+    try {
+      return await _deleteUserWithRpc(
+        userId: trimmedUserId,
+        deleteAuthAccount: deleteAuthAccount,
+      );
+    } catch (e) {
+      if (_isFeedbackForeignKeyError(e)) {
+        try {
+          await _detachFeedbackFromUser(trimmedUserId);
+          return await _deleteUserWithRpc(
+            userId: trimmedUserId,
+            deleteAuthAccount: deleteAuthAccount,
+          );
+        } catch (_) {}
+      }
+
+      if (deleteAuthAccount) {
         throw Exception(
           _humanizeError(
             e,
             fallback:
-                'No fue posible eliminar la cuenta completa. Aplicá la migracion de ciclo de vida admin y reintentá.',
+                'No fue posible eliminar la cuenta completa. Aplica la migracion de ciclo de vida admin y reintenta.',
+          ),
+        );
+      }
+
+      try {
+        await _deleteOperationalProfileFallback(trimmedUserId);
+        return AdminUserOperationResult(
+          userId: trimmedUserId,
+          message: 'Perfil operativo eliminado.',
+        );
+      } catch (fallbackError) {
+        throw Exception(
+          _humanizeError(
+            fallbackError,
+            fallback: 'No fue posible eliminar el perfil operativo.',
           ),
         );
       }
     }
+  }
 
-    await SupaFlow.client.from('users').delete().eq('user_id', trimmedUserId);
-    return AdminUserOperationResult(
-      userId: trimmedUserId,
-      message: 'Perfil operativo eliminado.',
+  static Future<AdminUserOperationResult> _deleteUserWithRpc({
+    required String userId,
+    required bool deleteAuthAccount,
+  }) async {
+    final response = await SupaFlow.client.rpc(
+      'admin_delete_managed_user',
+      params: <String, dynamic>{
+        'p_user_id': userId,
+        'p_delete_auth_user': deleteAuthAccount,
+      },
     );
+    final payload = _responseMap(response);
+    return AdminUserOperationResult(
+      userId: payload?['user_id']?.toString() ?? userId,
+      message: payload?['message']?.toString() ??
+          (deleteAuthAccount
+              ? 'Usuario y acceso eliminados correctamente.'
+              : 'Perfil operativo eliminado.'),
+      deletedAuthAccount:
+          deleteAuthAccount && payload?['deleted_auth_account'] != false,
+    );
+  }
+
+  static Future<void> _deleteOperationalProfileFallback(String userId) async {
+    await _detachFeedbackFromUser(userId);
+    await SupaFlow.client.from('users').delete().eq('user_id', userId);
+  }
+
+  static Future<void> _detachFeedbackFromUser(String userId) async {
+    await SupaFlow.client
+        .from('feedback')
+        .update({'user_id': null}).eq('user_id', userId);
   }
 
   static Future<AdminUserOperationResult> _createUserWithAuth(
@@ -332,8 +398,9 @@ class AdminUserManagementService {
       'name': input.displayName,
       'lastname': input.lastname.trim(),
       'username': input.username,
-      'userType':
-          input.normalizedUserType.isEmpty ? 'jugador' : input.normalizedUserType,
+      'userType': input.normalizedUserType.isEmpty
+          ? 'jugador'
+          : input.normalizedUserType,
       'plan_id': input.planId,
       'role_id': 1,
       'country_id': 1,
@@ -438,6 +505,52 @@ class AdminUserManagementService {
     return rows;
   }
 
+  static List<Map<String, dynamic>> _filterCatalogRows(
+    List<Map<String, dynamic>> rows, {
+    required bool includeAdminUsers,
+  }) {
+    if (includeAdminUsers) return rows;
+
+    final currentUid = SupaFlow.client.auth.currentUser?.id.trim() ?? '';
+    return rows.where((row) {
+      final userId = row['user_id']?.toString().trim() ?? '';
+      if (currentUid.isNotEmpty && userId == currentUid) return false;
+      return !_isAdminCatalogUser(row);
+    }).toList();
+  }
+
+  static bool _isAdminCatalogUser(Map<String, dynamic> user) {
+    final type = FFAppState.normalizeUserType(
+      user['userType'] ?? user['user_type'] ?? user['usertype'],
+    );
+    return type == 'admin' ||
+        AdminUserManagementCapabilities._readBool(user['is_admin']);
+  }
+
+  static Future<bool> _isAdminUserProfile(String userId) async {
+    try {
+      final row = await SupaFlow.client
+          .from('users')
+          .select('userType, is_admin')
+          .eq('user_id', userId)
+          .maybeSingle();
+      if (row == null) return false;
+      return _isAdminCatalogUser(Map<String, dynamic>.from(row));
+    } catch (_) {
+      try {
+        final row = await SupaFlow.client
+            .from('users')
+            .select('userType')
+            .eq('user_id', userId)
+            .maybeSingle();
+        if (row == null) return false;
+        return _isAdminCatalogUser(Map<String, dynamic>.from(row));
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
   static String _humanizeError(
     Object error, {
     required String fallback,
@@ -455,6 +568,17 @@ class AdminUserManagementService {
     if (normalized.contains('admin_only')) {
       return 'Tu usuario no tiene permisos de administrador para esta accion.';
     }
+    if (_isFeedbackForeignKeyError(error)) {
+      return 'Este usuario tiene feedback asociado. Aplica la migracion de baja de usuarios para anonimizar el feedback antes de eliminar.';
+    }
     return fallback;
+  }
+
+  static bool _isFeedbackForeignKeyError(Object error) {
+    final normalized = error.toString().toLowerCase();
+    return normalized.contains('feedback_user_id_fkey') ||
+        (normalized.contains('foreign key') &&
+            normalized.contains('feedback') &&
+            normalized.contains('users'));
   }
 }

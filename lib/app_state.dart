@@ -65,7 +65,8 @@ class FFAppState extends ChangeNotifier {
         syncUserType();
         refreshAdminRuntimeSettings();
       } else {
-        _resetViewerAccessState();
+        _resetViewerAccessState(clearCachedUserType: true);
+        notifyListeners();
         refreshAdminRuntimeSettings();
       }
     });
@@ -106,12 +107,30 @@ class FFAppState extends ChangeNotifier {
         _currentUserIsAdmin;
   }
 
-  void _resetViewerAccessState() {
+  void _resetViewerAccessState({bool clearCachedUserType = false}) {
     _currentUserIsAdmin = false;
     _currentPlanId = null;
     _currentUserVerified = true;
     _currentUserFullAccess = false;
     _registrationComplete = false;
+    if (clearCachedUserType) {
+      _userType = '';
+      try {
+        prefs.remove('ff_userType');
+      } catch (_) {}
+    }
+  }
+
+  void clearAuthenticatedSessionState() {
+    _registrationFlowActive = false;
+    _resetViewerAccessState(clearCachedUserType: true);
+    _pilotModeEnabled = false;
+    _featureFlags = Map<String, bool>.from(
+      AdminRuntimeService.defaultFeatureFlags,
+    );
+    _uiTexts = Map<String, String>.from(AdminRuntimeService.defaultUiTexts);
+    _userFeatureOverrides = <String, bool>{};
+    notifyListeners();
   }
 
   Future initializePersistedState() async {
@@ -130,7 +149,7 @@ class FFAppState extends ChangeNotifier {
       if (uid.isNotEmpty) {
         await syncUserType();
       } else {
-        _resetViewerAccessState();
+        _resetViewerAccessState(clearCachedUserType: true);
       }
       await refreshAdminRuntimeSettings();
     } catch (e) {
@@ -138,11 +157,13 @@ class FFAppState extends ChangeNotifier {
     }
   }
 
-  Future syncUserType() async {
-    final uid = _currentUid;
+  Future syncUserType({String? expectedUid}) async {
+    final explicitUid = expectedUid?.trim() ?? '';
+    final uid = explicitUid.isNotEmpty ? explicitUid : _currentUid;
     if (uid.isEmpty) {
       debugPrint('FFAppState: sem usuario logado para sync.');
-      _resetViewerAccessState();
+      _resetViewerAccessState(clearCachedUserType: true);
+      notifyListeners();
       return;
     }
 
@@ -157,12 +178,17 @@ class FFAppState extends ChangeNotifier {
 
       debugPrint('FFAppState: sync resposta = $response');
 
-      _registrationComplete = response != null;
-
       if (response != null) {
+        _registrationComplete =
+            await _hasCompletedOperationalProfile(uid, response);
+        if (_registrationComplete) {
+          _registrationFlowActive = false;
+        }
         _hydrateViewerAccessFromUser(response);
       } else {
-        _resetViewerAccessState();
+        _resetViewerAccessState(
+          clearCachedUserType: !_registrationFlowActive,
+        );
         _registrationComplete = false;
         debugPrint('FFAppState: cadastro incompleto - sem row na tabela users');
         notifyListeners();
@@ -172,7 +198,9 @@ class FFAppState extends ChangeNotifier {
       final sanitizedType = normalizeUserType(response['userType']);
       if (sanitizedType.isNotEmpty) {
         debugPrint('FFAppState: userType = "$sanitizedType"');
-        userType = sanitizedType;
+        _userType = sanitizedType;
+        await prefs.setString('ff_userType', sanitizedType);
+        notifyListeners();
         return;
       }
 
@@ -184,13 +212,56 @@ class FFAppState extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('FFAppState: erro no sync: $e');
-      _resetViewerAccessState();
-      if (_userType.isEmpty) {
-        userType = 'jugador';
-      } else {
-        notifyListeners();
-      }
+      _resetViewerAccessState(
+        clearCachedUserType: !_registrationFlowActive,
+      );
+      notifyListeners();
     }
+  }
+
+  Future<bool> _rowExists(
+    String table,
+    String column,
+    String value,
+  ) async {
+    try {
+      final row = await SupaFlow.client
+          .from(table)
+          .select(column)
+          .eq(column, value)
+          .maybeSingle();
+      return row != null;
+    } catch (e) {
+      debugPrint(
+        'FFAppState: nao foi possivel validar $table.$column: $e',
+      );
+      return false;
+    }
+  }
+
+  Future<bool> _hasCompletedOperationalProfile(
+    String uid,
+    Map<String, dynamic> user,
+  ) async {
+    final normalizedType = normalizeUserType(user['userType']);
+    if (normalizedType == 'admin') return true;
+
+    if (normalizedType == 'jugador') {
+      return _rowExists('players', 'id', uid);
+    }
+
+    if (normalizedType == 'profesional') {
+      return _rowExists('scouts', 'id', uid);
+    }
+
+    if (normalizedType == 'club') {
+      final hasCurrentClub = await _rowExists('clubs', 'owner_id', uid) ||
+          await _rowExists('clubs', 'id', uid);
+      if (hasCurrentClub) return true;
+      return _rowExists('clubes', 'id', uid);
+    }
+
+    return false;
   }
 
   Future<void> refreshCurrentUserAccess() async {
@@ -266,8 +337,15 @@ class FFAppState extends ChangeNotifier {
   bool _registrationComplete = false;
   bool get registrationComplete => _registrationComplete;
 
-  bool get isAdminSession =>
-      _currentUserIsAdmin || normalizeUserType(_userType) == 'admin';
+  bool _registrationFlowActive = false;
+  bool get registrationFlowActive => _registrationFlowActive;
+  set registrationFlowActive(bool value) {
+    if (_registrationFlowActive == value) return;
+    _registrationFlowActive = value;
+    notifyListeners();
+  }
+
+  bool get isAdminSession => _currentUserIsAdmin;
 
   Map<String, bool> _featureFlags =
       Map<String, bool>.from(AdminRuntimeService.defaultFeatureFlags);

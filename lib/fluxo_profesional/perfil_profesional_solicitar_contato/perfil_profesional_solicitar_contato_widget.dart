@@ -636,7 +636,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(_isGuardado
               ? 'Jugador agregado a mi Scouting'
-              : 'Jugador removido de mi Scouting'),
+              : 'Jugador eliminado de mi Scouting'),
           backgroundColor: _isGuardado ? Colors.green : const Color(0xFF475569),
           action: _isGuardado
               ? SnackBarAction(
@@ -1349,6 +1349,13 @@ class _PerfilProfesionalSolicitarContatoWidgetState
       _userData?['city'],
       _userData?['ciudad'],
     ]);
+    final state = _firstNonEmptyValue([
+      _userData?['state'],
+      _userData?['estado'],
+      _userData?['province'],
+      _userData?['provincia'],
+      _userData?['region'],
+    ]);
     final country = _firstNonEmptyValue([
       _userData?['country'],
       _userData?['pais'],
@@ -1363,11 +1370,15 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         _buildProfileInfoTile(Icons.language_rounded, 'Link profesional', url),
       if (dni != null)
         _buildProfileInfoTile(Icons.badge_outlined, 'Documento', dni),
-      if (city != null || country != null)
+      if (city != null || state != null || country != null)
         _buildProfileInfoTile(
           Icons.location_on_outlined,
           'Ubicación',
-          [if (city != null) city, if (country != null) country].join(' · '),
+          [
+            if (city != null) city,
+            if (state != null && state != city) state,
+            if (country != null && country != city && country != state) country,
+          ].join(' · '),
         ),
     ];
 

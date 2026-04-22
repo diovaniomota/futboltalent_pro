@@ -94,7 +94,8 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
       }
 
       final tutorialVideos = <Map<String, dynamic>>[];
-      for (final row in List<Map<String, dynamic>>.from(coursesResponse as List)) {
+      for (final row
+          in List<Map<String, dynamic>>.from(coursesResponse as List)) {
         final url = (row['video_url'] ?? '').toString().trim();
         if (url.isEmpty || row['is_active'] == false) continue;
         tutorialVideos.add({
@@ -139,7 +140,8 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
   }
 
   String _resolveVideoType(Map<String, dynamic> video) {
-    final persistedType = (video['videoType'] ?? '').toString().trim().toLowerCase();
+    final persistedType =
+        (video['videoType'] ?? '').toString().trim().toLowerCase();
     if (persistedType == 'ugc' || persistedType == 'challenge') {
       return persistedType;
     }
@@ -147,11 +149,10 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
     final title = (video['title'] ?? '').toString().trim().toLowerCase();
     final description =
         (video['description'] ?? '').toString().trim().toLowerCase();
-    final looksLikeChallenge =
-        description.contains('[challenge_ref:') ||
-            title.startsWith('desafío:') ||
-            title.startsWith('desafio:') ||
-            title.startsWith('challenge:');
+    final looksLikeChallenge = description.contains('[challenge_ref:') ||
+        title.startsWith('desafío:') ||
+        title.startsWith('desafio:') ||
+        title.startsWith('challenge:');
     return looksLikeChallenge ? 'challenge' : 'ugc';
   }
 
@@ -326,7 +327,7 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
       _showSnack(
         nextValue
             ? 'Video destacado en Explorer.'
-            : 'Video removido de destacados.',
+            : 'Video eliminado de destacados.',
       );
     } catch (e) {
       debugPrint('Error toggling featured video: $e');
@@ -424,7 +425,9 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
               color: selected ? const Color(0xFF0D3B66) : Colors.white,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: selected ? const Color(0xFF0D3B66) : const Color(0xFFE2E8F0),
+                color: selected
+                    ? const Color(0xFF0D3B66)
+                    : const Color(0xFFE2E8F0),
               ),
               boxShadow: selected
                   ? [

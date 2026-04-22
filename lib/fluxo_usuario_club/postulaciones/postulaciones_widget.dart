@@ -402,7 +402,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     if (jugadorId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Jogador sem ID — não é possível adicionar.'),
+            content: Text('Jugador sin ID; no es posible agregarlo.'),
             backgroundColor: Colors.red),
       );
       return;
@@ -428,7 +428,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Erro ao carregar listas: $e'),
+              content: Text('Error al cargar listas: $e'),
               backgroundColor: Colors.red),
         );
       }
@@ -1423,7 +1423,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                                   const Icon(Icons.bookmark_add_outlined,
                                       size: 16, color: Color(0xFF7C3AED)),
                                   const SizedBox(width: 10),
-                                  Text('Adicionar ao scouting',
+                                  Text('Agregar al scouting',
                                       style: GoogleFonts.inter(
                                           fontSize: 13,
                                           color: const Color(0xFF7C3AED),
@@ -2186,7 +2186,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Erro ao criar lista: $e'),
+              content: Text('Error al crear lista: $e'),
               backgroundColor: Colors.red),
         );
       }
@@ -2210,7 +2210,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Jogador já está nessa lista.'),
+              content: Text('El jugador ya está en esta lista.'),
               backgroundColor: Color(0xFF6B7280),
             ),
           );
@@ -2230,7 +2230,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${widget.jugadorName.isNotEmpty ? widget.jugadorName : 'Jogador'} adicionado ao scouting ✓',
+              '${widget.jugadorName.isNotEmpty ? widget.jugadorName : 'Jugador'} agregado al scouting ✓',
             ),
             backgroundColor: const Color(0xFF7C3AED),
           ),
@@ -2239,7 +2239,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -2283,7 +2283,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Adicionar ao scouting',
+                  'Agregar al scouting',
                   style: GoogleFonts.inter(
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
@@ -2307,7 +2307,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Text(
-                'Nenhuma lista criada ainda. Crie uma para continuar.',
+                'Todavía no hay listas creadas. Crea una para continuar.',
                 style: GoogleFonts.inter(
                     fontSize: 13, color: const Color(0xFF94A3B8)),
               ),
@@ -2370,7 +2370,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
               onPressed: () => setState(() => _isCreatingList = true),
               icon: const Icon(Icons.add, size: 16, color: Color(0xFF0D3B66)),
               label: Text(
-                'Nova lista',
+                'Nueva lista',
                 style: GoogleFonts.inter(
                     fontSize: 13,
                     color: const Color(0xFF0D3B66),
@@ -2385,7 +2385,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
               controller: _newListNameCtrl,
               autofocus: true,
               decoration: InputDecoration(
-                hintText: 'Nome da lista...',
+                hintText: 'Nombre de la lista...',
                 hintStyle: GoogleFonts.inter(
                     fontSize: 14, color: const Color(0xFF94A3B8)),
                 contentPadding:
@@ -2417,7 +2417,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8)),
                   ),
-                  child: Text('Criar',
+                  child: Text('Crear',
                       style: GoogleFonts.inter(color: Colors.white)),
                 ),
               ],
@@ -2445,7 +2445,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
                       child: CircularProgressIndicator(
                           color: Colors.white, strokeWidth: 2))
                   : Text(
-                      'Adicionar ao scouting',
+                      'Agregar al scouting',
                       style: GoogleFonts.inter(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,

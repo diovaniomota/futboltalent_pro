@@ -15,6 +15,7 @@ class SupabaseAuthManager extends AuthManager with EmailSignInManager {
   Future signOut() async {
     debugPrint('SupabaseAuthManager: Starting signOut');
     try {
+      FFAppState().clearAuthenticatedSessionState();
       await SupaFlow.client.auth.signOut();
       debugPrint('SupabaseAuthManager: Supabase signOut successful');
       currentUser = FutboltalentProSupabaseUser(null);

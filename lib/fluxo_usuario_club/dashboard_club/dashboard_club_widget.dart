@@ -1653,7 +1653,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         _savedPlayerIds.remove(playerId);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Jugador removido de guardados')),
+            const SnackBar(content: Text('Jugador eliminado de guardados')),
           );
         }
       } else {
@@ -2365,12 +2365,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                   children: [
                     _upsellRequirement(
                       icon: Icons.verified_user_outlined,
-                      label: 'Conta verificada',
+                      label: 'Cuenta verificada',
                     ),
                     const SizedBox(height: 8),
                     _upsellRequirement(
                       icon: Icons.workspace_premium_outlined,
-                      label: 'Plano ativo',
+                      label: 'Plan activo',
                     ),
                   ],
                 ),
@@ -3867,6 +3867,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         icon: Icons.people_outline,
         title: 'Todavía no tenés postulaciones',
         subtitle: '',
+        titleFontWeight: FontWeight.w400,
       );
     }
 
@@ -4154,6 +4155,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         icon: Icons.workspace_premium_outlined,
         title: 'Todavía no hay jugadores verificados',
         subtitle: '',
+        titleFontWeight: FontWeight.w400,
       );
     }
 
@@ -4278,6 +4280,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         icon: Icons.alt_route,
         title: 'Sin seguimiento activo',
         subtitle: '',
+        titleFontWeight: FontWeight.w400,
       );
     }
 
@@ -4464,6 +4467,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     required String title,
     required String subtitle,
     VoidCallback? onRetry,
+    FontWeight titleFontWeight = FontWeight.w700,
   }) {
     return Container(
       width: double.infinity,
@@ -4481,7 +4485,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             title,
             style: GoogleFonts.inter(
               fontSize: 14,
-              fontWeight: FontWeight.w700,
+              fontWeight: titleFontWeight,
               color: const Color(0xFF2D3748),
             ),
           ),

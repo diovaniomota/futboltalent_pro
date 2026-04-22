@@ -14,7 +14,14 @@ import 'registro_club_model.dart';
 export 'registro_club_model.dart';
 
 class RegistroClubWidget extends StatefulWidget {
-  const RegistroClubWidget({super.key});
+  const RegistroClubWidget({
+    super.key,
+    this.signupEmail,
+    this.signupPassword,
+  });
+
+  final String? signupEmail;
+  final String? signupPassword;
 
   static String routeName = 'registro_club';
   static String routePath = '/registro_club';
@@ -118,6 +125,10 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
     super.initState();
     _model = createModel(context, () => RegistroClubModel());
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
+    final signupEmail = widget.signupEmail?.trim() ?? '';
+    if (signupEmail.isNotEmpty) {
+      _emailController.text = signupEmail;
+    }
     _phoneController.addListener(_handlePhoneInputChange);
     _loadCountries();
   }
@@ -167,17 +178,24 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       if (image != null) {
         final bytes = await image.readAsBytes();
         setState(() => _logoBytes = bytes);
-        await _uploadLogo(bytes, image.name);
+        _showSuccess('Logo seleccionado. Se subirá al finalizar.');
       }
     } catch (e) {
       _showError('Error al seleccionar imagen');
     }
   }
 
-  Future<void> _uploadLogo(Uint8List bytes, String fileName) async {
+  Future<void> _uploadLogo(
+    Uint8List bytes,
+    String fileName, {
+    String? ownerUid,
+  }) async {
     try {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final filePath = '${currentUserUid}_$timestamp.jpg';
+      final uid = ownerUid?.trim().isNotEmpty == true
+          ? ownerUid!.trim()
+          : currentUserUid.trim();
+      final filePath = '${uid}_$timestamp.jpg';
       await SupaFlow.client.storage.from('logos clubs').uploadBinary(
           filePath, bytes,
           fileOptions: const FileOptions(
@@ -201,6 +219,56 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message), backgroundColor: Colors.green));
+  }
+
+  Future<void> _abortIncompleteClubRegistration(Object error) async {
+    FFAppState().authBlockMessage =
+        'No se completó el registro del club. Crea la cuenta nuevamente.';
+    FFAppState().registrationFlowActive = false;
+    try {
+      await authManager.signOut();
+    } catch (signOutError) {
+      debugPrint(
+          'Error al cerrar sesión tras registro de club fallido: $signOutError');
+    }
+    if (!mounted) return;
+    context.goNamed('login');
+  }
+
+  Future<String?> _ensureClubAuthAccount() async {
+    final existingUid = currentUserUid.trim();
+    if (existingUid.isNotEmpty) {
+      FFAppState().registrationFlowActive = true;
+      return existingUid;
+    }
+
+    final email = (widget.signupEmail?.trim().isNotEmpty ?? false)
+        ? widget.signupEmail!.trim()
+        : _emailController.text.trim();
+    final password = widget.signupPassword ?? '';
+
+    if (email.isEmpty || password.isEmpty) {
+      FFAppState().registrationFlowActive = false;
+      _showError(
+        'Datos de acceso incompletos. Vuelve al inicio del registro.',
+      );
+      return null;
+    }
+
+    FFAppState().registrationFlowActive = true;
+    GoRouter.of(context).prepareAuthEvent();
+    final user = await authManager.createAccountWithEmail(
+      context,
+      email,
+      password,
+    );
+    final uid = (user?.uid ?? '').trim();
+    if (uid.isEmpty) {
+      FFAppState().registrationFlowActive = false;
+      _showError('No se pudo crear la cuenta. Intenta nuevamente.');
+      return null;
+    }
+    return uid;
   }
 
   bool _validateStep1() {
@@ -3222,7 +3290,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
     dynamic eqValue,
   ) async {
     final mutable = Map<String, dynamic>.from(payload);
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i <= payload.length + 4; i++) {
       try {
         await SupaFlow.client.from(table).update(mutable).eq(eqField, eqValue);
         return;
@@ -3239,7 +3307,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
     Map<String, dynamic> payload,
   ) async {
     final mutable = Map<String, dynamic>.from(payload);
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i <= payload.length + 4; i++) {
       try {
         await SupaFlow.client.from(table).insert(mutable);
         return;
@@ -3249,6 +3317,105 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
     }
     throw Exception(
         'No se pudo insertar en $table por incompatibilidad de schema');
+  }
+
+  bool _isValueTooLongError(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('value too long') ||
+        text.contains('character varying');
+  }
+
+  String _legacyClubesId(String authUserId) {
+    final compact = authUserId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    if (compact.isEmpty) return authUserId;
+    return compact.length <= 10 ? compact : compact.substring(0, 10);
+  }
+
+  String _legacyPhoneForVarchar10(String phone) {
+    final digits = _digitsOnly(phone);
+    if (digits.length <= 10) return digits;
+    return digits.substring(digits.length - 10);
+  }
+
+  String _limitLegacyText(String value, int maxLength) {
+    final trimmed = value.trim();
+    return trimmed.length <= maxLength
+        ? trimmed
+        : trimmed.substring(0, maxLength);
+  }
+
+  Map<String, dynamic> _legacyClubesCompatiblePayload(
+    Map<String, dynamic> payload,
+  ) {
+    final compatible = Map<String, dynamic>.from(payload);
+    final id = compatible['id']?.toString() ?? '';
+    final phone = compatible['telephone']?.toString() ?? '';
+
+    if (id.length > 10) compatible['id'] = _legacyClubesId(id);
+    if (phone.isNotEmpty) {
+      compatible['telephone'] = _legacyPhoneForVarchar10(phone);
+    }
+
+    for (final field in ['nombre_corto', 'liga', 'sitio_web']) {
+      final value = compatible[field]?.toString() ?? '';
+      if (value.length > 10) compatible[field] = _limitLegacyText(value, 10);
+    }
+
+    for (final field in ['email', 'state', 'city', 'country']) {
+      final value = compatible[field]?.toString() ?? '';
+      if (value.length > 10) compatible.remove(field);
+    }
+
+    return compatible;
+  }
+
+  Future<void> _saveLegacyClubesProfile(
+    Map<String, dynamic> clubData,
+    String ownerUid,
+  ) async {
+    Map<String, dynamic>? existingClub;
+    try {
+      existingClub = await SupaFlow.client
+          .from('clubes')
+          .select()
+          .eq('id', ownerUid)
+          .maybeSingle();
+    } catch (_) {}
+
+    try {
+      if (existingClub != null) {
+        final legacyId = existingClub['id']?.toString() ?? ownerUid;
+        await _safeUpdate('clubes', clubData, 'id', legacyId);
+      } else {
+        final insertPayload = Map<String, dynamic>.from(clubData)
+          ..['id'] = ownerUid
+          ..['created_at'] = DateTime.now().toIso8601String();
+        await _safeInsert('clubes', insertPayload);
+      }
+      return;
+    } catch (e) {
+      if (!_isValueTooLongError(e)) {
+        debugPrint('No se pudo guardar en clubes legado: $e');
+        return;
+      }
+    }
+
+    try {
+      final compatible = _legacyClubesCompatiblePayload(clubData);
+      if (existingClub != null) {
+        final legacyId = existingClub['id']?.toString() ?? ownerUid;
+        await _safeUpdate('clubes', compatible, 'id', legacyId);
+      } else {
+        final insertPayload = _legacyClubesCompatiblePayload({
+          ...clubData,
+          'id': _legacyClubesId(ownerUid),
+          'created_at': DateTime.now().toIso8601String(),
+        });
+        await _safeInsert('clubes', insertPayload);
+      }
+    } catch (e) {
+      debugPrint('No se pudo guardar en clubes legado compatible: $e');
+    }
   }
 
   bool _validateStep3() {
@@ -3416,6 +3583,9 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
     if (!_validateStep3()) return;
     setState(() => _isLoading = true);
     try {
+      final uid = await _ensureClubAuthAccount();
+      if (uid == null || uid.isEmpty) return;
+
       final normalizedWebsite = _validateAndNormalizeUrl(
         _websiteController.text,
         label: 'Sitio web',
@@ -3432,18 +3602,24 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       final normalizedCountry = normalizeCountryName(_countryController.text);
       final normalizedState = _stateController.text.trim();
       final normalizedCity = normalizeCityName(_cityController.text);
+      if (_logoBytes != null && _logoUrl == null) {
+        await _uploadLogo(_logoBytes!, 'club_logo.jpg', ownerUid: uid);
+      }
 
       // Update User
       final existingUser = await SupaFlow.client
           .from('users')
           .select()
-          .eq('user_id', currentUserUid)
+          .eq('user_id', uid)
           .maybeSingle();
       final userData = {
         'name': _clubNameController.text,
         'city': normalizedCity,
         'state': normalizedState,
         'country': normalizedCountry,
+        'ciudad': normalizedCity,
+        'estado': normalizedState,
+        'pais': normalizedCountry,
         'country_id': _selectedCountryId != null
             ? int.tryParse(_selectedCountryId!)
             : null,
@@ -3452,34 +3628,25 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
         'role_id': 2,
       };
       if (existingUser != null) {
-        await SupaFlow.client
-            .from('users')
-            .update(userData)
-            .eq('user_id', currentUserUid);
+        await _safeUpdate('users', userData, 'user_id', uid);
       } else {
-        userData['user_id'] = currentUserUid;
+        userData['user_id'] = uid;
         userData['username'] = _clubNameController.text
             .toLowerCase()
             .replaceAll(' ', '_')
             .replaceAll(RegExp(r'[^a-z0-9_]'), '');
         userData['created_at'] = DateTime.now().toIso8601String();
         try {
-          await SupaFlow.client.from('users').insert(userData);
+          await _safeInsert('users', userData);
         } catch (e) {
           final msg = e.toString().toLowerCase();
           if (msg.contains('users_pkey') || msg.contains('duplicate key')) {
             final updatePayload = Map<String, dynamic>.from(userData)
               ..remove('created_at');
             try {
-              await SupaFlow.client
-                  .from('users')
-                  .update(updatePayload)
-                  .eq('user_id', currentUserUid);
+              await _safeUpdate('users', updatePayload, 'user_id', uid);
             } catch (_) {
-              await SupaFlow.client
-                  .from('users')
-                  .update(updatePayload)
-                  .eq('id', currentUserUid);
+              await _safeUpdate('users', updatePayload, 'id', uid);
             }
           } else {
             rethrow;
@@ -3488,11 +3655,6 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       }
 
       // Update Club
-      final existingClub = await SupaFlow.client
-          .from('clubes')
-          .select()
-          .eq('id', currentUserUid)
-          .maybeSingle();
       final clubData = {
         'email': _emailController.text,
         'telephone': normalizedPhone,
@@ -3508,21 +3670,18 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
         'state': normalizedState,
         'city': normalizedCity,
         'country': normalizedCountry,
+        'estado': normalizedState,
+        'ciudad': normalizedCity,
+        'pais': normalizedCountry,
         'sitio_web': sitioWeb,
       };
-      if (existingClub != null) {
-        await _safeUpdate('clubes', clubData, 'id', currentUserUid);
-      } else {
-        clubData['id'] = currentUserUid;
-        clubData['created_at'] = DateTime.now().toIso8601String();
-        await _safeInsert('clubes', clubData);
-      }
+      await _saveLegacyClubesProfile(clubData, uid);
 
       // Also create/update in 'clubs' table (used by all club screens)
       final existingClubs = await SupaFlow.client
           .from('clubs')
           .select()
-          .eq('owner_id', currentUserUid)
+          .eq('owner_id', uid)
           .maybeSingle();
       final clubsData = {
         'nombre': _clubNameController.text,
@@ -3530,19 +3689,26 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
         'country': normalizedCountry,
         'state': normalizedState,
         'city': normalizedCity,
+        'pais': normalizedCountry,
+        'estado': normalizedState,
+        'ciudad': normalizedCity,
         'liga': _leagueController.text.isNotEmpty ? _leagueController.text : '',
         'descripcion': _aboutClubController.text.isNotEmpty
             ? _aboutClubController.text
             : '',
         'sitio_web': sitioWeb,
         'logo_url': _logoUrl,
-        'owner_id': currentUserUid,
+        'owner_id': uid,
       };
       if (existingClubs != null) {
-        await _safeUpdate('clubs', clubsData, 'owner_id', currentUserUid);
+        await _safeUpdate('clubs', clubsData, 'owner_id', uid);
       } else {
         await _safeInsert('clubs', clubsData);
       }
+
+      FFAppState().userType = 'club';
+      FFAppState().registrationFlowActive = false;
+      await FFAppState().syncUserType();
 
       if (mounted) {
         showDialog(
@@ -3558,7 +3724,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
       }
     } catch (e) {
       debugPrint('Erro ao salvar clube: $e');
-      _showError('Error al guardar: ${e.toString()}');
+      await _abortIncompleteClubRegistration(e);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

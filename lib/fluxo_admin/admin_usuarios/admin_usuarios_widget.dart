@@ -5,7 +5,6 @@ import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
-import 'package:uuid/uuid.dart';
 import 'admin_usuarios_model.dart';
 export 'admin_usuarios_model.dart';
 
@@ -89,17 +88,20 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
     try {
       var users = await AdminUserManagementService.loadUsersCatalog(
         includeOperationalFields: true,
+        includeAdminUsers: false,
       );
       if (users.isEmpty && allowRetry) {
         await Future.delayed(const Duration(milliseconds: 250));
         users = await AdminUserManagementService.loadUsersCatalog(
           includeOperationalFields: true,
+          includeAdminUsers: false,
         );
       }
 
       if (mounted) {
         setState(() {
-          _allUsers = users;
+          _allUsers =
+              users.where((user) => !_isProtectedAdminUser(user)).toList();
           _applyFilters();
           _isLoading = false;
         });
@@ -126,6 +128,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
   void _applyFilters() {
     final query = normalizeLookupKey(_searchController.text);
     _filteredUsers = _allUsers.where((user) {
+      if (_isProtectedAdminUser(user)) return false;
       final normalizedType = FFAppState.normalizeUserType(user['userType']);
       final matchesType =
           _selectedFilter == 'todos' || normalizedType == _selectedFilter;
@@ -140,6 +143,13 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
       final matchesSearch = query.isEmpty || searchable.contains(query);
       return matchesType && matchesSearch;
     }).toList();
+  }
+
+  bool _isProtectedAdminUser(Map<String, dynamic> user) {
+    final userId = user['user_id']?.toString().trim() ?? '';
+    if (currentUserUid.isNotEmpty && userId == currentUserUid) return true;
+    return user['is_admin'] == true ||
+        FFAppState.normalizeUserType(user['userType']) == 'admin';
   }
 
   Future<void> _togglePlan(Map<String, dynamic> user) async {
@@ -295,7 +305,7 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
           SnackBar(
             content: Text(enable
                 ? 'Perfil FULL activado para pruebas'
-                : 'Perfil FULL removido'),
+                : 'Perfil FULL eliminado'),
           ),
         );
         if (currentUserUid == userId) {
@@ -532,6 +542,14 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
   Future<void> _deleteUser(Map<String, dynamic> user) async {
     final userId = user['user_id']?.toString() ?? '';
     if (userId.isEmpty) return;
+    if (_isProtectedAdminUser(user)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Los usuarios admin no pueden eliminarse aquí.'),
+        ),
+      );
+      return;
+    }
     bool deleteAuthAccount = _canDeleteAuthUsers;
 
     final confirm = await showDialog<bool>(
@@ -854,106 +872,6 @@ class _AdminUsuariosWidgetState extends State<AdminUsuariosWidget> {
       }
       return;
     }
-
-    final userId = const Uuid().v4();
-    final sanitizedType =
-        FFAppState.normalizeUserType(userTypeController.text.trim());
-    final parsedPlanId = _readPlanId(planController.text.trim(), fallback: 1);
-    String? birthdayIso;
-    final ageValue = int.tryParse(ageController.text.trim());
-    if (ageValue != null && ageValue > 0 && ageValue < 120) {
-      final now = DateTime.now();
-      final birthday = DateTime(now.year - ageValue, now.month, now.day);
-      birthdayIso = birthday.toIso8601String();
-    }
-
-    final payload = <String, dynamic>{
-      'user_id': userId,
-      'name': nameController.text.trim().isEmpty
-          ? 'Usuario'
-          : nameController.text.trim(),
-      'lastname': lastnameController.text.trim(),
-      'username': nameController.text.trim(),
-      'userType': sanitizedType.isEmpty ? 'jugador' : sanitizedType,
-      'plan_id': parsedPlanId,
-      'role_id': 1,
-      'country_id': 1,
-      'created_at': DateTime.now().toIso8601String(),
-      'posicion': positionController.text.trim().isEmpty
-          ? null
-          : positionController.text.trim(),
-      'categoria': categoryController.text.trim().isEmpty
-          ? null
-          : categoryController.text.trim(),
-      'country': countryController.text.trim().isEmpty
-          ? null
-          : countryController.text.trim(),
-      'pais': countryController.text.trim().isEmpty
-          ? null
-          : countryController.text.trim(),
-      'city': cityController.text.trim().isEmpty
-          ? null
-          : cityController.text.trim(),
-      'verification_status': isVerified ? 'verified' : 'pending',
-      'is_verified': isVerified,
-      'is_test_account': true,
-    };
-    if (birthdayIso != null) {
-      payload['birthday'] = birthdayIso;
-    }
-
-    final fallbackPayload = Map<String, dynamic>.from(payload)
-      ..remove('posicion')
-      ..remove('categoria')
-      ..remove('country')
-      ..remove('pais')
-      ..remove('city');
-
-    try {
-      await SupaFlow.client.from('users').insert(payload);
-    } catch (_) {
-      await SupaFlow.client.from('users').insert(fallbackPayload);
-    }
-
-    try {
-      if (payload['userType'] == 'jugador') {
-        await SupaFlow.client.from('players').insert({
-          'id': userId,
-          'created_at': DateTime.now().toIso8601String(),
-          'position_id': null,
-        });
-      } else if (payload['userType'] == 'profesional') {
-        await SupaFlow.client.from('scouts').insert({
-          'id': userId,
-          'created_at': DateTime.now().toIso8601String(),
-          'telephone': '',
-          'club': '',
-        });
-      } else if (payload['userType'] == 'club') {
-        await SupaFlow.client.from('clubs').insert({
-          'owner_id': userId,
-          'nombre': payload['name'] ?? 'Club',
-          'created_at': DateTime.now().toIso8601String(),
-        });
-      }
-    } catch (_) {}
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Usuario creado')),
-      );
-      _loadUsers();
-    }
-
-    nameController.dispose();
-    lastnameController.dispose();
-    userTypeController.dispose();
-    planController.dispose();
-    cityController.dispose();
-    countryController.dispose();
-    positionController.dispose();
-    categoryController.dispose();
-    ageController.dispose();
   }
 
   @override

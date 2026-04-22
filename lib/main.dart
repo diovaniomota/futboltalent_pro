@@ -170,12 +170,26 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _isCheckingAccountGuard = true;
     try {
       await FFAppState().syncUserType();
+      if (!FFAppState().registrationComplete &&
+          !FFAppState().registrationFlowActive) {
+        await _forceLogoutWithMessage(
+          'Cadastro incompleto. Inicia el registro nuevamente.',
+        );
+        return;
+      }
       final userData = await SupaFlow.client
           .from('users')
           .select('banned_until, is_minor, has_guardian')
           .eq('user_id', currentUserUid)
           .maybeSingle();
-      if (userData == null) return;
+      if (userData == null) {
+        if (!FFAppState().registrationFlowActive) {
+          await _forceLogoutWithMessage(
+            'Sesión sin perfil activo. Inicia sesión nuevamente.',
+          );
+        }
+        return;
+      }
 
       final bannedUntilRaw = userData['banned_until']?.toString();
       final bannedUntil = bannedUntilRaw != null

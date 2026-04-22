@@ -6,7 +6,6 @@ import '/index.dart'; // For routes
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:go_router/go_router.dart';
 import 'login_model.dart';
 export 'login_model.dart';
 
@@ -108,15 +107,29 @@ class _LoginWidgetState extends State<LoginWidget> {
       }
 
       // Sincroniza o userType do banco e aguarda conclusão
-      await FFAppState().syncUserType();
+      final signedInUid = user.uid?.trim() ?? '';
+      FFAppState().clearAuthenticatedSessionState();
+      await FFAppState().syncUserType(expectedUid: signedInUid);
+
+      if (!FFAppState().registrationComplete) {
+        FFAppState().registrationFlowActive = true;
+        if (mounted) {
+          setState(() => _isLoading = false);
+          context.goNamed(SeleccionDelTipoDePerfilWidget.routeName);
+        }
+        return;
+      }
+
       String userType = FFAppState.normalizeUserType(FFAppState().userType);
 
       // Fallback: se syncUserType não encontrou, busca diretamente
       if (userType.isEmpty) {
+        final uidForProfileLookup =
+            signedInUid.isNotEmpty ? signedInUid : currentUserUid;
         final response = await SupaFlow.client
             .from('users')
             .select('userType')
-            .eq('user_id', currentUserUid)
+            .eq('user_id', uidForProfileLookup)
             .maybeSingle();
         userType = FFAppState.normalizeUserType(
           response?['userType'],
@@ -131,7 +144,10 @@ class _LoginWidgetState extends State<LoginWidget> {
       final userData = await SupaFlow.client
           .from('users')
           .select('banned_until, is_minor, has_guardian')
-          .eq('user_id', currentUserUid)
+          .eq(
+            'user_id',
+            signedInUid.isNotEmpty ? signedInUid : currentUserUid,
+          )
           .maybeSingle();
       if (userData != null && userData['banned_until'] != null) {
         final bannedUntil =
@@ -443,12 +459,14 @@ class _LoginWidgetState extends State<LoginWidget> {
                             await authManager.resetPassword(
                                 email: resetEmailController.text.trim(),
                                 context: context);
+                            if (!ctx.mounted || !mounted) return;
                             Navigator.pop(ctx);
                             ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                     content: Text('Email enviado'),
                                     backgroundColor: Colors.green));
                           } catch (e) {
+                            if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text('Error: $e')));
                           }
@@ -495,9 +513,8 @@ class _LoginWidgetState extends State<LoginWidget> {
           ),
           actions: [
             TextButton(
-              onPressed: isSubmitting
-                  ? null
-                  : () => Navigator.pop(dialogContext),
+              onPressed:
+                  isSubmitting ? null : () => Navigator.pop(dialogContext),
               child: const Text('Cancelar'),
             ),
             ElevatedButton(
@@ -536,8 +553,8 @@ class _LoginWidgetState extends State<LoginWidget> {
                           isSubmitting = false;
                           if (message.contains('approval_code_not_found')) {
                             localError = 'Código inválido o vencido.';
-                          } else if (message.contains(
-                              'approve_guardian_by_code')) {
+                          } else if (message
+                              .contains('approve_guardian_by_code')) {
                             localError =
                                 'Falta ejecutar el SQL del flujo de responsable en Supabase.';
                           } else {

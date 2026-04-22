@@ -1814,7 +1814,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
         content: Text(
           added
               ? 'Jugador agregado a mi Scouting'
-              : 'Jugador removido de mi Scouting',
+              : 'Jugador eliminado de mi Scouting',
         ),
         duration: const Duration(seconds: 2),
         backgroundColor: added ? Colors.green : const Color(0xFF475569),
@@ -2305,7 +2305,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(_isSaved
                   ? 'Video guardado en Guardados'
-                  : 'Video removido de Guardados'),
+                  : 'Video eliminado de Guardados'),
               duration: const Duration(seconds: 1)));
         }
       }

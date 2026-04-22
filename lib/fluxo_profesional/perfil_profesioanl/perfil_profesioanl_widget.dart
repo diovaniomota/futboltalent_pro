@@ -410,7 +410,7 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
         _removingSavedVideoId = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Video removido de Guardados')),
+        const SnackBar(content: Text('Video eliminado de Guardados')),
       );
     } catch (e) {
       if (!mounted) return;

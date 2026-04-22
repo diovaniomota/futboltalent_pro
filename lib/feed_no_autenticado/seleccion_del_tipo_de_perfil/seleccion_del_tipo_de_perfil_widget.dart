@@ -65,6 +65,7 @@ class _SeleccionDelTipoDePerfilWidgetState
       _isLoading = true;
     });
 
+    FFAppState().registrationFlowActive = true;
     FFAppState().userType = type;
 
     try {
@@ -210,7 +211,28 @@ class _SeleccionDelTipoDePerfilWidgetState
 
                         SizedBox(
                             height: _responsive(context,
-                                mobile: 30, tablet: 40, desktop: 50)),
+                                mobile: 20, tablet: 28, desktop: 32)),
+
+                        TextButton(
+                          onPressed: _isLoading
+                              ? null
+                              : () {
+                                  FFAppState().registrationFlowActive = false;
+                                  context.goNamed(LoginWidget.routeName);
+                                },
+                          child: Text(
+                            '¿Ya tienes cuenta? Iniciar sesión',
+                            style: GoogleFonts.inter(
+                              fontSize: 14 * scale,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0D3B66),
+                            ),
+                          ),
+                        ),
+
+                        SizedBox(
+                            height: _responsive(context,
+                                mobile: 24, tablet: 32, desktop: 40)),
                       ],
                     ),
                   ),
@@ -268,7 +290,9 @@ class _SeleccionDelTipoDePerfilWidgetState
               : null,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(isSelected ? 0.15 : 0.1),
+              color: Colors.black.withValues(
+                alpha: isSelected ? 0.15 : 0.1,
+              ),
               blurRadius: isSelected ? 12 : 8,
               offset: const Offset(0, 2),
             ),
@@ -329,7 +353,7 @@ class _SeleccionDelTipoDePerfilWidgetState
                     style: GoogleFonts.inter(
                       fontSize: descFontSize,
                       fontWeight: FontWeight.w400,
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white.withValues(alpha: 0.9),
                       height: 1.4,
                     ),
                   ),
@@ -342,7 +366,7 @@ class _SeleccionDelTipoDePerfilWidgetState
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.3),
+                    color: Colors.black.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(borderRadius),
                   ),
                   child: const Center(

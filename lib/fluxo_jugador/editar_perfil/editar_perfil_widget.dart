@@ -331,7 +331,14 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         ),
       );
       _cityController = TextEditingController(
-        text: normalizeCityName(merged['city']?.toString() ?? ''),
+        text: normalizeCityName(
+          _firstNonEmptyValue([
+                merged['city'],
+                merged['ciudad'],
+                merged['localidad'],
+              ]) ??
+              '',
+        ),
       );
       _posicaoController = TextEditingController(
         text: normalizePlayerPosition(
@@ -3016,7 +3023,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   }) async {
     final mutablePayload = Map<String, dynamic>.from(payload);
 
-    for (var attempt = 0; attempt < 12; attempt++) {
+    for (var attempt = 0; attempt <= payload.length + 4; attempt++) {
       try {
         await SupaFlow.client
             .from(table)
@@ -3024,16 +3031,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             .eq(matchColumn, matchValue);
         return;
       } catch (e) {
-        final message = e.toString();
-        final regexSingle =
-            RegExp("Could not find the '([^']+)' column of '$table'");
-        final regexDouble =
-            RegExp('Could not find the \"([^\"]+)\" column of \"$table\"');
-        final singleMatch = regexSingle.firstMatch(message);
-        final doubleMatch = regexDouble.firstMatch(message);
-        final missingColumn =
-            (singleMatch?.group(1) ?? doubleMatch?.group(1))?.trim();
-
+        final missingColumn = _missingColumnFromSchemaError(e, table);
         if (missingColumn == null || missingColumn.isEmpty) {
           rethrow;
         }
@@ -3051,6 +3049,46 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
 
     throw Exception(
         'No se pudo actualizar $table por incompatibilidad de schema');
+  }
+
+  String? _missingColumnFromSchemaError(Object error, String table) {
+    final message = error.toString();
+    final escapedTable = RegExp.escape(table);
+    final patterns = [
+      RegExp("Could not find the '([^']+)' column of '$escapedTable'"),
+      RegExp('Could not find the "([^"]+)" column of "$escapedTable"'),
+      RegExp("Could not find the '([^']+)' column"),
+      RegExp('Could not find the "([^"]+)" column'),
+    ];
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(message);
+      final column = match?.group(1)?.trim();
+      if (column != null && column.isNotEmpty) return column;
+    }
+    return null;
+  }
+
+  Future<void> _insertTableWithSchemaFallback({
+    required String table,
+    required Map<String, dynamic> payload,
+  }) async {
+    final mutablePayload = Map<String, dynamic>.from(payload);
+
+    for (var attempt = 0; attempt <= payload.length + 4; attempt++) {
+      try {
+        await SupaFlow.client.from(table).insert(mutablePayload);
+        return;
+      } catch (e) {
+        final missingColumn = _missingColumnFromSchemaError(e, table);
+        if (missingColumn == null || missingColumn.isEmpty) rethrow;
+        if (!mutablePayload.containsKey(missingColumn)) rethrow;
+        mutablePayload.remove(missingColumn);
+        if (mutablePayload.isEmpty) rethrow;
+      }
+    }
+
+    throw Exception(
+        'No se pudo insertar en $table por incompatibilidad de schema');
   }
 
   Future<void> _saveChanges() async {
@@ -3112,6 +3150,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         'name': _nomeController?.text.trim() ?? '',
         'username': _usernameController?.text.trim() ?? '',
         'city': city,
+        'ciudad': city,
         'country': country,
         'pais': country,
         'country_id': _selectedCountryId != null
@@ -3124,7 +3163,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
 
       if (state.isNotEmpty) {
         userPayload['state'] = state;
+        userPayload['estado'] = state;
         userPayload['province'] = state;
+        userPayload['provincia'] = state;
         userPayload['region'] = state;
       }
 
@@ -3185,9 +3226,13 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           'url_profesional': normalizedProfessionalUrl,
           'dni': _tryParseInt(_dniController?.text),
           'city': city,
+          'ciudad': city,
           'country': country,
+          'pais': country,
           if (state.isNotEmpty) 'state': state,
+          if (state.isNotEmpty) 'estado': state,
           if (state.isNotEmpty) 'province': state,
+          if (state.isNotEmpty) 'provincia': state,
           if (state.isNotEmpty) 'region': state,
         };
 
@@ -3212,8 +3257,17 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 _interestPositionsController?.text.trim() ?? '',
             'url_profesional': normalizedProfessionalUrl,
             'dni': _tryParseInt(_dniController?.text),
+            'city': city,
+            'ciudad': city,
+            'country': country,
+            'pais': country,
+            if (state.isNotEmpty) 'state': state,
+            if (state.isNotEmpty) 'estado': state,
+            if (state.isNotEmpty) 'province': state,
+            if (state.isNotEmpty) 'provincia': state,
+            if (state.isNotEmpty) 'region': state,
           };
-          await SupaFlow.client.from('scouts').insert({
+          await _insertTableWithSchemaFallback(table: 'scouts', payload: {
             'id': uid,
             'created_at': DateTime.now().toIso8601String(),
             ...scoutInsertPayload,

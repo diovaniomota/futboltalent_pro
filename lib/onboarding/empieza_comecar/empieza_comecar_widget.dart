@@ -2617,19 +2617,8 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     }
 
     setState(() => _isRegistering = true);
-
     try {
-      final user = await authManager.createAccountWithEmail(
-        context,
-        _emailController.text.trim(),
-        _senhaController.text,
-      );
-
-      if (user == null) {
-        _showSnackBar('Error al crear la cuenta. Intenta de nuevo.');
-        return;
-      }
-
+      FFAppState().registrationFlowActive = true;
       _goToNextTab();
     } catch (e) {
       _showSnackBar('Error: ${e.toString()}');
@@ -2744,17 +2733,41 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     _saveProfileAndFinish();
   }
 
+  Future<String> _ensureAuthAccountForFinalRegistration() async {
+    final existingUid = currentUserUid.trim();
+    if (existingUid.isNotEmpty) {
+      FFAppState().registrationFlowActive = true;
+      return existingUid;
+    }
+
+    final email = _emailController.text.trim();
+    final password = _senhaController.text;
+    if (email.isEmpty || password.isEmpty) {
+      throw Exception(
+        'Datos de acceso incompletos. Vuelve a la etapa de cuenta.',
+      );
+    }
+
+    FFAppState().registrationFlowActive = true;
+    GoRouter.of(context).prepareAuthEvent();
+    final user = await authManager.createAccountWithEmail(
+      context,
+      email,
+      password,
+    );
+    final uid = (user?.uid ?? '').trim();
+    if (uid.isEmpty) {
+      FFAppState().registrationFlowActive = false;
+      throw Exception('No se pudo crear la cuenta. Intenta de nuevo.');
+    }
+    return uid;
+  }
+
   /// Salva perfil + guardian se menor
   Future<void> _saveProfileAndFinish() async {
     setState(() => _isSavingProfile = true);
 
     try {
-      final uid = currentUserUid.trim();
-      if (uid.isEmpty) {
-        _showSnackBar('Sesión inválida. Inicia sesión nuevamente.');
-        return;
-      }
-
       final birthday = _parseBirthday();
       final age = birthday != null ? _calculateAge(birthday) : 99;
       final isMinor = _usesMinorProtectionFlow && age < 18;
@@ -2780,6 +2793,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         }
       }
 
+      final uid = await _ensureAuthAccountForFinalRegistration();
       final userType = _normalizedSelectedUserType;
       final nowIso = DateTime.now().toIso8601String();
       final approvalCode =
@@ -2788,9 +2802,15 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           .where((country) => country['id']?.toString() == _selectedCountryId)
           .map((country) => normalizeCountryName(country['name']))
           .firstWhere((country) => country.isNotEmpty, orElse: () => '');
-      final normalizedCity = normalizeCityName(_cidadeController.text);
+      final normalizedState =
+          _selectedState == '__all__' ? '' : normalizeStateName(_selectedState);
+      final normalizedCity = normalizeCityName(
+        _cidadeController.text.trim().isNotEmpty
+            ? _cidadeController.text
+            : _selectedCity,
+      );
 
-      final userPayload = {
+      final userPayload = <String, dynamic>{
         'name': _nameController.text.trim(),
         'birthday': birthday?.toIso8601String(),
         'country_id': _selectedCountryId != null
@@ -2799,6 +2819,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         'country': selectedCountryName,
         'pais': selectedCountryName,
         'city': normalizedCity,
+        'ciudad': normalizedCity,
         'userType': userType,
         'user_id': uid,
         'username': _nameController.text.trim(),
@@ -2815,6 +2836,15 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             ? GuardianMvpService.limitedVisibility
             : GuardianMvpService.activeVisibility,
       };
+      if (normalizedState.isNotEmpty) {
+        userPayload.addAll({
+          'state': normalizedState,
+          'estado': normalizedState,
+          'province': normalizedState,
+          'provincia': normalizedState,
+          'region': normalizedState,
+        });
+      }
 
       final fallbackPayload = {
         ...userPayload,
@@ -2823,10 +2853,20 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
       final legacyUserPayload = Map<String, dynamic>.from(userPayload)
         ..remove('guardian_status')
-        ..remove('visibility_status');
+        ..remove('visibility_status')
+        ..remove('estado')
+        ..remove('province')
+        ..remove('provincia')
+        ..remove('region')
+        ..remove('ciudad');
       final legacyFallbackPayload = Map<String, dynamic>.from(fallbackPayload)
         ..remove('guardian_status')
-        ..remove('visibility_status');
+        ..remove('visibility_status')
+        ..remove('estado')
+        ..remove('province')
+        ..remove('provincia')
+        ..remove('region')
+        ..remove('ciudad');
 
       Future<void> persistUsersPayload(Map<String, dynamic> payload) async {
         final updatePayload = Map<String, dynamic>.from(payload)
@@ -2930,6 +2970,72 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         }
       }
 
+      if (FFAppState.normalizeUserType(userType) == 'profesional') {
+        Future<bool> scoutExists() async {
+          try {
+            final existing = await SupaFlow.client
+                .from('scouts')
+                .select('id')
+                .eq('id', uid)
+                .maybeSingle();
+            return existing != null;
+          } catch (_) {
+            return false;
+          }
+        }
+
+        if (!await scoutExists()) {
+          final scoutPayload = <String, dynamic>{
+            'id': uid,
+            'created_at': nowIso,
+            'telephone': '',
+            'club': '',
+            'city': normalizedCity,
+            'ciudad': normalizedCity,
+            'country': selectedCountryName,
+            'pais': selectedCountryName,
+            if (normalizedState.isNotEmpty) 'state': normalizedState,
+            if (normalizedState.isNotEmpty) 'estado': normalizedState,
+            if (normalizedState.isNotEmpty) 'province': normalizedState,
+            if (normalizedState.isNotEmpty) 'provincia': normalizedState,
+            if (normalizedState.isNotEmpty) 'region': normalizedState,
+          };
+          final minimalScoutPayload = <String, dynamic>{
+            'id': uid,
+            'created_at': nowIso,
+            'telephone': '',
+            'club': '',
+          };
+          var savedScout = false;
+
+          try {
+            await SupaFlow.client.from('scouts').insert(scoutPayload);
+            savedScout = true;
+          } catch (insertScoutError) {
+            final msg = insertScoutError.toString().toLowerCase();
+            if (msg.contains('duplicate key')) {
+              savedScout = true;
+            } else {
+              try {
+                await SupaFlow.client.from('scouts').insert(
+                      minimalScoutPayload,
+                    );
+                savedScout = true;
+              } catch (minimalScoutError) {
+                final minimalMsg = minimalScoutError.toString().toLowerCase();
+                if (minimalMsg.contains('duplicate key')) {
+                  savedScout = true;
+                }
+              }
+            }
+          }
+
+          if (!savedScout && !await scoutExists()) {
+            throw Exception('No se pudo crear el perfil profesional.');
+          }
+        }
+      }
+
       // Se menor, salvar guardian
       if (isMinor) {
         final guardianPayload = {
@@ -3010,6 +3116,8 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       }
 
       FFAppState().userType = userType;
+      FFAppState().registrationFlowActive = false;
+      await FFAppState().syncUserType();
 
       if (isMinor &&
           approvalCode != null &&
@@ -3028,12 +3136,26 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         context.goNamed('feed');
       }
     } catch (e) {
-      _showSnackBar('Error al guardar: ${e.toString()}');
+      debugPrint('Error al guardar perfil durante registro: $e');
+      await _abortIncompleteRegistration(e);
     } finally {
       if (mounted) {
         setState(() => _isSavingProfile = false);
       }
     }
+  }
+
+  Future<void> _abortIncompleteRegistration(Object error) async {
+    FFAppState().authBlockMessage =
+        'No se completó el registro. Crea la cuenta nuevamente.';
+    FFAppState().registrationFlowActive = false;
+    try {
+      await authManager.signOut();
+    } catch (signOutError) {
+      debugPrint('Error al cerrar sesión tras registro fallido: $signOutError');
+    }
+    if (!mounted) return;
+    context.goNamed('login');
   }
 
   void _showSnackBar(String message) {

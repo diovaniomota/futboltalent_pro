@@ -80,10 +80,12 @@ class AppStateNotifier extends ChangeNotifier {
 }
 
 Widget _homeForUserType() {
-  // Se o usu\u00e1rio tem sess\u00e3o auth mas n\u00e3o terminou o cadastro (sem row na tabela users),
-  // redireciona para sele\u00e7\u00e3o de tipo para que ele conclua o registro.
+  // Sessao auth sem row em users so continua no cadastro quando o cadastro
+  // comecou nesta execucao do app. Sessoes antigas incompletas voltam ao login.
   if (!FFAppState().registrationComplete) {
-    return SeleccionDelTipoDePerfilWidget();
+    return FFAppState().registrationFlowActive
+        ? const SeleccionDelTipoDePerfilWidget()
+        : const LoginWidget();
   }
   final userType = FFAppState.normalizeUserType(FFAppState().userType);
   if (userType == 'admin') return AdminDashboardWidget();
@@ -134,7 +136,16 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: RegistroClubWidget.routeName,
           path: RegistroClubWidget.routePath,
-          builder: (context, params) => RegistroClubWidget(),
+          builder: (context, params) => RegistroClubWidget(
+            signupEmail: params.getParam(
+              'signupEmail',
+              ParamType.String,
+            ),
+            signupPassword: params.getParam(
+              'signupPassword',
+              ParamType.String,
+            ),
+          ),
         ),
         FFRoute(
           name: ConvocatoriaJugador1Widget.routeName,
