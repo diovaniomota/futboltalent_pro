@@ -300,14 +300,221 @@ class AdminUserManagementService {
   }
 
   static Future<void> _deleteOperationalProfileFallback(String userId) async {
-    await _detachFeedbackFromUser(userId);
-    await SupaFlow.client.from('users').delete().eq('user_id', userId);
+    await _deleteRelatedRowsFallback(userId);
+    await _safeDeleteByColumnValues('videos', 'user_id', {userId});
+    await _safeDeleteByColumnValues('players', 'id', {userId});
+    await _safeDeleteByColumnValues('scouts', 'id', {userId});
+    await _safeDeleteByColumnValues('clubs', 'owner_id', {userId});
+    await _safeDeleteByColumnValues('users', 'user_id', {userId});
   }
 
   static Future<void> _detachFeedbackFromUser(String userId) async {
     await SupaFlow.client
         .from('feedback')
         .update({'user_id': null}).eq('user_id', userId);
+  }
+
+  static Future<void> _deleteRelatedRowsFallback(String userId) async {
+    final compactUserId = userId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    final legacyClubId = compactUserId.length <= 10
+        ? compactUserId
+        : compactUserId.substring(0, 10);
+    final identityIds = <String>{
+      userId,
+      if (legacyClubId.isNotEmpty) legacyClubId
+    };
+    final clubIds = <String>{
+      ...identityIds,
+      ...await _selectTextIds('clubs', 'id', 'owner_id', userId),
+      ...await _selectTextIds('clubs', 'id', 'id', userId),
+    };
+    final videoIds = <String>{
+      ...await _selectTextIds('videos', 'id', 'user_id', userId),
+    };
+    final commentIds = <String>{
+      ...await _selectTextIds('comments', 'id', 'user_id', userId),
+      ...await _selectTextIdsIn('comments', 'id', 'video_id', videoIds),
+    };
+    final convocatoriaIds = <String>{
+      ...await _selectTextIdsIn('convocatorias', 'id', 'club_id', clubIds),
+    };
+    final listaIds = <String>{
+      ...await _selectTextIds('listas', 'id', 'profesional_id', userId),
+      ...await _selectTextIdsIn(
+        'listas',
+        'id',
+        'convocatoria_id',
+        convocatoriaIds,
+      ),
+    };
+    final listaClubIds = <String>{
+      ...await _selectTextIdsIn('listas_club', 'id', 'club_id', clubIds),
+    };
+
+    await _safeDeleteByColumnValues(
+        'comment_reports', 'comment_id', commentIds);
+    await _safeDeleteByColumnValues(
+      'comment_reports',
+      'reporter_user_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues('comments', 'video_id', videoIds);
+    await _safeDeleteByColumnValues('comments', 'user_id', {userId});
+    await _safeDeleteByColumnValues('likes', 'video_id', videoIds);
+    await _safeDeleteByColumnValues('likes', 'user_id', {userId});
+    await _safeDeleteByColumnValues('user_videos_saved', 'video_id', videoIds);
+    await _safeDeleteByColumnValues('user_videos_saved', 'user_id', {userId});
+    await _safeDeleteByColumnValues(
+      'user_challenge_attempts',
+      'video_id',
+      videoIds,
+    );
+    await _safeDeleteByColumnValues(
+      'user_challenge_attempts',
+      'user_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues(
+        'activity_notifications', 'user_id', {userId});
+    await _safeDeleteByColumnValues('activity_notifications', 'entity_id', {
+      userId,
+      ...clubIds,
+      ...videoIds,
+      ...commentIds,
+      ...convocatoriaIds,
+      ...listaIds,
+      ...listaClubIds,
+    });
+    await _safeDeleteByColumnValues('feedback', 'user_id', {userId});
+    await _safeDeleteByColumnValues(
+      'admin_user_feature_overrides',
+      'user_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues('user_badges', 'user_id', {userId});
+    await _safeDeleteByColumnValues('user_stats', 'user_id', {userId});
+    await _safeDeleteByColumnValues(
+        'user_challenge_goals', 'user_id', {userId});
+    await _safeDeleteByColumnValues('followers', 'follower_id', {userId});
+    await _safeDeleteByColumnValues('followers', 'following_id', {userId});
+    await _safeDeleteByColumnValues('follows', 'follower_id', {userId});
+    await _safeDeleteByColumnValues('follows', 'following_id', {userId});
+    await _safeDeleteByColumnValues(
+        'contact_requests', 'from_user_id', {userId});
+    await _safeDeleteByColumnValues('contact_requests', 'to_user_id', {userId});
+    await _safeDeleteByColumnValues(
+      'player_profile_views',
+      'player_user_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues(
+      'player_profile_views',
+      'viewer_user_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues('guardians', 'player_id', {userId});
+    await _safeDeleteByColumnValues(
+        'jugadores_guardados', 'scout_id', {userId});
+    await _safeDeleteByColumnValues(
+        'jugadores_guardados', 'jugador_id', {userId});
+    await _safeDeleteByColumnValues('listas_jugadores', 'jugador_id', {userId});
+    await _safeDeleteByColumnValues('listas_jugadores', 'lista_id', listaIds);
+    await _safeDeleteByColumnValues(
+      'listas_jugadores',
+      'lista_id',
+      listaClubIds,
+    );
+    await _safeDeleteByColumnValues(
+      'aplicaciones_convocatoria',
+      'jugador_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues(
+      'aplicaciones_convocatoria',
+      'convocatoria_id',
+      convocatoriaIds,
+    );
+    await _safeDeleteByColumnValues('postulaciones', 'player_id', {userId});
+    await _safeDeleteByColumnValues(
+      'postulaciones',
+      'convocatoria_id',
+      convocatoriaIds,
+    );
+    await _safeDeleteByColumnValues('listas', 'profesional_id', {userId});
+    await _safeDeleteByColumnValues(
+        'listas', 'convocatoria_id', convocatoriaIds);
+    await _safeDeleteByColumnValues('listas_club', 'club_id', clubIds);
+    await _safeDeleteByColumnValues('convocatorias', 'club_id', clubIds);
+    await _safeDeleteByColumnValues('club_staff', 'user_id', {userId});
+    await _safeDeleteByColumnValues('club_staff', 'club_id', clubIds);
+    await _safeDeleteByColumnValues('clubs', 'id', clubIds);
+    await _safeDeleteByColumnValues('clubes', 'id', identityIds);
+  }
+
+  static Future<List<String>> _selectTextIds(
+    String table,
+    String idColumn,
+    String matchColumn,
+    String matchValue,
+  ) async {
+    try {
+      final response = await SupaFlow.client
+          .from(table)
+          .select(idColumn)
+          .eq(matchColumn, matchValue);
+      return _readTextColumnValues(response, idColumn);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static Future<List<String>> _selectTextIdsIn(
+    String table,
+    String idColumn,
+    String matchColumn,
+    Set<String> matchValues,
+  ) async {
+    final values =
+        matchValues.where((value) => value.trim().isNotEmpty).toList();
+    if (values.isEmpty) return const [];
+    try {
+      final response = await SupaFlow.client
+          .from(table)
+          .select(idColumn)
+          .inFilter(matchColumn, values);
+      return _readTextColumnValues(response, idColumn);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static List<String> _readTextColumnValues(dynamic response, String column) {
+    if (response is! List) return const [];
+    return response
+        .whereType<Map>()
+        .map((row) => row[column]?.toString().trim() ?? '')
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList();
+  }
+
+  static Future<void> _safeDeleteByColumnValues(
+    String table,
+    String column,
+    Set<String> values,
+  ) async {
+    final cleanValues =
+        values.where((value) => value.trim().isNotEmpty).toList();
+    if (cleanValues.isEmpty) return;
+    try {
+      await SupaFlow.client.from(table).delete().inFilter(column, cleanValues);
+    } catch (_) {
+      for (final value in cleanValues) {
+        try {
+          await SupaFlow.client.from(table).delete().eq(column, value);
+        } catch (_) {}
+      }
+    }
   }
 
   static Future<AdminUserOperationResult> _createUserWithAuth(
@@ -567,6 +774,12 @@ class AdminUserManagementService {
     }
     if (normalized.contains('admin_only')) {
       return 'Tu usuario no tiene permisos de administrador para esta accion.';
+    }
+    if (normalized.contains('cannot_delete_self')) {
+      return 'No puedes eliminar tu propio usuario admin.';
+    }
+    if (normalized.contains('cannot_delete_admin_user')) {
+      return 'Los usuarios admin no pueden eliminarse desde esta pantalla.';
     }
     if (_isFeedbackForeignKeyError(error)) {
       return 'Este usuario tiene feedback asociado. Aplica la migracion de baja de usuarios para anonimizar el feedback antes de eliminar.';

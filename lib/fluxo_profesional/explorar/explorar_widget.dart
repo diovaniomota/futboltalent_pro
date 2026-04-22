@@ -26,6 +26,7 @@ enum _JugadorSearchTab { jugadores, convocatorias, clubes, scouts }
 
 String _clubRefFromMap(Map<String, dynamic> club) {
   final values = [
+    club['club_ref'],
     club['id'],
     club['owner_id'],
     club['user_id'],
@@ -312,26 +313,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       );
     } catch (_) {}
     try {
-      final cRes = await SupaFlow.client.from('clubs').select().limit(1500);
-      final listC = List<Map<String, dynamic>>.from(cRes as List);
-      _realClubCountries = buildNormalizedOptions(
-        listC.map(_resolveCountryFromClub),
-        normalizeCountryName,
-      );
-      _realClubStates =
-          buildNormalizedOptions(listC.map(_resolveState), normalizeStateName);
-      _realClubCities =
-          buildNormalizedOptions(listC.map(_resolveCity), normalizeCityName);
-      _realClubLeagues = buildNormalizedOptions(
-        listC.map(_resolveClubLeague),
-        normalizeLeagueName,
-      );
-      // Build country→cities map for clubs
-      _clubCountryCities = _buildCountryCityMap(
-        listC,
-        (row) => normalizeCountryName(_resolveCountryFromClub(row)),
-        (row) => normalizeCityName(_resolveCity(row)),
-      );
+      final listC = await _fetchVisibleExplorerClubs(limit: 1500);
+      _setRealClubFilterOptions(listC);
     } catch (_) {}
     try {
       final convRes = await SupaFlow.client
@@ -455,15 +438,282 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
   Future<void> _loadClubs() async {
     try {
-      final response = await SupaFlow.client
-          .from('clubs')
-          .select()
-          .order('created_at', ascending: false)
-          .limit(80);
-      _clubs = List<Map<String, dynamic>>.from(response);
+      _clubs = await _fetchVisibleExplorerClubs(limit: 1500);
+      _setRealClubFilterOptions(_clubs);
     } catch (_) {
       _clubs = [];
     }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchVisibleExplorerClubs({
+    int limit = 1500,
+  }) async {
+    final clubUsers = await _loadClubUsersForExplorer(limit: limit);
+    if (clubUsers.isEmpty) return const [];
+
+    final ownerByRef = <String, String>{};
+    final ownerDataById = <String, Map<String, dynamic>>{};
+    for (final user in clubUsers) {
+      final ownerId = _cleanRef(user['user_id']);
+      if (ownerId.isEmpty) continue;
+      ownerDataById[ownerId] = user;
+      ownerByRef[ownerId] = ownerId;
+      final legacyRef = _legacyClubRef(ownerId);
+      if (legacyRef.isNotEmpty) {
+        ownerByRef[legacyRef] = ownerId;
+      }
+    }
+
+    final visibleByOwner = <String, Map<String, dynamic>>{};
+
+    final modernRows = await _safeSelectExplorerRows(
+      'clubs',
+      limit: limit,
+      orderByCreatedAt: true,
+    );
+    for (final row in modernRows) {
+      if (_isSoftDeletedRow(row)) continue;
+      final ownerId = _resolveClubOwnerId(row, ownerByRef);
+      if (ownerId.isEmpty) continue;
+      visibleByOwner[ownerId] = _mergeClubWithOwner(
+        row,
+        ownerDataById[ownerId],
+        ownerId,
+        source: 'clubs',
+      );
+    }
+
+    final legacyRows = await _safeSelectExplorerRows(
+      'clubes',
+      limit: limit,
+      orderByCreatedAt: true,
+    );
+    for (final row in legacyRows) {
+      if (_isSoftDeletedRow(row)) continue;
+      final ownerId = _resolveClubOwnerId(row, ownerByRef);
+      if (ownerId.isEmpty || visibleByOwner.containsKey(ownerId)) continue;
+      visibleByOwner[ownerId] = _mergeClubWithOwner(
+        row,
+        ownerDataById[ownerId],
+        ownerId,
+        source: 'clubes',
+      );
+    }
+
+    for (final user in clubUsers) {
+      final ownerId = _cleanRef(user['user_id']);
+      if (ownerId.isEmpty || visibleByOwner.containsKey(ownerId)) continue;
+      visibleByOwner[ownerId] = _clubFromOwnerUser(user);
+    }
+
+    final visible = visibleByOwner.values.toList()
+      ..sort((a, b) => _clubSortValue(b).compareTo(_clubSortValue(a)));
+    return visible.take(limit).toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> _loadClubUsersForExplorer({
+    int limit = 1500,
+  }) async {
+    final byUserId = <String, Map<String, dynamic>>{};
+    final attempts = <Future<dynamic> Function()>[
+      () => SupaFlow.client
+          .from('users')
+          .select()
+          .eq('userType', 'club')
+          .limit(limit),
+      () => SupaFlow.client
+          .from('users')
+          .select()
+          .eq('usertype', 'club')
+          .limit(limit),
+      () => SupaFlow.client.from('users').select().limit(limit),
+    ];
+
+    for (final attempt in attempts) {
+      try {
+        final response = await attempt();
+        for (final user in List<Map<String, dynamic>>.from(response as List)) {
+          if (_isSoftDeletedRow(user)) continue;
+          final type = FFAppState.normalizeUserType(
+            user['userType'] ?? user['usertype'] ?? user['user_type'],
+          );
+          final userId = _cleanRef(user['user_id']);
+          if (type == 'club' && userId.isNotEmpty) {
+            byUserId[userId] = user;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return byUserId.values.toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> _safeSelectExplorerRows(
+    String table, {
+    required int limit,
+    bool orderByCreatedAt = false,
+  }) async {
+    try {
+      dynamic query = SupaFlow.client.from(table).select();
+      if (orderByCreatedAt) {
+        query = query.order('created_at', ascending: false);
+      }
+      final response = await query.limit(limit);
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (_) {
+      try {
+        final response =
+            await SupaFlow.client.from(table).select().limit(limit);
+        return List<Map<String, dynamic>>.from(response as List);
+      } catch (_) {
+        return const [];
+      }
+    }
+  }
+
+  String _resolveClubOwnerId(
+    Map<String, dynamic> club,
+    Map<String, String> ownerByRef,
+  ) {
+    for (final value in [
+      club['owner_id'],
+      club['user_id'],
+      club['id'],
+      club['club_id'],
+    ]) {
+      final ref = _cleanRef(value);
+      final ownerId = ownerByRef[ref];
+      if (ownerId != null && ownerId.isNotEmpty) return ownerId;
+    }
+    return '';
+  }
+
+  Map<String, dynamic> _mergeClubWithOwner(
+    Map<String, dynamic> club,
+    Map<String, dynamic>? ownerData,
+    String ownerId, {
+    required String source,
+  }) {
+    final merged = Map<String, dynamic>.from(club);
+    final modernClubId = source == 'clubs' ? _cleanRef(club['id']) : '';
+    merged['owner_id'] = ownerId;
+    merged['user_id'] = ownerId;
+    merged['club_ref'] = modernClubId.isNotEmpty ? modernClubId : ownerId;
+    merged['owner_data'] = ownerData;
+    merged['nombre'] = _firstNonEmpty([
+          merged['nombre'],
+          merged['name'],
+          merged['club_name'],
+          merged['nombre_corto'],
+          ownerData?['name'],
+        ]) ??
+        'Club';
+    merged['nombre_corto'] = _firstNonEmpty([
+          merged['nombre_corto'],
+          merged['short_name'],
+          merged['name'],
+          ownerData?['name'],
+        ]) ??
+        merged['nombre'];
+    merged['logo_url'] = _firstNonEmpty([
+      merged['logo_url'],
+      merged['escudo_url'],
+      merged['shield_url'],
+      ownerData?['photo_url'],
+    ]);
+    merged['country'] = _firstNonEmpty([
+      merged['country'],
+      merged['pais'],
+      ownerData?['country'],
+      ownerData?['pais'],
+    ]);
+    merged['pais'] = _firstNonEmpty([merged['pais'], merged['country']]);
+    merged['state'] = _firstNonEmpty([
+      merged['state'],
+      merged['estado'],
+      ownerData?['state'],
+      ownerData?['estado'],
+    ]);
+    merged['estado'] = _firstNonEmpty([merged['estado'], merged['state']]);
+    merged['city'] = _firstNonEmpty([
+      merged['city'],
+      merged['ciudad'],
+      ownerData?['city'],
+      ownerData?['ciudad'],
+    ]);
+    merged['ciudad'] = _firstNonEmpty([merged['ciudad'], merged['city']]);
+    merged['is_visible_explorer_club'] = true;
+    return merged;
+  }
+
+  Map<String, dynamic> _clubFromOwnerUser(Map<String, dynamic> user) {
+    final ownerId = _cleanRef(user['user_id']);
+    return _mergeClubWithOwner(
+      {
+        'id': ownerId,
+        'owner_id': ownerId,
+        'user_id': ownerId,
+        'nombre': user['name'],
+        'nombre_corto': user['name'],
+        'logo_url': user['photo_url'],
+        'created_at': user['created_at'],
+      },
+      user,
+      ownerId,
+      source: 'users',
+    );
+  }
+
+  void _setRealClubFilterOptions(List<Map<String, dynamic>> clubs) {
+    _realClubCountries = buildNormalizedOptions(
+      clubs.map(_resolveCountryFromClub),
+      normalizeCountryName,
+    );
+    _realClubStates =
+        buildNormalizedOptions(clubs.map(_resolveState), normalizeStateName);
+    _realClubCities =
+        buildNormalizedOptions(clubs.map(_resolveCity), normalizeCityName);
+    _realClubLeagues = buildNormalizedOptions(
+      clubs.map(_resolveClubLeague),
+      normalizeLeagueName,
+    );
+    _clubCountryCities = _buildCountryCityMap(
+      clubs,
+      (row) => normalizeCountryName(_resolveCountryFromClub(row)),
+      (row) => normalizeCityName(_resolveCity(row)),
+    );
+  }
+
+  String _cleanRef(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isEmpty || text.toLowerCase() == 'null') return '';
+    return text;
+  }
+
+  String _legacyClubRef(String userId) {
+    final compact = userId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    if (compact.isEmpty) return '';
+    return compact.length <= 10 ? compact : compact.substring(0, 10);
+  }
+
+  bool _isSoftDeletedRow(Map<String, dynamic> row) {
+    final deletedAt = row['deleted_at']?.toString().trim() ?? '';
+    if (deletedAt.isNotEmpty && deletedAt.toLowerCase() != 'null') return true;
+    final isDeleted = row['is_deleted'];
+    if (isDeleted is bool) return isDeleted;
+    final deletedText = isDeleted?.toString().trim().toLowerCase() ?? '';
+    return deletedText == 'true' || deletedText == '1';
+  }
+
+  int _clubSortValue(Map<String, dynamic> club) {
+    final raw = _firstNonEmpty([
+      club['created_at'],
+      club['updated_at'],
+      club['owner_data'] is Map
+          ? (club['owner_data'] as Map)['created_at']
+          : null,
+    ]);
+    return DateTime.tryParse(raw ?? '')?.millisecondsSinceEpoch ?? 0;
   }
 
   Future<void> _loadConvocatorias() async {
@@ -636,17 +886,20 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       }
     }
 
-    _convocatorias = _convocatorias.map((conv) {
-      final map = Map<String, dynamic>.from(conv);
-      final clubId = map['club_id']?.toString() ?? '';
-      if (map['club_data'] == null && clubId.isNotEmpty) {
-        final clubData = clubsById[clubId];
-        if (clubData != null) {
-          map['club_data'] = clubData;
-        }
-      }
-      return map;
-    }).toList();
+    _convocatorias = _convocatorias
+        .map((conv) {
+          final map = Map<String, dynamic>.from(conv);
+          final clubId = map['club_id']?.toString() ?? '';
+          if (map['club_data'] == null && clubId.isNotEmpty) {
+            final clubData = clubsById[clubId];
+            if (clubData != null) {
+              map['club_data'] = clubData;
+            }
+          }
+          return map;
+        })
+        .where((conv) => conv['club_data'] is Map)
+        .toList();
   }
 
   Future<void> _hydrateConvocatoriaApplicationCounts(
