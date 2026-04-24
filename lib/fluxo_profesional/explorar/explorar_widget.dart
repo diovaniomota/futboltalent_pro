@@ -449,7 +449,6 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     int limit = 1500,
   }) async {
     final clubUsers = await _loadClubUsersForExplorer(limit: limit);
-    if (clubUsers.isEmpty) return const [];
 
     final ownerByRef = <String, String>{};
     final ownerDataById = <String, Map<String, dynamic>>{};
@@ -473,7 +472,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     );
     for (final row in modernRows) {
       if (_isSoftDeletedRow(row)) continue;
-      final ownerId = _resolveClubOwnerId(row, ownerByRef);
+      var ownerId = _resolveClubOwnerId(row, ownerByRef);
+      if (ownerId.isEmpty) ownerId = _fallbackClubOwnerId(row);
       if (ownerId.isEmpty) continue;
       visibleByOwner[ownerId] = _mergeClubWithOwner(
         row,
@@ -490,7 +490,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     );
     for (final row in legacyRows) {
       if (_isSoftDeletedRow(row)) continue;
-      final ownerId = _resolveClubOwnerId(row, ownerByRef);
+      var ownerId = _resolveClubOwnerId(row, ownerByRef);
+      if (ownerId.isEmpty) ownerId = _fallbackClubOwnerId(row);
       if (ownerId.isEmpty || visibleByOwner.containsKey(ownerId)) continue;
       visibleByOwner[ownerId] = _mergeClubWithOwner(
         row,
@@ -584,6 +585,19 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       final ref = _cleanRef(value);
       final ownerId = ownerByRef[ref];
       if (ownerId != null && ownerId.isNotEmpty) return ownerId;
+    }
+    return '';
+  }
+
+  String _fallbackClubOwnerId(Map<String, dynamic> club) {
+    for (final value in [
+      club['owner_id'],
+      club['user_id'],
+      club['club_id'],
+      club['id'],
+    ]) {
+      final ref = _cleanRef(value);
+      if (ref.isNotEmpty) return ref;
     }
     return '';
   }

@@ -459,6 +459,89 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     } catch (_) {}
   }
 
+  Future<void> _markItemCompletedFromAttempt(Map<String, dynamic> item) async {
+    final itemId = item['id']?.toString().trim() ?? '';
+    final itemType = item['type']?.toString().trim().toLowerCase() ?? '';
+    if (currentUserUid.isEmpty || itemId.isEmpty) return;
+
+    if (itemType == 'course') {
+      try {
+        final existing = await SupaFlow.client
+            .from('user_courses')
+            .select('id, status')
+            .eq('user_id', currentUserUid)
+            .eq('course_id', itemId)
+            .limit(1)
+            .maybeSingle();
+        if (existing != null &&
+            existing['status']?.toString().toLowerCase() == 'completed') {
+          _userCourseStatus[itemId] = 'completed';
+          item['status'] = 'completed';
+          return;
+        }
+        final payload = {
+          'status': 'completed',
+          'completed_at': DateTime.now().toIso8601String(),
+          'progress_percent': 100,
+          'xp_earned': GamificationService.challengeCompletedPoints,
+        };
+        if (existing != null) {
+          await SupaFlow.client
+              .from('user_courses')
+              .update(payload)
+              .eq('id', existing['id']);
+        } else {
+          await SupaFlow.client.from('user_courses').insert({
+            'user_id': currentUserUid,
+            'course_id': itemId,
+            ...payload,
+          });
+        }
+        _userCourseStatus[itemId] = 'completed';
+        item['status'] = 'completed';
+      } catch (e) {
+        debugPrint('Error completing course from attempt: $e');
+      }
+    } else if (itemType == 'exercise') {
+      try {
+        final existing = await SupaFlow.client
+            .from('user_exercises')
+            .select('id, status')
+            .eq('user_id', currentUserUid)
+            .eq('exercise_id', itemId)
+            .limit(1)
+            .maybeSingle();
+        if (existing != null &&
+            existing['status']?.toString().toLowerCase() == 'completed') {
+          _userExerciseStatus[itemId] = 'completed';
+          item['status'] = 'completed';
+          return;
+        }
+        final payload = {
+          'status': 'completed',
+          'last_completed_at': DateTime.now().toIso8601String(),
+          'total_xp_earned': GamificationService.challengeCompletedPoints,
+        };
+        if (existing != null) {
+          await SupaFlow.client
+              .from('user_exercises')
+              .update(payload)
+              .eq('id', existing['id']);
+        } else {
+          await SupaFlow.client.from('user_exercises').insert({
+            'user_id': currentUserUid,
+            'exercise_id': itemId,
+            ...payload,
+          });
+        }
+        _userExerciseStatus[itemId] = 'completed';
+        item['status'] = 'completed';
+      } catch (e) {
+        debugPrint('Error completing exercise from attempt: $e');
+      }
+    }
+  }
+
   Future<_ChallengeAttempt?> _recordAttemptVideo(
     Map<String, dynamic> item,
   ) async {
@@ -605,6 +688,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
 
       _attemptByItemKey[_itemKey(item)] = attempt;
       await _persistAttempts();
+      await _markItemCompletedFromAttempt(item);
 
       try {
         await SupaFlow.client.from('user_challenge_attempts').upsert(
@@ -962,7 +1046,9 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     _ChallengeAttempt? modalAttempt = _attemptByItemKey[itemKey];
     bool isSendingAttempt = false;
     String uploadStateMessage = modalAttempt != null
-        ? 'Tu video ya fue enviado. Ahora completá el desafío para sumar todo el XP.'
+        ? (item['status'] == 'completed'
+            ? 'Tu video ya fue enviado y el desafío está completado.'
+            : 'Tu video ya fue enviado. Ahora completá el desafío para sumar todo el XP.')
         : 'Paso 1 de 2: subí un video para validar este desafío.';
 
     showModalBottomSheet(
@@ -1285,7 +1371,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                             if (attempt != null) {
                                               modalAttempt = attempt;
                                               uploadStateMessage =
-                                                  'Video enviado correctamente. Ahora puedes completar el desafío.';
+                                                  'Video enviado correctamente. Desafío completado.';
                                             } else {
                                               uploadStateMessage =
                                                   'No fue posible subir el video. Intenta nuevamente.';
@@ -1293,6 +1379,12 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                           },
                                         );
                                         safeSetState(() {});
+                                        if (attempt != null &&
+                                            _shouldReturnToConvocatoria) {
+                                          if (!ctx.mounted) return;
+                                          Navigator.pop(ctx);
+                                          _handleChallengeCompleted();
+                                        }
                                       },
                                 style: ElevatedButton.styleFrom(
                                   minimumSize:
@@ -1337,6 +1429,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                               userId: currentUserUid,
                               pointsReward: pointsReward,
                               canComplete: modalAttempt != null,
+                              isCompleted: item['status'] == 'completed',
                               onComplete: () {
                                 Navigator.pop(ctx);
                                 _handleChallengeCompleted();
@@ -1988,6 +2081,7 @@ class _CompletarButton extends StatefulWidget {
   final String userId;
   final int pointsReward;
   final bool canComplete;
+  final bool isCompleted;
   final VoidCallback onComplete;
   const _CompletarButton(
       {required this.itemId,
@@ -1995,6 +2089,7 @@ class _CompletarButton extends StatefulWidget {
       required this.userId,
       required this.pointsReward,
       required this.canComplete,
+      required this.isCompleted,
       required this.onComplete});
   @override
   State<_CompletarButton> createState() => _CompletarButtonState();
@@ -2184,23 +2279,31 @@ class _CompletarButtonState extends State<_CompletarButton> {
 
   @override
   Widget build(BuildContext context) {
-    final isEnabled = widget.canComplete;
-    final title = isEnabled
-        ? 'Completar y recibir +${widget.pointsReward} XP'
-        : 'Disponible después de subir tu video';
-    final icon =
-        isEnabled ? Icons.emoji_events_rounded : Icons.lock_clock_rounded;
+    final isEnabled = widget.canComplete && !widget.isCompleted;
+    final title = widget.isCompleted
+        ? 'Desafío completado'
+        : isEnabled
+            ? 'Completar y recibir +${widget.pointsReward} XP'
+            : 'Disponible después de subir tu video';
+    final icon = widget.isCompleted
+        ? Icons.check_circle_rounded
+        : isEnabled
+            ? Icons.emoji_events_rounded
+            : Icons.lock_clock_rounded;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (isEnabled || _isLoading)
+        if (widget.isCompleted || isEnabled || _isLoading)
           ElevatedButton(
-              onPressed: _isLoading ? null : _markAsCompleted,
+              onPressed:
+                  widget.isCompleted || _isLoading ? null : _markAsCompleted,
               style: ElevatedButton.styleFrom(
                   elevation: 0,
                   backgroundColor: const Color(0xFF48BB78),
-                  disabledBackgroundColor: const Color(0xFF94A3B8),
+                  disabledBackgroundColor: widget.isCompleted
+                      ? const Color(0xFF48BB78)
+                      : const Color(0xFF94A3B8),
                   minimumSize: const Size(double.infinity, 52),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12))),
@@ -2263,9 +2366,11 @@ class _CompletarButtonState extends State<_CompletarButton> {
           ),
         const SizedBox(height: 8),
         Text(
-          isEnabled
-              ? 'Feedback inmediato y progreso actualizado'
-              : 'Primero subí tu video. Este paso se habilita cuando ya existe un intento cargado.',
+          widget.isCompleted
+              ? 'Video recibido y progreso actualizado'
+              : isEnabled
+                  ? 'Feedback inmediato y progreso actualizado'
+                  : 'Primero subí tu video. Este paso se habilita cuando ya existe un intento cargado.',
           textAlign: TextAlign.center,
           style: GoogleFonts.inter(
             color: Colors.white.withValues(alpha: 0.6),

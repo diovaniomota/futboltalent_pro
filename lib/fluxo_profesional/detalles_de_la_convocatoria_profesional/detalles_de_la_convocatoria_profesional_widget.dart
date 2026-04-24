@@ -104,13 +104,45 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
           .select('id')
           .eq('convocatoria_id', widget.convocatoriasID!)
           .eq('jugador_id', uid)
+          .limit(1)
           .maybeSingle();
+      var hasApplied = res != null;
+      if (!hasApplied) {
+        hasApplied = await _hasLegacyPostulacion(uid);
+      }
       if (mounted) {
-        setState(() => _hasApplied = res != null);
+        setState(() => _hasApplied = hasApplied);
       }
     } catch (e) {
+      final hasApplied = await _hasLegacyPostulacion(uid);
+      if (mounted) {
+        setState(() => _hasApplied = hasApplied);
+      }
       debugPrint('Error checking application status: $e');
     }
+  }
+
+  Future<bool> _hasLegacyPostulacion(String userId) async {
+    final convId = widget.convocatoriasID?.trim() ?? '';
+    if (convId.isEmpty || userId.isEmpty) return false;
+
+    Future<bool> existsByColumn(String column) async {
+      try {
+        final response = await SupaFlow.client
+            .from('postulaciones')
+            .select('id')
+            .eq('convocatoria_id', convId)
+            .eq(column, userId)
+            .limit(1)
+            .maybeSingle();
+        return response != null;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    return await existsByColumn('player_id') ||
+        await existsByColumn('jugador_id');
   }
 
   List<Map<String, dynamic>> _parseRequiredChallenges(dynamic raw) {
@@ -560,14 +592,36 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
     }
     setState(() => _isApplying = true);
     try {
-      await SupaFlow.client.from('aplicaciones_convocatoria').insert({
+      final now = DateTime.now().toIso8601String();
+      final message = _mensajeController.text.trim().isNotEmpty
+          ? _mensajeController.text.trim()
+          : null;
+      final existing = await SupaFlow.client
+          .from('aplicaciones_convocatoria')
+          .select('id')
+          .eq('convocatoria_id', widget.convocatoriasID!)
+          .eq('jugador_id', uid)
+          .limit(1)
+          .maybeSingle();
+      final payload = {
         'convocatoria_id': widget.convocatoriasID,
         'jugador_id': uid,
         'estado': 'pendiente',
-        'mensaje': _mensajeController.text.trim().isNotEmpty
-            ? _mensajeController.text.trim()
-            : null
-      });
+        'mensaje': message,
+        'updated_at': now,
+      };
+      if (existing != null) {
+        await SupaFlow.client
+            .from('aplicaciones_convocatoria')
+            .update(payload)
+            .eq('id', existing['id']);
+      } else {
+        await SupaFlow.client.from('aplicaciones_convocatoria').insert({
+          ...payload,
+          'created_at': now,
+        });
+      }
+      await _mirrorLegacyPostulacion(userId: uid, createdAt: now);
       if (mounted) {
         setState(() {
           _hasApplied = true;
@@ -585,6 +639,40 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
             backgroundColor: Colors.red));
       }
     }
+  }
+
+  Future<void> _mirrorLegacyPostulacion({
+    required String userId,
+    required String createdAt,
+  }) async {
+    final convId = widget.convocatoriasID?.trim() ?? '';
+    if (convId.isEmpty || userId.isEmpty) return;
+    try {
+      final existing = await SupaFlow.client
+          .from('postulaciones')
+          .select('id')
+          .eq('convocatoria_id', convId)
+          .eq('player_id', userId)
+          .limit(1)
+          .maybeSingle();
+      final payload = {
+        'convocatoria_id': convId,
+        'player_id': userId,
+        'estado': 'pendiente',
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      if (existing != null) {
+        await SupaFlow.client
+            .from('postulaciones')
+            .update(payload)
+            .eq('id', existing['id']);
+      } else {
+        await SupaFlow.client.from('postulaciones').insert({
+          ...payload,
+          'created_at': createdAt,
+        });
+      }
+    } catch (_) {}
   }
 
   void _login() {

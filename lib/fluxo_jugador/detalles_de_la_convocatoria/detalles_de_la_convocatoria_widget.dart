@@ -1,6 +1,7 @@
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -112,11 +113,44 @@ class _DetallesDeLaConvocatoriaWidgetState
           .select('id')
           .eq('convocatoria_id', widget.convocatoriaId!)
           .eq('jugador_id', userId)
+          .limit(1)
           .maybeSingle();
-      if (mounted) setState(() => _hasApplied = response != null);
+      var hasApplied = response != null;
+      if (!hasApplied) {
+        hasApplied = await _hasLegacyPostulacion(userId);
+      }
+      if (mounted) setState(() => _hasApplied = hasApplied);
     } catch (e) {
-      debugPrint('Error al verificar aplicación: $e');
+      try {
+        final hasApplied = await _hasLegacyPostulacion(userId);
+        if (mounted) setState(() => _hasApplied = hasApplied);
+      } catch (_) {
+        debugPrint('Error al verificar aplicación: $e');
+      }
     }
+  }
+
+  Future<bool> _hasLegacyPostulacion(String userId) async {
+    final convId = widget.convocatoriaId?.trim() ?? '';
+    if (convId.isEmpty || userId.isEmpty) return false;
+
+    Future<bool> existsByColumn(String column) async {
+      try {
+        final response = await SupaFlow.client
+            .from('postulaciones')
+            .select('id')
+            .eq('convocatoria_id', convId)
+            .eq(column, userId)
+            .limit(1)
+            .maybeSingle();
+        return response != null;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    return await existsByColumn('player_id') ||
+        await existsByColumn('jugador_id');
   }
 
   List<Map<String, dynamic>> _parseRequiredChallenges(dynamic raw) {
@@ -180,6 +214,70 @@ class _DetallesDeLaConvocatoriaWidgetState
     return _requiredChallenges.every(_isRequiredChallengeCompleted);
   }
 
+  Future<void> _persistRequiredChallengeCompletions(String userId) async {
+    for (final challenge in _requiredChallenges) {
+      if (!_isRequiredChallengeCompleted(challenge)) continue;
+      final id = challenge['id']?.toString().trim() ?? '';
+      final type = challenge['type']?.toString().trim().toLowerCase() ?? '';
+      if (id.isEmpty) continue;
+
+      if (type == 'course') {
+        try {
+          final existing = await SupaFlow.client
+              .from('user_courses')
+              .select('id')
+              .eq('user_id', userId)
+              .eq('course_id', id)
+              .limit(1)
+              .maybeSingle();
+          final payload = {
+            'status': 'completed',
+            'completed_at': DateTime.now().toIso8601String(),
+            'progress_percent': 100,
+          };
+          if (existing != null) {
+            await SupaFlow.client
+                .from('user_courses')
+                .update(payload)
+                .eq('id', existing['id']);
+          } else {
+            await SupaFlow.client.from('user_courses').insert({
+              'user_id': userId,
+              'course_id': id,
+              ...payload,
+            });
+          }
+        } catch (_) {}
+      } else if (type == 'exercise') {
+        try {
+          final existing = await SupaFlow.client
+              .from('user_exercises')
+              .select('id')
+              .eq('user_id', userId)
+              .eq('exercise_id', id)
+              .limit(1)
+              .maybeSingle();
+          final payload = {
+            'status': 'completed',
+            'last_completed_at': DateTime.now().toIso8601String(),
+          };
+          if (existing != null) {
+            await SupaFlow.client
+                .from('user_exercises')
+                .update(payload)
+                .eq('id', existing['id']);
+          } else {
+            await SupaFlow.client.from('user_exercises').insert({
+              'user_id': userId,
+              'exercise_id': id,
+              ...payload,
+            });
+          }
+        } catch (_) {}
+      }
+    }
+  }
+
   Future<void> _loadRequiredChallengesProgress() async {
     final requiredChallenges =
         _parseRequiredChallenges(_convocatoria?['required_challenges']);
@@ -234,6 +332,37 @@ class _DetallesDeLaConvocatoriaWidgetState
         }
       } catch (e) {
         debugPrint('Error al cargar progreso de ejercicios: $e');
+      }
+
+      try {
+        final challengeIds = [
+          ...courseIds.map((id) => {'type': 'course', 'id': id}),
+          ...exerciseIds.map((id) => {'type': 'exercise', 'id': id}),
+        ];
+        if (challengeIds.isNotEmpty) {
+          final rows = await SupaFlow.client
+              .from('user_challenge_attempts')
+              .select('item_id, item_type, status')
+              .eq('user_id', userId)
+              .inFilter(
+                'item_id',
+                challengeIds.map((item) => item['id']!).toSet().toList(),
+              );
+          for (final row in List<Map<String, dynamic>>.from(rows as List)) {
+            final id = row['item_id']?.toString().trim() ?? '';
+            final type =
+                row['item_type']?.toString().trim().toLowerCase() ?? '';
+            final status = row['status']?.toString().trim().toLowerCase() ?? '';
+            if (id.isEmpty || (type != 'course' && type != 'exercise')) {
+              continue;
+            }
+            if (status == 'submitted' || status == 'completed') {
+              _requiredChallengeCompletion['$type:$id'] = true;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Error al cargar intentos de desafíos: $e');
       }
     }
 
@@ -409,14 +538,40 @@ class _DetallesDeLaConvocatoriaWidgetState
 
     setState(() => _isApplying = true);
     try {
-      await SupaFlow.client.from('aplicaciones_convocatoria').insert({
+      await _persistRequiredChallengeCompletions(userId);
+
+      final now = DateTime.now().toIso8601String();
+      final message = _mensajeController.text.trim().isNotEmpty
+          ? _mensajeController.text.trim()
+          : null;
+      final existing = await SupaFlow.client
+          .from('aplicaciones_convocatoria')
+          .select('id')
+          .eq('convocatoria_id', widget.convocatoriaId!)
+          .eq('jugador_id', userId)
+          .limit(1)
+          .maybeSingle();
+      final payload = {
         'convocatoria_id': widget.convocatoriaId,
         'jugador_id': userId,
         'estado': 'pendiente',
-        'mensaje': _mensajeController.text.trim().isNotEmpty
-            ? _mensajeController.text.trim()
-            : null,
-      });
+        'mensaje': message,
+        'updated_at': now,
+      };
+      if (existing != null) {
+        await SupaFlow.client
+            .from('aplicaciones_convocatoria')
+            .update(payload)
+            .eq('id', existing['id']);
+      } else {
+        await SupaFlow.client.from('aplicaciones_convocatoria').insert({
+          ...payload,
+          'created_at': now,
+        });
+      }
+
+      await _mirrorLegacyPostulacion(userId: userId, createdAt: now);
+      await _notifyApplicationSubmitted(userId);
 
       if (mounted) {
         setState(() {
@@ -436,6 +591,99 @@ class _DetallesDeLaConvocatoriaWidgetState
             backgroundColor: Colors.red));
       }
     }
+  }
+
+  Future<void> _mirrorLegacyPostulacion({
+    required String userId,
+    required String createdAt,
+  }) async {
+    final convId = widget.convocatoriaId?.trim() ?? '';
+    if (convId.isEmpty || userId.isEmpty) return;
+    try {
+      final existing = await SupaFlow.client
+          .from('postulaciones')
+          .select('id')
+          .eq('convocatoria_id', convId)
+          .eq('player_id', userId)
+          .limit(1)
+          .maybeSingle();
+      final payload = {
+        'convocatoria_id': convId,
+        'player_id': userId,
+        'estado': 'pendiente',
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      if (existing != null) {
+        await SupaFlow.client
+            .from('postulaciones')
+            .update(payload)
+            .eq('id', existing['id']);
+      } else {
+        await SupaFlow.client.from('postulaciones').insert({
+          ...payload,
+          'created_at': createdAt,
+        });
+      }
+    } catch (_) {}
+  }
+
+  String _firstNonEmptyText(Iterable<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
+    }
+    return '';
+  }
+
+  Future<void> _notifyApplicationSubmitted(String userId) async {
+    final convId = widget.convocatoriaId?.trim() ?? '';
+    if (convId.isEmpty || userId.isEmpty) return;
+
+    try {
+      final title = _convocatoria?['titulo']?.toString() ?? 'Convocatoria';
+      final clubName = _firstNonEmptyText([
+        _clubData?['nombre'],
+        _clubData?['club_name'],
+        _clubData?['name'],
+        _convocatoria?['club_name'],
+        _convocatoria?['nombre_club'],
+      ]);
+      await ActivityNotificationsService.notifyPlayerApplicationSubmitted(
+        playerId: userId,
+        convocatoriaId: convId,
+        convocatoriaTitle: title,
+        clubName: clubName,
+      );
+
+      final clubUserId = _firstNonEmptyText([
+        _clubData?['owner_id'],
+        _clubData?['user_id'],
+        _convocatoria?['club_id'],
+      ]);
+      if (clubUserId.isEmpty) return;
+
+      String playerName = '';
+      try {
+        final player = await SupaFlow.client
+            .from('users')
+            .select('name, lastname')
+            .eq('user_id', userId)
+            .limit(1)
+            .maybeSingle();
+        playerName = _firstNonEmptyText([
+          '${player?['name'] ?? ''} ${player?['lastname'] ?? ''}'.trim(),
+          player?['name'],
+        ]);
+      } catch (_) {}
+
+      await ActivityNotificationsService.notifyClubNewApplication(
+        clubUserId: clubUserId,
+        convocatoriaId: convId,
+        convocatoriaTitle: title,
+        playerId: userId,
+        playerName: playerName,
+      );
+    } catch (_) {}
   }
 
   void _showLoginRequired() {

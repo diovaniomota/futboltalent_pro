@@ -1,8 +1,10 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/location_data.dart' as location_data;
 import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/fluxo_compartilhado/profile_support_sheet.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
+import '/fluxo_compartilhado/video_like_utils.dart';
 import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
@@ -63,13 +65,9 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
 
   String _profileLocationText() {
     final country = normalizeCountryName(
-      _userData?['country'] ??
-          _userData?['pais'] ??
-          _userData?['nationality'] ??
-          _userData?['nacionalidad'] ??
-          '',
+      _userData?['country'] ?? _userData?['pais'] ?? '',
     );
-    final state = normalizeStateName(
+    var state = normalizeStateName(
       _userData?['state'] ??
           _userData?['estado'] ??
           _userData?['province'] ??
@@ -77,13 +75,41 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           _userData?['region'] ??
           '',
     );
-    final city = normalizeCityName(
+    var city = normalizeCityName(
       _userData?['city'] ??
           _userData?['ciudad'] ??
           _userData?['location'] ??
           _userData?['ubicacion'] ??
           '',
     );
+
+    if (country.isNotEmpty) {
+      if (state.isNotEmpty) {
+        final knownState = location_data.findHardcodedState(country, state);
+        if (knownState != null) {
+          state = knownState;
+        } else if (location_data.hasHardcodedStatesForCountry(country)) {
+          state = '';
+        }
+      }
+
+      if (city.isNotEmpty) {
+        final hasKnownCountryCities =
+            location_data.hasHardcodedCitiesForCountry(country);
+        final hasKnownStateCities = state.isNotEmpty &&
+            location_data.getHardcodedCities(country, state).isNotEmpty;
+        final knownCity = hasKnownStateCities
+            ? location_data.findHardcodedCityForState(country, state, city)
+            : location_data.findHardcodedCityForCountry(country, city);
+
+        if (knownCity != null) {
+          city = knownCity;
+        } else if (hasKnownCountryCities) {
+          city = '';
+        }
+      }
+    }
+
     final parts = <String>[];
     for (final value in [city, state, country]) {
       if (value.isEmpty) continue;
@@ -3492,14 +3518,21 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
   }
 
   Future<void> _checkIfLiked() async {
+    final videoId = widget.videoData['id']?.toString() ?? '';
+    if (videoId.isEmpty) return;
     try {
-      final response = await SupaFlow.client
-          .from('likes')
-          .select('id')
-          .eq('video_id', widget.videoData['id'])
-          .eq('user_id', widget.userId)
-          .maybeSingle();
-      if (mounted) setState(() => _isLiked = response != null);
+      final snapshot = await fetchVideoLikeSnapshot(
+        videoId: videoId,
+        userId: widget.userId,
+        fallbackCount: _likesCount,
+      );
+      if (mounted) {
+        setState(() {
+          _isLiked = snapshot.isLiked;
+          _likesCount = snapshot.count;
+          widget.videoData['likes_count'] = snapshot.count;
+        });
+      }
     } catch (e) {
       debugPrint('Error checking if liked: $e');
     }
@@ -3528,14 +3561,41 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
             .eq('user_id', widget.userId)
             .eq('video_id', widget.videoData['id']);
       }
-      await SupaFlow.client.from('videos').update(
-          {'likes_count': _likesCount}).eq('id', widget.videoData['id']);
-    } catch (e) {
+      final snapshot = await fetchVideoLikeSnapshot(
+        videoId: widget.videoData['id']?.toString() ?? '',
+        userId: widget.userId,
+        fallbackCount: _likesCount,
+      );
       if (mounted) {
         setState(() {
-          _isLiked = prev;
-          _likesCount = prevCount;
+          _isLiked = snapshot.isLiked;
+          _likesCount = snapshot.count;
+          widget.videoData['likes_count'] = snapshot.count;
         });
+      }
+      await persistVideoLikeCount(
+        videoId: widget.videoData['id']?.toString() ?? '',
+        count: snapshot.count,
+      );
+    } catch (e) {
+      if (mounted) {
+        try {
+          final snapshot = await fetchVideoLikeSnapshot(
+            videoId: widget.videoData['id']?.toString() ?? '',
+            userId: widget.userId,
+            fallbackCount: prevCount,
+          );
+          setState(() {
+            _isLiked = snapshot.isLiked;
+            _likesCount = snapshot.count;
+            widget.videoData['likes_count'] = snapshot.count;
+          });
+        } catch (_) {
+          setState(() {
+            _isLiked = prev;
+            _likesCount = prevCount;
+          });
+        }
       }
     }
   }

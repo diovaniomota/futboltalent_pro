@@ -190,19 +190,18 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               .from('convocatorias')
               .select()
               .eq('club_id', _clubRefs.first)
-              .eq('is_active', true)
               .order('created_at', ascending: false)
               .limit(60)
           : await SupaFlow.client
               .from('convocatorias')
               .select()
               .inFilter('club_id', _clubRefs.toList())
-              .eq('is_active', true)
               .order('created_at', ascending: false)
               .limit(60);
 
-      _activeConvocatorias =
-          List<Map<String, dynamic>>.from(convocatoriasResponse);
+      _activeConvocatorias = List<Map<String, dynamic>>.from(
+        convocatoriasResponse,
+      ).where(_isActiveConvocatoriaRow).toList();
 
       final convocatoriaIds = _activeConvocatorias
           .map((c) => c['id']?.toString() ?? '')
@@ -243,6 +242,21 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  bool _isActiveConvocatoriaRow(Map<String, dynamic> row) {
+    final estado = row['estado']?.toString().trim().toLowerCase() ?? '';
+    if (row['is_active'] == false) return false;
+    if (estado == 'cerrada' ||
+        estado == 'cerrado' ||
+        estado == 'closed' ||
+        estado == 'inactiva') {
+      return false;
+    }
+    return row['is_active'] == true ||
+        estado.isEmpty ||
+        estado == 'activa' ||
+        estado == 'active';
   }
 
   Future<void> _loadViewerCapabilities() async {

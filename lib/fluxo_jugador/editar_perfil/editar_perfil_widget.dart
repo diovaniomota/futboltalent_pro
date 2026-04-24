@@ -1,6 +1,7 @@
 import 'dart:async';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/location_data.dart' as location_data;
 import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -2328,6 +2329,87 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     return list;
   }
 
+  String? _findNormalizedOption(Iterable<String> options, String? value) {
+    final key = normalizeLookupKey(value);
+    if (key.isEmpty) return null;
+
+    for (final option in options) {
+      if (normalizeLookupKey(option) == key) {
+        return option;
+      }
+    }
+    return null;
+  }
+
+  bool _hasNormalizedOption(Iterable<String> options, String? value) =>
+      _findNormalizedOption(options, value) != null;
+
+  void _validateLocationSelection({
+    required String country,
+    required String state,
+    required String city,
+  }) {
+    if (country.isEmpty) {
+      if (state.isEmpty && city.isEmpty) return;
+      throw Exception('Selecciona un país válido para completar la ubicación.');
+    }
+
+    if (_countryOptions.isNotEmpty && _selectedCountryId == null) {
+      throw Exception('Selecciona un país de la lista para continuar.');
+    }
+
+    final knownStates = _states.isNotEmpty
+        ? _states
+        : location_data.getHardcodedStates(country);
+    final countryHasKnownStates = knownStates.isNotEmpty ||
+        location_data.hasHardcodedStatesForCountry(country);
+
+    if (state.isNotEmpty &&
+        countryHasKnownStates &&
+        !_hasNormalizedOption(knownStates, state)) {
+      throw Exception(
+        'El estado/provincia seleccionado no pertenece al país elegido.',
+      );
+    }
+
+    if (city.isEmpty) return;
+
+    if (countryHasKnownStates && state.isEmpty) {
+      throw Exception(
+        'Selecciona un estado/provincia antes de elegir la ciudad.',
+      );
+    }
+
+    final knownStateCities = state.isNotEmpty
+        ? (_cities.isNotEmpty
+            ? _cities
+            : location_data.getHardcodedCities(country, state))
+        : <String>[];
+    final countryHasKnownCities =
+        location_data.hasHardcodedCitiesForCountry(country);
+
+    if (knownStateCities.isNotEmpty) {
+      if (!_hasNormalizedOption(knownStateCities, city)) {
+        throw Exception(
+          'La ciudad seleccionada no pertenece al estado/provincia elegido.',
+        );
+      }
+      return;
+    }
+
+    final knownCountryCities = _cities.isNotEmpty
+        ? _cities
+        : location_data.getHardcodedCitiesForCountry(country);
+    if (knownCountryCities.isNotEmpty &&
+        !_hasNormalizedOption(knownCountryCities, city)) {
+      throw Exception('La ciudad seleccionada no pertenece al país elegido.');
+    }
+
+    if (knownCountryCities.isEmpty && countryHasKnownCities) {
+      throw Exception('La ciudad seleccionada no pertenece al país elegido.');
+    }
+  }
+
   Future<void> _initializeLocationDropdowns() async {
     final country = normalizeCountryName(_countryController?.text);
     if (country.isEmpty) return;
@@ -2363,14 +2445,17 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 normalizeLookupKey(s) == normalizeLookupKey(preferredStateText),
             orElse: () => null,
           );
-      final selectedState = matchedState ??
-          (preferredStateText.isNotEmpty ? preferredStateText : null);
+      final selectedState = matchedState;
       if (!mounted) return;
       setState(() {
         _states = hardcoded;
         _isStatesLoading = false;
         _selectedState = selectedState;
         _stateController?.text = selectedState ?? '';
+        if (selectedState == null) {
+          _selectedCity = null;
+          _cityController?.text = '';
+        }
       });
       if (selectedState != null) {
         await _loadCitiesByState(countryName, selectedState,
@@ -2406,13 +2491,6 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       }
 
       if (_states.isEmpty) {
-        if (preferredStateText.isNotEmpty) {
-          setState(() {
-            _selectedState = preferredStateText;
-            _stateController?.text = preferredStateText;
-            _states = [preferredStateText];
-          });
-        }
         await _loadCitiesDirectly(apiName, preferredCity: preferredCityText);
         return;
       }
@@ -2425,18 +2503,16 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             orElse: () => null,
           );
 
-      final selectedState = matchedState ??
-          (normalizedPreferred.isNotEmpty ? normalizedPreferred : null);
+      final selectedState = matchedState;
 
       if (!mounted) return;
       setState(() {
-        if (selectedState != null &&
-            !_states.any((s) =>
-                normalizeLookupKey(s) == normalizeLookupKey(selectedState))) {
-          _states = [selectedState, ..._states];
-        }
         _selectedState = selectedState;
         _stateController?.text = selectedState ?? '';
+        if (selectedState == null) {
+          _selectedCity = null;
+          _cityController?.text = '';
+        }
       });
 
       if (selectedState != null) {
@@ -2448,13 +2524,6 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       }
     } catch (e) {
       debugPrint('Error al cargar estados: $e');
-      if (preferredStateText.isNotEmpty && mounted) {
-        setState(() {
-          _selectedState = preferredStateText;
-          _stateController?.text = preferredStateText;
-          _states = [preferredStateText];
-        });
-      }
       await _loadCitiesDirectly(apiName, preferredCity: preferredCityText);
     } finally {
       if (mounted) {
@@ -2481,17 +2550,10 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 normalizeLookupKey(c) == normalizeLookupKey(preferredCityText),
             orElse: () => null,
           );
-      final selectedCity = matchedCity ??
-          (preferredCityText.isNotEmpty ? preferredCityText : null);
+      final selectedCity = matchedCity;
       if (!mounted) return;
       setState(() {
-        final list = List<String>.from(hardcodedForCountry);
-        if (selectedCity != null &&
-            !list.any((c) =>
-                normalizeLookupKey(c) == normalizeLookupKey(selectedCity))) {
-          list.insert(0, selectedCity);
-        }
-        _cities = list;
+        _cities = List<String>.from(hardcodedForCountry);
         _selectedCity = selectedCity;
         _cityController?.text = selectedCity ?? '';
         _isCitiesLoading = false;
@@ -2525,24 +2587,20 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 orElse: () => null,
               );
 
-          final selectedCity = matchedCity ??
-              (normalizedPreferred.isNotEmpty ? normalizedPreferred : null);
+          final selectedCity = matchedCity;
 
           if (!mounted) return;
           setState(() {
-            if (selectedCity != null &&
-                !cityList.any((c) =>
-                    normalizeLookupKey(c) ==
-                    normalizeLookupKey(selectedCity))) {
-              cityList.insert(0, selectedCity);
-            }
             _cities = cityList;
             _selectedCity = selectedCity;
             _cityController?.text = selectedCity ?? '';
           });
         }
       }
-      if (_cities.isEmpty && preferredCityText.isNotEmpty && mounted) {
+      if (_cities.isEmpty &&
+          preferredCityText.isNotEmpty &&
+          !location_data.hasHardcodedCitiesForCountry(apiCountryName) &&
+          mounted) {
         setState(() {
           _cities = [preferredCityText];
           _selectedCity = preferredCityText;
@@ -2551,7 +2609,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       }
     } catch (e) {
       debugPrint('Error al cargar ciudades: $e');
-      if (preferredCityText.isNotEmpty && mounted) {
+      if (preferredCityText.isNotEmpty &&
+          !location_data.hasHardcodedCitiesForCountry(apiCountryName) &&
+          mounted) {
         setState(() {
           _cities = [preferredCityText];
           _selectedCity = preferredCityText;
@@ -2589,17 +2649,10 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 normalizeLookupKey(c) == normalizeLookupKey(preferredCityText),
             orElse: () => null,
           );
-      final selectedCity = matchedCity ??
-          (preferredCityText.isNotEmpty ? preferredCityText : null);
+      final selectedCity = matchedCity;
       if (!mounted) return;
       setState(() {
-        final list = List<String>.from(hardcodedForState);
-        if (selectedCity != null &&
-            !list.any((c) =>
-                normalizeLookupKey(c) == normalizeLookupKey(selectedCity))) {
-          list.insert(0, selectedCity);
-        }
-        _cities = list;
+        _cities = List<String>.from(hardcodedForState);
         _selectedCity = selectedCity;
         _cityController?.text = selectedCity ?? '';
         _isCitiesLoading = false;
@@ -2634,17 +2687,10 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 orElse: () => null,
               );
 
-          final selectedCity = matchedCity ??
-              (normalizedPreferred.isNotEmpty ? normalizedPreferred : null);
+          final selectedCity = matchedCity;
 
           if (!mounted) return;
           setState(() {
-            if (selectedCity != null &&
-                !cityList.any((c) =>
-                    normalizeLookupKey(c) ==
-                    normalizeLookupKey(selectedCity))) {
-              cityList.insert(0, selectedCity);
-            }
             _cities = cityList;
             _selectedCity = selectedCity;
             _cityController?.text = selectedCity ?? '';
@@ -3130,6 +3176,11 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       final state = normalizeStateName(_stateController?.text);
       final city = normalizeCityName(_cityController?.text);
       _applySelectedCountryByName(country, updateController: false);
+      _validateLocationSelection(
+        country: country,
+        state: state,
+        city: city,
+      );
       final normalizedPosition =
           normalizePlayerPosition(_posicaoController?.text);
       final normalizedCategory = normalizePlayerCategory(
