@@ -53,7 +53,7 @@ void main() async {
           child: Padding(
             padding: const EdgeInsets.all(20.0),
             child: Text(
-              'Error al iniciar la app:\n$e\n\nRevisá los registros de consola para más detalles.',
+              'No pudimos iniciar la aplicación. Verifica tu conexión a internet o intenta reiniciar la app.\n\nDetalles:\n$e',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.red),
             ),

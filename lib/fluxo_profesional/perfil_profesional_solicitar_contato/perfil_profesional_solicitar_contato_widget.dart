@@ -498,7 +498,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
       if (mounted) {
         setState(() => _isProcessing = false);
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+            const SnackBar(content: Text('No pudimos enviar tu solicitud. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red));
       }
     }
   }
@@ -652,7 +652,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('No pudimos agregar el jugador. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
         );
       }
     }
@@ -738,7 +738,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          const SnackBar(content: Text('No pudimos abrir la lista. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
         );
       }
     }
@@ -2170,7 +2170,7 @@ class _AddToListBottomSheetState extends State<_AddToListBottomSheet> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('Error: $e')));
+              .showSnackBar(const SnackBar(content: Text('No pudimos crear la lista. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red));
         }
       }
     }

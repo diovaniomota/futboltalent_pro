@@ -36,9 +36,7 @@ class SupabaseAuthManager extends AuthManager with EmailSignInManager {
     } on AuthException catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.message}')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No pudimos eliminar tu cuenta. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red));
     }
   }
 
@@ -56,9 +54,7 @@ class SupabaseAuthManager extends AuthManager with EmailSignInManager {
     } on AuthException catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.message}')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No pudimos actualizar tu correo. Verifica los datos e intenta de nuevo.'), backgroundColor: Colors.red));
       return;
     }
     if (!context.mounted) return;
@@ -80,9 +76,7 @@ class SupabaseAuthManager extends AuthManager with EmailSignInManager {
     } on AuthException catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.message}')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No pudimos actualizar tu contraseña. Verifica los datos e intenta de nuevo.'), backgroundColor: Colors.red));
       return;
     }
     if (!context.mounted) return;
@@ -103,9 +97,7 @@ class SupabaseAuthManager extends AuthManager with EmailSignInManager {
     } on AuthException catch (e) {
       if (!context.mounted) return null;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.message}')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No pudimos enviar el correo de recuperación. Verifica el correo e intenta de nuevo.'), backgroundColor: Colors.red));
       return null;
     }
     if (!context.mounted) return;

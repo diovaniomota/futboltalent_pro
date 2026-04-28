@@ -2899,12 +2899,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     } catch (e) {
       debugPrint('Error al seleccionar imagen: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al seleccionar imagen: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos procesar tu imagen. Verifica tu conexión e intenta de nuevo con una imagen más liviana.'),
+            backgroundColor: Colors.red));
       }
     }
   }
@@ -2981,12 +2978,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     } catch (e) {
       debugPrint('Error al subir imagen: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al subir imagen: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos subir tu imagen. Verifica tu conexión e intenta de nuevo con una imagen más liviana.'),
+            backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) {
@@ -3041,12 +3035,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     } catch (e) {
       debugPrint('Error al eliminar foto: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al eliminar foto: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos eliminar la foto en este momento. Intenta de nuevo más tarde.'),
+            backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) {
@@ -3432,12 +3423,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     } catch (e) {
       debugPrint('Error al guardar: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al guardar: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Hubo un problema al guardar tus cambios. Por favor, verifica tu conexión e intenta nuevamente.'),
+            backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) {

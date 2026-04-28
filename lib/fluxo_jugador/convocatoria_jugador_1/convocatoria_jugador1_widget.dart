@@ -124,6 +124,83 @@ class _ConvocatoriaJugador1WidgetState
         conv['active_convocatorias_count'] = activeCountByClub[clubId] ?? 0;
       }
 
+      // 9.2 — Buscar dados do jogador atual para matching
+      Map<String, dynamic>? userData;
+      final currentUserId = SupaFlow.client.auth.currentUser?.id;
+      if (currentUserId != null) {
+        try {
+          userData = await SupaFlow.client
+              .from('users')
+              .select()
+              .eq('id', currentUserId)
+              .maybeSingle();
+        } catch (e) {
+          debugPrint('Erro ao buscar dados do usuario para matching: $e');
+        }
+      }
+
+      // Ordenar convocatórias por compatibilidade
+      if (userData != null) {
+        final playerPosicion = normalizePlayerPosition(userData['position'] ?? userData['posicion']);
+        final playerBirthDate = userData['birth_date'] ?? userData['fecha_nacimiento'] ?? userData['birthday'] ?? '';
+        final playerCategoria = normalizePlayerCategory(userData['categoria'] ?? '', birthday: playerBirthDate);
+
+        // Calculate age for min/max matching
+        int playerAge = 0;
+        if (playerBirthDate != null && playerBirthDate.toString().isNotEmpty) {
+            try {
+              String bdStr = playerBirthDate.toString();
+              DateTime birth;
+              if (bdStr.contains('/')) {
+                final parts = bdStr.split('/');
+                birth = DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+              } else {
+                birth = DateTime.parse(bdStr);
+              }
+              final now = DateTime.now();
+              playerAge = now.year - birth.year;
+              if (now.month < birth.month || (now.month == birth.month && now.day < birth.day)) {
+                playerAge--;
+              }
+            } catch (_) {}
+        }
+
+        for (var conv in convocatorias) {
+            int matchScore = 0;
+            final convPosicion = normalizePlayerPosition(conv['posicion']);
+            final convCategoria = normalizePlayerCategory(conv['categoria']);
+            final minAge = conv['min_age'] as int?;
+            final maxAge = conv['max_age'] as int?;
+
+            if (playerPosicion.isNotEmpty && playerPosicion == convPosicion) {
+                matchScore += 2;
+            }
+            if (playerCategoria.isNotEmpty && playerCategoria == convCategoria) {
+                matchScore += 2;
+            }
+            if (playerAge > 0) {
+                bool isAgeMatch = true;
+                if (minAge != null && playerAge < minAge) isAgeMatch = false;
+                if (maxAge != null && playerAge > maxAge) isAgeMatch = false;
+                if (isAgeMatch && (minAge != null || maxAge != null)) {
+                    matchScore += 1;
+                }
+            }
+            conv['_match_score'] = matchScore;
+        }
+
+        // Ordenar: Match maior primeiro, depois data de criação
+        convocatorias.sort((a, b) {
+            final scoreA = a['_match_score'] as int? ?? 0;
+            final scoreB = b['_match_score'] as int? ?? 0;
+            if (scoreB != scoreA) return scoreB.compareTo(scoreA);
+
+            final dateA = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime(2000);
+            final dateB = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime(2000);
+            return dateB.compareTo(dateA);
+        });
+      }
+
       if (mounted) {
         setState(() {
           _convocatorias = convocatorias;
@@ -991,13 +1068,18 @@ class _ConvocatoriaJugador1WidgetState
         ? ''
         : 'Cierra el ${closingDate.day}/${closingDate.month} a las ${closingDate.hour.toString().padLeft(2, '0')}:${closingDate.minute.toString().padLeft(2, '0')}';
 
+    final matchScore = convocatoria['_match_score'] as int? ?? 0;
+    final isHighlyCompatible = matchScore >= 3;
+
     return GestureDetector(
       onTap: () => _navigateToDetail(convocatoria),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        children: [
+          Container(
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0xFFE2E8F0)),
           boxShadow: const [
             BoxShadow(
@@ -1159,6 +1241,46 @@ class _ConvocatoriaJugador1WidgetState
             ),
           ],
         ),
+      ),
+      if (isHighlyCompatible)
+        Positioned(
+          top: 12,
+          right: 12,
+          child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981), // Green
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.star_rounded,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Match Ideal',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

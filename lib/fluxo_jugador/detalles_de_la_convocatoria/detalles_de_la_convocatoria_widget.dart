@@ -636,8 +636,8 @@ class _DetallesDeLaConvocatoriaWidgetState
       debugPrint('Error al aplicar: $e');
       if (mounted) {
         setState(() => _isApplying = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error al enviar solicitud: $e'),
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos enviar tu postulación. Verifica tu conexión e intenta de nuevo.'),
             backgroundColor: Colors.red));
       }
     }

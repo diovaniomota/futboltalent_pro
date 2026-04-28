@@ -371,7 +371,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('No pudimos actualizar el estado. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
         );
       }
     }
@@ -1500,7 +1500,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               Expanded(
                 child: _buildPostulacionActionButton(
                   context: context,
-                  label: 'Ver video',
+                  label: 'Ver postulación',
                   icon: Icons.play_circle_outline_rounded,
                   onPressed: hasVideo ? () => _openVideo(latestVideoUrl) : null,
                 ),
@@ -1625,7 +1625,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'Ver video',
+                'Ver postulación',
                 style: GoogleFonts.inter(
                   fontSize: buttonFontSize,
                   fontWeight: FontWeight.w500,
@@ -1786,7 +1786,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    'Ver video',
+                    'Ver postulación',
                     style: GoogleFonts.inter(
                       fontSize: buttonFontSize,
                       fontWeight: FontWeight.w500,
@@ -2048,7 +2048,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                             color: Colors.white,
                           ),
                           label: Text(
-                            'Ver video enviado',
+                            'Ver postulación enviada',
                             style: GoogleFonts.inter(
                               fontSize: 14 * scale,
                               fontWeight: FontWeight.w600,
@@ -2239,7 +2239,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('No pudimos agregar este jugador a tu lista. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
         );
       }
     } finally {

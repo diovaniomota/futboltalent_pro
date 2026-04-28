@@ -876,7 +876,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('Error: $e')));
+              .showSnackBar(const SnackBar(content: Text('No pudimos crear la lista. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red));
         }
       }
     }

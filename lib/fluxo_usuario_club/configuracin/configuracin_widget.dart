@@ -769,7 +769,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+            const SnackBar(content: Text('No pudimos guardar los cambios. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red));
       }
     }
     if (mounted) setState(() => _isSaving = false);
@@ -807,8 +807,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     } catch (e) {
       setState(() => _isSaving = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error al subir logo: $e'),
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos subir el logo. Verifica tu conexión e intenta con una imagen más pequeña.'),
             backgroundColor: Colors.red));
       }
     }
@@ -849,8 +849,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     } catch (e) {
       setState(() => _isSaving = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error al subir banner: $e'),
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos subir el banner. Verifica tu conexión e intenta con una imagen más pequeña.'),
             backgroundColor: Colors.red));
       }
     }
@@ -939,7 +939,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+            const SnackBar(content: Text('No pudimos invitar a este miembro. Verifica los datos e intenta de nuevo.'), backgroundColor: Colors.red));
       }
     }
     if (mounted) setState(() => _isSaving = false);

@@ -200,7 +200,7 @@ class _LoginWidgetState extends State<LoginWidget> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'Error al iniciar sesión';
+          _errorMessage = 'No pudimos iniciar tu sesión. Verifica tus credenciales y conexión e intenta nuevamente.';
         });
       }
     }
@@ -468,7 +468,7 @@ class _LoginWidgetState extends State<LoginWidget> {
                           } catch (e) {
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Error: $e')));
+                                const SnackBar(content: Text('No pudimos enviar el correo de recuperación. Verifica el correo e intenta de nuevo.'), backgroundColor: Colors.red));
                           }
                         }
                       },
