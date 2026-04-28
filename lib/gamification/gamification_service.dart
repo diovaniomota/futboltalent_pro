@@ -1,4 +1,5 @@
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/convocatoria_snapshot_service.dart';
 
 class GamificationService {
   static const int profileCompletePoints = 50;
@@ -267,7 +268,7 @@ class GamificationService {
     try {
       final attempts = await SupaFlow.client
           .from('user_challenge_attempts')
-          .select('item_type, item_id, status')
+          .select('item_type, item_id, status, submitted_at, valid_until')
           .eq('user_id', uid);
       for (final row in (attempts as List)) {
         final map = Map<String, dynamic>.from(row as Map);
@@ -276,6 +277,14 @@ class GamificationService {
             status == 'in_progress' ||
             status == 'completed';
         if (!isSubmittedLike) continue;
+
+        // 5.2 — Validade de 90 dias: desafios vencidos não contam XP
+        final submittedAt =
+            DateTime.tryParse(map['submitted_at']?.toString() ?? '');
+        if (!ConvocatoriaSnapshotService.isChallengeValid(submittedAt)) {
+          continue; // Tentativa expirada, não conta
+        }
+
         addChallengeKey(
           type: map['item_type']?.toString() ?? '',
           itemId: map['item_id']?.toString() ?? '',

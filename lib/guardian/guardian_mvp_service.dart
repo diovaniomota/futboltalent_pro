@@ -134,4 +134,66 @@ class GuardianMvpService {
     }
     return <String, dynamic>{};
   }
+
+  /// 1.3 — Regenera o código de aprovação e atualiza no banco.
+  /// Retorna o novo código gerado.
+  static Future<String> resendGuardianCode(String playerId) async {
+    final uid = playerId.trim();
+    if (uid.isEmpty) {
+      throw Exception('ID del jugador no proporcionado.');
+    }
+
+    final newCode = generateApprovalCode();
+    try {
+      await SupaFlow.client.from('guardians').update({
+        'approval_code': newCode,
+        'status': pendingStatus,
+      }).eq('player_id', uid);
+    } catch (e) {
+      // Fallback: tenta sem campo status
+      await SupaFlow.client.from('guardians').update({
+        'approval_code': newCode,
+      }).eq('player_id', uid);
+    }
+    return newCode;
+  }
+
+  /// 1.3 — Atualiza o e-mail do responsável para um jogador menor.
+  static Future<void> updateGuardianEmail(
+    String playerId,
+    String newEmail,
+  ) async {
+    final uid = playerId.trim();
+    final email = newEmail.trim();
+    if (uid.isEmpty) {
+      throw Exception('ID del jugador no proporcionado.');
+    }
+    if (email.isEmpty || !email.contains('@')) {
+      throw Exception('Ingresá un email válido del responsable.');
+    }
+
+    await SupaFlow.client.from('guardians').update({
+      'email': email,
+    }).eq('player_id', uid);
+  }
+
+  /// 1.3 — Recupera dados do guardian de um jogador.
+  static Future<Map<String, dynamic>?> fetchGuardianInfo(
+    String playerId,
+  ) async {
+    final uid = playerId.trim();
+    if (uid.isEmpty) return null;
+
+    try {
+      final row = await SupaFlow.client
+          .from('guardians')
+          .select()
+          .eq('player_id', uid)
+          .maybeSingle();
+      return row;
+    } catch (_) {
+      return null;
+    }
+  }
 }
+

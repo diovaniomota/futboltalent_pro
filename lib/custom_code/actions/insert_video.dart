@@ -9,8 +9,10 @@ Future<bool> insertVideo(
   String videoUrl,
   String title,
   String? description,
-  bool isPublic,
-) async {
+  bool isPublic, {
+  /// 3.1 — Tipo de conteúdo: 'video', 'desafio', 'convocatoria'
+  String contentType = 'video',
+}) async {
   try {
     final userId = SupaFlow.client.auth.currentUser?.id;
 
@@ -44,11 +46,17 @@ Future<bool> insertVideo(
     final moderationStatus =
         GuardianMvpService.moderationStatusForUser(currentUserData);
 
+    final validContentType =
+        const ['video', 'desafio', 'convocatoria'].contains(contentType)
+            ? contentType
+            : 'video';
+
     final payload = <String, dynamic>{
       'video_url': videoUrl,
       'title': title,
       'description': description ?? '',
       'videoType': 'ugc',
+      'content_type': validContentType,
       'is_public': isPublic,
       'user_id': userId,
       'likes_count': 0,

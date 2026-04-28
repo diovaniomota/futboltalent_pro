@@ -22,7 +22,12 @@ class SupaFlow {
         },
         anonKey: _kSupabaseAnonKey,
         debug: false,
-        authOptions:
-            FlutterAuthClientOptions(authFlowType: AuthFlowType.implicit),
+        authOptions: FlutterAuthClientOptions(
+          authFlowType: AuthFlowType.implicit,
+          // 1.2 Persistência de sessão: autoRefreshToken é true por padrão.
+          // A sessão é mantida automaticamente pelo supabase_flutter
+          // usando SharedPreferences e refresh token.
+          autoRefreshToken: true,
+        ),
       );
 }
