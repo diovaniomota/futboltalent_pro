@@ -3196,6 +3196,20 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           approvalCode: approvalCode,
           guardianEmail: _guardianEmailController.text.trim(),
         );
+
+        // After the minor sees the code, log out and send to login.
+        // The minor must NOT access the app until the guardian approves.
+        FFAppState().authBlockMessage =
+            'Cuenta creada. El adulto responsable debe aprobar el acceso '
+            'usando el código de aprobación desde la pantalla de login.';
+        FFAppState().registrationFlowActive = false;
+        try {
+          await authManager.signOut();
+        } catch (_) {}
+        if (mounted) {
+          context.goNamed('login');
+        }
+        return;
       }
 
       if (!mounted) return;

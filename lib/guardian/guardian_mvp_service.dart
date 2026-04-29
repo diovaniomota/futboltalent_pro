@@ -116,23 +116,124 @@ class GuardianMvpService {
   }
 
   static Future<Map<String, dynamic>> approveGuardianCode(String code) async {
-    final normalized = code.trim();
+    final normalized = code.trim().toUpperCase();
     if (normalized.isEmpty) {
       throw Exception('Ingresá el código del responsable.');
     }
 
-    final response = await SupaFlow.client.rpc(
-      'approve_guardian_by_code',
-      params: <String, dynamic>{'p_approval_code': normalized},
-    );
+    // Try RPC first
+    try {
+      final response = await SupaFlow.client.rpc(
+        'approve_guardian_by_code',
+        params: <String, dynamic>{'p_approval_code': normalized},
+      );
 
-    if (response is Map) {
-      return Map<String, dynamic>.from(response);
+      if (response is Map) {
+        return Map<String, dynamic>.from(response);
+      }
+      if (response is List && response.isNotEmpty && response.first is Map) {
+        return Map<String, dynamic>.from(response.first as Map);
+      }
+      return <String, dynamic>{};
+    } catch (rpcError) {
+      final rpcMessage = rpcError.toString().toLowerCase();
+      // If the error is 'code not found', re-throw as-is
+      if (rpcMessage.contains('approval_code_not_found')) {
+        rethrow;
+      }
+      // If the RPC function simply doesn't exist, fall through to manual logic
+      if (!rpcMessage.contains('approve_guardian_by_code') &&
+          !rpcMessage.contains('could not find the function') &&
+          !rpcMessage.contains('42883') &&
+          !rpcMessage.contains('does not exist')) {
+        rethrow;
+      }
     }
-    if (response is List && response.isNotEmpty && response.first is Map) {
-      return Map<String, dynamic>.from(response.first as Map);
+
+    // Fallback: manual approval when RPC is not deployed
+    final guardianRow = await SupaFlow.client
+        .from('guardians')
+        .select()
+        .eq('approval_code', normalized)
+        .maybeSingle();
+
+    if (guardianRow == null) {
+      // Try case-insensitive search
+      final allGuardians = await SupaFlow.client
+          .from('guardians')
+          .select()
+          .not('approval_code', 'is', null);
+      final match = (allGuardians as List).cast<Map<String, dynamic>>().where(
+        (g) =>
+            (g['approval_code']?.toString().trim().toUpperCase() ?? '') ==
+            normalized,
+      );
+      if (match.isEmpty) {
+        throw Exception('approval_code_not_found');
+      }
+      return _manualApprove(Map<String, dynamic>.from(match.first));
     }
-    return <String, dynamic>{};
+
+    return _manualApprove(Map<String, dynamic>.from(guardianRow));
+  }
+
+  static Future<Map<String, dynamic>> _manualApprove(
+    Map<String, dynamic> guardianRow,
+  ) async {
+    final guardianId = guardianRow['id']?.toString() ?? '';
+    final playerId = guardianRow['player_id']?.toString() ?? '';
+
+    if (guardianId.isEmpty || playerId.isEmpty) {
+      throw Exception('approval_code_not_found');
+    }
+
+    // Update guardian status
+    try {
+      await SupaFlow.client.from('guardians').update({
+        'status': approvedStatus,
+        'approved_at': DateTime.now().toIso8601String(),
+      }).eq('id', guardianId);
+    } catch (_) {
+      // Fallback without approved_at
+      await SupaFlow.client.from('guardians').update({
+        'status': approvedStatus,
+      }).eq('id', guardianId);
+    }
+
+    // Update user status
+    try {
+      await SupaFlow.client.from('users').update({
+        'guardian_status': approvedStatus,
+        'visibility_status': activeVisibility,
+        'has_guardian': true,
+      }).eq('user_id', playerId);
+    } catch (_) {
+      try {
+        await SupaFlow.client.from('users').update({
+          'guardian_status': approvedStatus,
+          'has_guardian': true,
+        }).eq('user_id', playerId);
+      } catch (_) {
+        await SupaFlow.client
+            .from('users')
+            .update({'has_guardian': true}).eq('user_id', playerId);
+      }
+    }
+
+    // Approve pending videos
+    try {
+      await SupaFlow.client
+          .from('videos')
+          .update({'moderation_status': approvedStatus})
+          .eq('user_id', playerId)
+          .eq('moderation_status', pendingStatus);
+    } catch (_) {}
+
+    return <String, dynamic>{
+      'player_id': playerId,
+      'guardian_id': guardianId,
+      'status': approvedStatus,
+    };
   }
 
   /// 1.3 — Regenera o código de aprovação e atualiza no banco.

@@ -143,7 +143,7 @@ class _LoginWidgetState extends State<LoginWidget> {
       // Check if user is suspended or minor without guardian
       final userData = await SupaFlow.client
           .from('users')
-          .select('banned_until, is_minor, has_guardian')
+          .select('banned_until, is_minor, has_guardian, guardian_status')
           .eq(
             'user_id',
             signedInUid.isNotEmpty ? signedInUid : currentUserUid,
@@ -183,6 +183,24 @@ class _LoginWidgetState extends State<LoginWidget> {
           });
         }
         return;
+      }
+      // Block minor with pending guardian approval
+      if (userData != null && userData['is_minor'] == true) {
+        final guardianStatus =
+            userData['guardian_status']?.toString().trim().toLowerCase() ?? '';
+        if (guardianStatus != 'approved') {
+          const blockMessage =
+              'Esta cuenta aún no fue aprobada por el adulto responsable. '
+              'Usá el botón "Aprobar cuenta de menor" con el código que recibió el responsable.';
+          await authManager.signOut();
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _errorMessage = blockMessage;
+            });
+          }
+          return;
+        }
       }
 
       if (mounted) {
