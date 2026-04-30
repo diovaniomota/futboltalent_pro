@@ -2,6 +2,8 @@ import '/backend/supabase/supabase.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
+import '/fluxo_compartilhado/convocatoria_snapshot_service.dart';
+import '/auth/supabase_auth/auth_util.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -538,6 +540,43 @@ class _DetallesDeLaConvocatoriaWidgetState
 
     setState(() => _isApplying = true);
     try {
+      // 9.1 — Validação de idade para a convocatória
+      final minAge = _convocatoria?['min_age'];
+      final maxAge = _convocatoria?['max_age'];
+      if (minAge != null || maxAge != null) {
+        try {
+          final userData = await SupaFlow.client
+              .from('users')
+              .select('birthday, birth_date')
+              .eq('user_id', userId)
+              .maybeSingle();
+          final birthdayRaw = userData?['birthday'] ?? userData?['birth_date'];
+          if (birthdayRaw != null) {
+            final birthday = DateTime.tryParse(birthdayRaw.toString());
+            if (birthday != null) {
+              final now = DateTime.now();
+              int age = now.year - birthday.year;
+              if (now.month < birthday.month ||
+                  (now.month == birthday.month && now.day < birthday.day)) {
+                age--;
+              }
+              if (minAge != null && age < (minAge as int)) {
+                throw Exception(
+                  'No cumpls con la edad mínima requerida ($minAge años).',
+                );
+              }
+              if (maxAge != null && age > (maxAge as int)) {
+                throw Exception(
+                  'Superas la edad máxima permitida ($maxAge años).',
+                );
+              }
+            }
+          }
+        } catch (e) {
+          if (e is Exception && e.toString().contains('edad')) rethrow;
+        }
+      }
+
       await _persistRequiredChallengeCompletions(userId);
 
       final now = DateTime.now().toIso8601String();
@@ -571,6 +610,17 @@ class _DetallesDeLaConvocatoriaWidgetState
       }
 
       await _mirrorLegacyPostulacion(userId: userId, createdAt: now);
+
+      // 6.1/6.2 — Criar snapshot imutável com desafios válidos
+      try {
+        await ConvocatoriaSnapshotService.createApplicationSnapshot(
+          userId: userId,
+          convocatoriaId: widget.convocatoriaId!,
+        );
+      } catch (snapshotError) {
+        debugPrint('Snapshot creation failed (non-blocking): $snapshotError');
+      }
+
       await _notifyApplicationSubmitted(userId);
 
       if (mounted) {
@@ -586,8 +636,8 @@ class _DetallesDeLaConvocatoriaWidgetState
       debugPrint('Error al aplicar: $e');
       if (mounted) {
         setState(() => _isApplying = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error al enviar solicitud: $e'),
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos enviar tu postulación. Verifica tu conexión e intenta de nuevo.'),
             backgroundColor: Colors.red));
       }
     }

@@ -1587,7 +1587,7 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
       debugPrint('Error guardando convocatoria: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('No pudimos guardar los cambios en la convocatoria. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
         );
         setState(() => _isSaving = false);
       }
@@ -2629,7 +2629,7 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
                     TextButton(
                       onPressed:
                           videoUrl.isEmpty ? null : () => _openVideo(videoUrl),
-                      child: const Text('Ver video'),
+                      child: const Text('Ver postulación'),
                     ),
                   ],
                 ),
@@ -2659,7 +2659,7 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
                     onPressed: () => _openVideo(
                       latestPublicVideo['video_url']?.toString() ?? '',
                     ),
-                    child: const Text('Ver video'),
+                    child: const Text('Ver postulación'),
                   ),
                 ],
               ),

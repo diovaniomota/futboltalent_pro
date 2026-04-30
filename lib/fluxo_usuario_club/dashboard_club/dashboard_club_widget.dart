@@ -4134,7 +4134,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               const SizedBox(width: 6),
               Expanded(
                 child: _buildRecentCardAction(
-                  label: 'Ver video',
+                  label: 'Ver postulación',
                   icon: Icons.play_circle_outline_rounded,
                   compact: compact,
                   onPressed:

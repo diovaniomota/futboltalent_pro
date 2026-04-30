@@ -53,7 +53,7 @@ void main() async {
           child: Padding(
             padding: const EdgeInsets.all(20.0),
             child: Text(
-              'Error al iniciar la app:\n$e\n\nRevisá los registros de consola para más detalles.',
+              'No pudimos iniciar la aplicación. Verifica tu conexión a internet o intenta reiniciar la app.\n\nDetalles:\n$e',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.red),
             ),
@@ -179,7 +179,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
       final userData = await SupaFlow.client
           .from('users')
-          .select('banned_until, is_minor, has_guardian')
+          .select('banned_until, is_minor, has_guardian, guardian_status')
           .eq('user_id', currentUserUid)
           .maybeSingle();
       if (userData == null) {
@@ -208,6 +208,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         await _forceLogoutWithMessage(
           'Cuenta de menor sin adulto responsable. Registre nuevamente con un responsable.',
         );
+        return;
+      }
+
+      // Block minor with pending guardian approval
+      if (userData['is_minor'] == true) {
+        final guardianStatus =
+            userData['guardian_status']?.toString().trim().toLowerCase() ?? '';
+        if (guardianStatus != 'approved') {
+          await _forceLogoutWithMessage(
+            'Esta cuenta de menor aún no fue aprobada por el adulto responsable. '
+            'Usá el código de aprobación desde la pantalla de login.',
+          );
+        }
       }
     } catch (e) {
       debugPrint('Account guard check failed: $e');

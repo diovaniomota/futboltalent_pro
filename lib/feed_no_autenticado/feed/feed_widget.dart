@@ -2667,7 +2667,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
               const Icon(Icons.error, color: Colors.red, size: 40),
               const SizedBox(height: 12),
               Text(
-                'Error al cargar video:\n$_errorMessage',
+                'No pudimos reproducir este video. Verifica tu conexión e intenta de nuevo.\n$_errorMessage',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),

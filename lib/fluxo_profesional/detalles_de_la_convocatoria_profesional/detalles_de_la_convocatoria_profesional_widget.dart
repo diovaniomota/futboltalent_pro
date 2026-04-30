@@ -634,8 +634,8 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
     } catch (e) {
       if (mounted) {
         setState(() => _isApplying = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error al enviar solicitud: $e'),
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos enviar tu solicitud. Verifica tu conexión e intenta de nuevo.'),
             backgroundColor: Colors.red));
       }
     }

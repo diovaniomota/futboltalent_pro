@@ -2586,11 +2586,9 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         provider,
         redirectTo: 'io.supabase.futboltalentpro://login-callback/',
       );
-      if (!success) {
-        _showSnackBar('Error al iniciar sesión con ${provider.name}');
-      }
+        _showSnackBar('No pudimos conectarnos con ${provider.name}. Verifica tu conexión e intenta de nuevo.');
     } catch (e) {
-      _showSnackBar('Error: ${e.toString()}');
+      _showSnackBar('No pudimos iniciar sesión. Verifica tus datos e intenta de nuevo.');
     } finally {
       if (mounted) setState(() => _isRegistering = false);
     }
@@ -2639,7 +2637,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       FFAppState().registrationFlowActive = true;
       _goToNextTab();
     } catch (e) {
-      _showSnackBar('Error: ${e.toString()}');
+      _showSnackBar('Ocurrió un problema con el registro. Verifica tu conexión e intenta de nuevo.');
     } finally {
       if (mounted) {
         setState(() => _isRegistering = false);
@@ -2682,20 +2680,29 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     return null;
   }
 
-  String get _normalizedSelectedUserType =>
-      (widget.selectedUserType ?? 'jugador').trim().toLowerCase();
+  String get _normalizedSelectedUserType => FFAppState.normalizeUserType(
+        widget.selectedUserType?.trim().isNotEmpty == true
+            ? widget.selectedUserType
+            : FFAppState().userType,
+        fallback: 'jugador',
+      );
 
-  bool get _usesMinorProtectionFlow => const [
-        'jugador',
-        'jogador',
-        'player',
-        'athlete',
-        'atleta',
-      ].contains(_normalizedSelectedUserType);
+  bool get _usesMinorProtectionFlow => _normalizedSelectedUserType == 'jugador';
 
   bool get _isProfessionalRegistration =>
-      FFAppState.normalizeUserType(_normalizedSelectedUserType) ==
-      'profesional';
+      _normalizedSelectedUserType == 'profesional';
+
+  String get _introSubtitleText {
+    switch (_normalizedSelectedUserType) {
+      case 'profesional':
+        return 'Buscá el talento, gestioná convocatorias, creá listas de seguimiento y mostrá tu historial de exito en scouting!';
+      case 'club':
+        return 'Analizá estadísticas, gestioná convocatorias, controlá talentos y optimizá tu estrategia!';
+      case 'jugador':
+      default:
+        return 'Entrená, participá y hacé visible tu progreso dentro y fuera de la cancha.';
+    }
+  }
 
   /// Tab 3 "Siguiente" - valida dados e se menor, vai para Tab 4 (guardian)
   void _onProfileNext() {
@@ -3189,6 +3196,20 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           approvalCode: approvalCode,
           guardianEmail: _guardianEmailController.text.trim(),
         );
+
+        // After the minor sees the code, log out and send to login.
+        // The minor must NOT access the app until the guardian approves.
+        FFAppState().authBlockMessage =
+            'Cuenta creada. El adulto responsable debe aprobar el acceso '
+            'usando el código de aprobación desde la pantalla de login.';
+        FFAppState().registrationFlowActive = false;
+        try {
+          await authManager.signOut();
+        } catch (_) {}
+        if (mounted) {
+          context.goNamed('login');
+        }
+        return;
       }
 
       if (!mounted) return;
@@ -3366,9 +3387,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     final titleText = isProfessional
         ? 'Descubrí talento con contexto.'
         : 'Mostrá tu talento al mundo.';
-    final subtitleText = isProfessional
-        ? 'Herramientas para scouts y entrenadores que evalúan jugadores con seguridad.'
-        : 'Plataforma de scouting y desarrollo de talento en el fútbol.';
+    final subtitleText = _introSubtitleText;
     final benefitCards = isProfessional
         ? const [
             ('Talentos', Icons.manage_search),

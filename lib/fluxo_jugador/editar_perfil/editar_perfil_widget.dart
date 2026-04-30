@@ -2899,12 +2899,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     } catch (e) {
       debugPrint('Error al seleccionar imagen: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al seleccionar imagen: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos procesar tu imagen. Verifica tu conexión e intenta de nuevo con una imagen más liviana.'),
+            backgroundColor: Colors.red));
       }
     }
   }
@@ -2981,12 +2978,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     } catch (e) {
       debugPrint('Error al subir imagen: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al subir imagen: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos subir tu imagen. Verifica tu conexión e intenta de nuevo con una imagen más liviana.'),
+            backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) {
@@ -3041,12 +3035,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     } catch (e) {
       debugPrint('Error al eliminar foto: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al eliminar foto: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos eliminar la foto en este momento. Intenta de nuevo más tarde.'),
+            backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) {
@@ -3141,6 +3132,71 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     try {
       setState(() => _isSaving = true);
       final uid = currentUserUid;
+
+      // 2.1 — Validação de inputs numéricos
+      final heightText = _heightController?.text.trim() ?? '';
+      if (heightText.isNotEmpty) {
+        final height = double.tryParse(heightText);
+        if (height == null || height < 100 || height > 250) {
+          throw Exception(
+            'La altura debe estar entre 100 y 250 cm.',
+          );
+        }
+      }
+
+      final weightText = _weightController?.text.trim() ?? '';
+      if (weightText.isNotEmpty) {
+        final weight = double.tryParse(weightText);
+        if (weight == null || weight < 30 || weight > 200) {
+          throw Exception(
+            'El peso debe estar entre 30 y 200 kg.',
+          );
+        }
+      }
+
+      final experienceText = _experienceController?.text.trim() ?? '';
+      if (experienceText.isNotEmpty) {
+        final experience = int.tryParse(experienceText);
+        if (experience == null || experience < 0) {
+          throw Exception(
+            'La experiencia debe ser un número mayor o igual a 0.',
+          );
+        }
+      }
+
+      // 1.5 — Verificar se a mudança de idade cria situação de menor sem guardian
+      if (_selectedBirthday != null && _currentUserType == 'jugador') {
+        final now = DateTime.now();
+        int age = now.year - _selectedBirthday!.year;
+        if (now.month < _selectedBirthday!.month ||
+            (now.month == _selectedBirthday!.month &&
+                now.day < _selectedBirthday!.day)) {
+          age--;
+        }
+
+        if (age < 13) {
+          throw Exception(
+            'FutbolTalent está disponible solo para jugadores a partir de 13 años.',
+          );
+        }
+
+        if (age < 18) {
+          // Verifica se tem guardian
+          final userData = await SupaFlow.client
+              .from('users')
+              .select('has_guardian, guardian_status')
+              .eq('user_id', uid)
+              .maybeSingle();
+          final hasGuardian = userData?['has_guardian'] == true;
+          if (!hasGuardian) {
+            throw Exception(
+              'Los menores de 18 años necesitan un responsable registrado. '
+              'Contacte al soporte para actualizar su cuenta.',
+            );
+          }
+        }
+      }
+
       final historyItems = _collectHistoryItems();
       final currentClubName =
           currentClubFromProfileHistory(historyItems)?.trim() ?? '';
@@ -3367,12 +3423,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     } catch (e) {
       debugPrint('Error al guardar: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al guardar: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Hubo un problema al guardar tus cambios. Por favor, verifica tu conexión e intenta nuevamente.'),
+            backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) {

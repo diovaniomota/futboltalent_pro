@@ -196,12 +196,12 @@ Future<void> showBlockedActionDialog(
 Future<void> showPlanRequiredDialog(
   BuildContext context, {
   required String featureName,
-  String title = 'Plano Pro necessário',
+  String title = 'Plan Pro requerido',
   String? message,
-  String confirmLabel = 'Entendi',
+  String confirmLabel = 'Entendido',
 }) {
   final resolvedMessage = message ??
-      '$featureName faz parte do Plano Pro. Se o modo piloto estiver ON, o bloqueio some automaticamente.';
+      '$featureName es parte del Plan Pro. Si el modo piloto está activado, el bloqueo se desactiva automáticamente.';
 
   return showDialog<void>(
     context: context,
@@ -229,8 +229,8 @@ class PlanPaywallCard extends StatelessWidget {
     super.key,
     required this.title,
     required this.message,
-    this.badge = 'PLANO PRO',
-    this.actionLabel = 'Entendi',
+    this.badge = 'PLAN PRO',
+    this.actionLabel = 'Entendido',
     this.onAction,
   });
 
@@ -336,12 +336,12 @@ class PlanPaywallCard extends StatelessWidget {
               children: [
                 _requirementRow(
                   icon: Icons.check_circle_outline_rounded,
-                  label: 'Feed, vídeos e Explorer ficam liberados no Free',
+                  label: 'Feed, videos y Explorer están disponibles en el plan Free',
                 ),
                 const SizedBox(height: 8),
                 _requirementRow(
                   icon: Icons.workspace_premium_outlined,
-                  label: 'Desafios, cursos e convocatórias ficam no Pro',
+                  label: 'Desafíos, cursos y convocatorias requieren el plan Pro',
                 ),
               ],
             ),

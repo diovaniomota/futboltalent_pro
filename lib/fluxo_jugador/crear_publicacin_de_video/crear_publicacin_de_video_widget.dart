@@ -216,8 +216,8 @@ class _CrearPublicacinDeVideoWidgetState
         _videoSelected = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error al subir video: ${e.toString()}'),
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No pudimos subir tu video. Verifica tu conexión a internet o intenta con un archivo más ligero.'),
             backgroundColor: Colors.red));
       }
     }

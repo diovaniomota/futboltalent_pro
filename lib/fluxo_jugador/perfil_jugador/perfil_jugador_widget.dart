@@ -309,7 +309,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       if (!mounted) return;
       setState(() => _deletingVideoId = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al eliminar el video: $e')),
+        const SnackBar(content: Text('No pudimos eliminar este video. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
       );
     }
   }
@@ -330,6 +330,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   int _userRanking = 0;
   int _pendingContactRequests = 0;
   int _profileViewsCount = 0;
+  String _videoFilterType = 'todos'; // 4.1 — filtro por content_type
 
   @override
   void initState() {
@@ -1755,6 +1756,15 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   // ===== TAB VIDEOS =====
   Widget _buildVideosTab() {
     final orderedVideos = _sortVideosForProfile(_videos);
+
+    // 4.1 — Filtra por content_type
+    final filteredVideos = _videoFilterType == 'todos'
+        ? orderedVideos
+        : orderedVideos.where((v) {
+            final ct = v['content_type']?.toString().trim().toLowerCase() ?? 'video';
+            return ct == _videoFilterType;
+          }).toList();
+
     if (orderedVideos.isEmpty) {
       return Center(
         child: Column(
@@ -1836,120 +1846,185 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
               ),
             ),
           ),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: orderedVideos.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: crossAxisCount,
-              crossAxisSpacing: 6,
-              mainAxisSpacing: 6,
-              childAspectRatio: 0.66,
-            ),
-            itemBuilder: (context, index) {
-              final video = orderedVideos[index];
-              final videoId = video['id']?.toString() ?? '';
-              final isFeatured = _isVideoFeatured(video);
-              final isDeleting = _deletingVideoId == videoId;
-              final isUpdating = _updatingFeaturedVideoId == videoId;
-              final originalIndex = _videos.indexWhere(
-                (item) => item['id']?.toString() == videoId,
-              );
-              return Stack(
+          // 4.1 — Filter chips por content_type
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
                 children: [
-                  _VideoCard(
-                    videoUrl: video['video_url']?.toString() ?? '',
-                    thumbnailUrl: (video['thumbnail_url'] ??
-                            video['thumbnail'] ??
-                            video['cover_url'] ??
-                            '')
-                        .toString(),
-                    title: video['title']?.toString() ?? '',
-                    onTap: () => _openVideoFeed(
-                      originalIndex >= 0 ? originalIndex : index,
-                      _videos,
-                    ),
-                    badge: isFeatured
-                        ? Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0F766E),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              'Destacado',
-                              style: GoogleFonts.inter(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          )
-                        : null,
-                    topRightAction: GestureDetector(
-                      onTap:
-                          isUpdating ? null : () => _toggleFeaturedVideo(video),
-                      child: Container(
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
-                          shape: BoxShape.circle,
-                        ),
-                        child: isUpdating
-                            ? const Padding(
-                                padding: EdgeInsets.all(7),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Icon(
-                                isFeatured ? Icons.star : Icons.star_border,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                      ),
-                    ),
-                  ),
-                  // Botão de exclusão (canto superior esquerdo)
-                  Positioned(
-                    top: 6,
-                    left: 6,
-                    child: GestureDetector(
-                      onTap: isDeleting || isUpdating
-                          ? null
-                          : () => _deleteOwnVideo(video),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.85),
-                          shape: BoxShape.circle,
-                        ),
-                        padding: const EdgeInsets.all(6),
-                        child: isDeleting
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.delete,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                      ),
-                    ),
-                  ),
+                  _buildVideoFilterChip('todos', 'Todos'),
+                  const SizedBox(width: 8),
+                  _buildVideoFilterChip('video', 'Videos'),
+                  const SizedBox(width: 8),
+                  _buildVideoFilterChip('desafio', 'Desafíos'),
+                  const SizedBox(width: 8),
+                  _buildVideoFilterChip('convocatoria', 'Convocatorias'),
                 ],
-              );
-            },
+              ),
+            ),
           ),
+          if (filteredVideos.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  'No hay videos de este tipo aún.',
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF64748B),
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: filteredVideos.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossAxisCount,
+                crossAxisSpacing: 6,
+                mainAxisSpacing: 6,
+                childAspectRatio: 0.66,
+              ),
+              itemBuilder: (context, index) {
+                final video = filteredVideos[index];
+                final videoId = video['id']?.toString() ?? '';
+                final isFeatured = _isVideoFeatured(video);
+                final isDeleting = _deletingVideoId == videoId;
+                final isUpdating = _updatingFeaturedVideoId == videoId;
+                final originalIndex = _videos.indexWhere(
+                  (item) => item['id']?.toString() == videoId,
+                );
+                // 3.3 — Badge visual por content_type
+                final contentType = video['content_type']?.toString().trim().toLowerCase() ?? 'video';
+                Widget? typeBadge;
+                if (contentType == 'desafio') {
+                  typeBadge = Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF9800),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'Desafío',
+                      style: GoogleFonts.inter(
+                        color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  );
+                } else if (contentType == 'convocatoria') {
+                  typeBadge = Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF7C3AED),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'Convocatoria',
+                      style: GoogleFonts.inter(
+                        color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  );
+                }
+
+                return Stack(
+                  children: [
+                    _VideoCard(
+                      videoUrl: video['video_url']?.toString() ?? '',
+                      thumbnailUrl: (video['thumbnail_url'] ??
+                              video['thumbnail'] ??
+                              video['cover_url'] ??
+                              '')
+                          .toString(),
+                      title: video['title']?.toString() ?? '',
+                      onTap: () => _openVideoFeed(
+                        originalIndex >= 0 ? originalIndex : index,
+                        _videos,
+                      ),
+                      badge: isFeatured
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F766E),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                'Destacado',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            )
+                          : typeBadge,
+                      topRightAction: GestureDetector(
+                        onTap:
+                            isUpdating ? null : () => _toggleFeaturedVideo(video),
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            shape: BoxShape.circle,
+                          ),
+                          child: isUpdating
+                              ? const Padding(
+                                  padding: EdgeInsets.all(7),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Icon(
+                                  isFeatured ? Icons.star : Icons.star_border,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                        ),
+                      ),
+                    ),
+                    // Botão de exclusão (canto superior esquerdo)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: GestureDetector(
+                        onTap: isDeleting || isUpdating
+                            ? null
+                            : () => _deleteOwnVideo(video),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.85),
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(6),
+                          child: isDeleting
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.delete,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           const SizedBox(height: 10),
           Text(
             'Tocá un video para abrir el feed completo. Marcá uno como destacado para que Explorer lo muestre primero.',
@@ -1960,6 +2035,33 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // 4.1 — Helper: chip de filtro de video
+  Widget _buildVideoFilterChip(String value, String label) {
+    final isSelected = _videoFilterType == value;
+    return GestureDetector(
+      onTap: () => setState(() => _videoFilterType = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF0D3B66) : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF0D3B66) : const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : const Color(0xFF475569),
+          ),
+        ),
       ),
     );
   }

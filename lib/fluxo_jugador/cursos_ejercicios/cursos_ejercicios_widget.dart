@@ -1477,22 +1477,6 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
         ),
       );
     }
-    if (!hasTrainingAccess) {
-      return Scaffold(
-        key: scaffoldKey,
-        backgroundColor: Colors.white,
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: PlanPaywallCard(
-              title: 'Desafíos y cursos en Plan Pro',
-              message:
-                  'Este módulo de entrenamiento está disponible para usuarios Pro. Si el modo piloto está ON, el acceso es libre.',
-            ),
-          ),
-        ),
-      );
-    }
     return GestureDetector(
       onTap: () {
         FocusScope.of(context).unfocus();
@@ -1523,13 +1507,23 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                               _buildFilters(context),
                               SizedBox(height: 24 * scale),
                               Expanded(
-                                child: _visibleCatalogItems.isEmpty
-                                    ? _buildEmptyState(context)
-                                    : _isLargeScreen(context)
-                                        ? _buildGridView(context)
-                                        : _buildCarousel(context),
+                                child: !hasTrainingAccess
+                                    ? Padding(
+                                        padding: const EdgeInsets.all(24),
+                                        child: PlanPaywallCard(
+                                          title: 'Desafíos y cursos en Plan Pro',
+                                          message:
+                                              'Este módulo de entrenamiento está disponible para usuarios Pro. Si el modo piloto está ON, el acceso es libre.',
+                                        ),
+                                      )
+                                    : (_visibleCatalogItems.isEmpty
+                                        ? _buildEmptyState(context)
+                                        : _isLargeScreen(context)
+                                            ? _buildGridView(context)
+                                            : _buildCarousel(context)),
                               ),
-                              if (!_isLargeScreen(context) &&
+                              if (hasTrainingAccess &&
+                                  !_isLargeScreen(context) &&
                                   _currentPagedItemCount > 0)
                                 _buildPageIndicators(context),
                               const SizedBox(height: 92),
