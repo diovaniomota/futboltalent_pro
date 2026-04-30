@@ -47,6 +47,9 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       TextEditingController();
   final TextEditingController _paisController = TextEditingController();
   final TextEditingController _cidadeController = TextEditingController();
+  final TextEditingController _clubController = TextEditingController();
+  final TextEditingController _currentRoleController = TextEditingController();
+  final TextEditingController _workZoneController = TextEditingController();
 
   // Focus nodes
   final FocusNode _emailFocusNode = FocusNode();
@@ -56,6 +59,9 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   final FocusNode _dataNascimentoFocusNode = FocusNode();
   final FocusNode _paisFocusNode = FocusNode();
   final FocusNode _cidadeFocusNode = FocusNode();
+  final FocusNode _clubFocusNode = FocusNode();
+  final FocusNode _currentRoleFocusNode = FocusNode();
+  final FocusNode _workZoneFocusNode = FocusNode();
   final FocusNode _guardianEmailFocusNode = FocusNode();
 
   // Mask
@@ -95,6 +101,12 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   bool _acceptedTerms = false; // términos de uso y privacidad
   bool _guardianAuthorized = false;
   bool _shouldShowGuardianStep = false;
+  String? _selectedOrganizationType;
+
+  static const List<String> _organizationTypeOptions = [
+    'Organización / club',
+    'Independiente',
+  ];
 
   // ============ RESPONSIVE HELPERS ============
   double _responsive(
@@ -137,6 +149,9 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     _dataNascimentoController.dispose();
     _paisController.dispose();
     _cidadeController.dispose();
+    _clubController.dispose();
+    _currentRoleController.dispose();
+    _workZoneController.dispose();
     _emailFocusNode.dispose();
     _senhaFocusNode.dispose();
     _confirmarSenhaFocusNode.dispose();
@@ -144,6 +159,9 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     _dataNascimentoFocusNode.dispose();
     _paisFocusNode.dispose();
     _cidadeFocusNode.dispose();
+    _clubFocusNode.dispose();
+    _currentRoleFocusNode.dispose();
+    _workZoneFocusNode.dispose();
     _guardianEmailFocusNode.dispose();
     _guardianEmailController.dispose();
     super.dispose();
@@ -2675,6 +2693,10 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         'atleta',
       ].contains(_normalizedSelectedUserType);
 
+  bool get _isProfessionalRegistration =>
+      FFAppState.normalizeUserType(_normalizedSelectedUserType) ==
+      'profesional';
+
   /// Tab 3 "Siguiente" - valida dados e se menor, vai para Tab 4 (guardian)
   void _onProfileNext() {
     if (_nameController.text.trim().isEmpty) {
@@ -2694,7 +2716,14 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     }
 
     final age = _calculateAge(birthday);
-    if (age < 13) {
+    if (_isProfessionalRegistration && age < 18) {
+      _showSnackBar(
+        'Los perfiles scout deben ser creados por mayores de 18 años.',
+      );
+      return;
+    }
+
+    if (!_isProfessionalRegistration && age < 13) {
       _showSnackBar(
         'FutbolTalent está disponible solo para jugadores a partir de 13 años.',
       );
@@ -2710,6 +2739,36 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       _showSnackBar(
           'Debes aceptar los Términos de uso y la Política de privacidad para continuar.');
       return;
+    }
+
+    if (_selectedCountryId == null || _paisController.text.trim().isEmpty) {
+      _showSnackBar('Selecciona tu país para continuar.');
+      return;
+    }
+
+    if (_states.isNotEmpty &&
+        (_selectedState == null || _selectedState!.isEmpty)) {
+      _showSnackBar('Selecciona tu estado o provincia.');
+      return;
+    }
+
+    if (_cities.isNotEmpty &&
+        (_selectedCity == null || _selectedCity!.isEmpty)) {
+      _showSnackBar('Selecciona tu ciudad.');
+      return;
+    }
+
+    if (_isProfessionalRegistration) {
+      if (_selectedOrganizationType == null ||
+          _selectedOrganizationType!.trim().isEmpty) {
+        _showSnackBar('Selecciona el tipo de perfil profesional.');
+        return;
+      }
+
+      if (_currentRoleController.text.trim().isEmpty) {
+        _showSnackBar('Indica tu rol actual dentro del scouting.');
+        return;
+      }
     }
 
     setState(
@@ -2989,7 +3048,10 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             'id': uid,
             'created_at': nowIso,
             'telephone': '',
-            'club': '',
+            'club': _clubController.text.trim(),
+            'organization_type': _selectedOrganizationType ?? '',
+            'current_role': _currentRoleController.text.trim(),
+            'work_zone': _workZoneController.text.trim(),
             'city': normalizedCity,
             'ciudad': normalizedCity,
             'country': selectedCountryName,
@@ -3004,7 +3066,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             'id': uid,
             'created_at': nowIso,
             'telephone': '',
-            'club': '',
+            'club': _clubController.text.trim(),
           };
           var savedScout = false;
 
@@ -3300,6 +3362,30 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         _responsive(context, mobile: 320, tablet: 357, desktop: 400);
     final horizontalPadding =
         _responsive(context, mobile: 20, tablet: 40, desktop: 60);
+    final isProfessional = _isProfessionalRegistration;
+    final titleText = isProfessional
+        ? 'Descubrí talento con contexto.'
+        : 'Mostrá tu talento al mundo.';
+    final subtitleText = isProfessional
+        ? 'Herramientas para scouts y entrenadores que evalúan jugadores con seguridad.'
+        : 'Plataforma de scouting y desarrollo de talento en el fútbol.';
+    final benefitCards = isProfessional
+        ? const [
+            ('Talentos', Icons.manage_search),
+            ('Filtros', Icons.tune),
+            ('Listas', Icons.bookmark_border),
+            ('Convocatorias', Icons.flag),
+            ('Contacto seguro', Icons.shield),
+            ('Clubes', Icons.groups),
+          ]
+        : const [
+            ('Scouting', Icons.travel_explore),
+            ('Desarrollo', Icons.school),
+            ('Seguridad', Icons.shield),
+            ('Videos', Icons.videocam),
+            ('Desafíos', Icons.flag),
+            ('Explorer', Icons.manage_search),
+          ];
 
     return SingleChildScrollView(
       child: Padding(
@@ -3334,7 +3420,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
             // Título
             Text(
-              'Mostrá tu talento al mundo.',
+              titleText,
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: titleFontSize,
@@ -3347,7 +3433,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
             // Subtítulo
             Text(
-              'Plataforma de scouting y desarrollo de talento en el fútbol.',
+              subtitleText,
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: subtitleFontSize,
@@ -3362,22 +3448,28 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildBenefitCard('Scouting', Icons.travel_explore, cardSize),
+                _buildBenefitCard(
+                    benefitCards[0].$1, benefitCards[0].$2, cardSize),
                 SizedBox(width: cardSpacing),
-                _buildBenefitCard('Desarrollo', Icons.school, cardSize),
+                _buildBenefitCard(
+                    benefitCards[1].$1, benefitCards[1].$2, cardSize),
                 SizedBox(width: cardSpacing),
-                _buildBenefitCard('Seguridad', Icons.shield, cardSize),
+                _buildBenefitCard(
+                    benefitCards[2].$1, benefitCards[2].$2, cardSize),
               ],
             ),
             SizedBox(height: cardSpacing),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildBenefitCard('Videos', Icons.videocam, cardSize),
+                _buildBenefitCard(
+                    benefitCards[3].$1, benefitCards[3].$2, cardSize),
                 SizedBox(width: cardSpacing),
-                _buildBenefitCard('Desafíos', Icons.flag, cardSize),
+                _buildBenefitCard(
+                    benefitCards[4].$1, benefitCards[4].$2, cardSize),
                 SizedBox(width: cardSpacing),
-                _buildBenefitCard('Explorer', Icons.manage_search, cardSize),
+                _buildBenefitCard(
+                    benefitCards[5].$1, benefitCards[5].$2, cardSize),
               ],
             ),
 
@@ -3386,7 +3478,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             // Botón Siguiente
             _buildPrimaryButton(
               context: context,
-              text: 'Crear perfil',
+              text: isProfessional ? 'Crear perfil scout' : 'Crear perfil',
               onPressed: _goToNextTab,
               width: buttonWidth,
             ),
@@ -3569,6 +3661,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     final scale = _scaleFactor(context);
     final buttonWidth =
         _responsive(context, mobile: 145, tablet: 157, desktop: 180);
+    final isProfessional = _isProfessionalRegistration;
 
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
@@ -3579,7 +3672,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           Padding(
             padding: EdgeInsets.only(top: 20 * scale),
             child: Text(
-              'Verificación de edad',
+              isProfessional ? 'Perfil de scouting' : 'Verificación de edad',
               style: GoogleFonts.inter(
                 fontSize:
                     _responsive(context, mobile: 24, tablet: 28, desktop: 32) *
@@ -3599,7 +3692,9 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
               border: Border.all(color: const Color(0xFFD7E0EA)),
             ),
             child: Text(
-              'FutbolTalent es una plataforma para jugadores a partir de 13 años.',
+              isProfessional
+                  ? 'Completá tus datos básicos para activar un perfil profesional de scouting. Los perfiles scout deben ser de mayores de 18 años.'
+                  : 'FutbolTalent es una plataforma para jugadores a partir de 13 años.',
               style: GoogleFonts.inter(
                 fontSize: 13 * scale,
                 color: const Color(0xFF334155),
@@ -3610,7 +3705,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           SizedBox(height: 18 * scale),
           _buildTextField(
             context: context,
-            label: 'Me llamo',
+            label: isProfessional ? 'Nombre completo' : 'Me llamo',
             hint: 'Nombre',
             controller: _nameController,
             focusNode: _nameFocusNode,
@@ -3634,6 +3729,10 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           _buildStateDropdown(context),
           SizedBox(height: 15 * scale),
           _buildCityDropdown(context),
+          if (isProfessional) ...[
+            SizedBox(height: 18 * scale),
+            _buildProfessionalRegistrationFields(context),
+          ],
           SizedBox(height: 24 * scale),
           _buildTermsCheckbox(context),
           SizedBox(height: 32 * scale),
@@ -3690,6 +3789,28 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     final scale = _scaleFactor(context);
     final buttonWidth =
         _responsive(context, mobile: 145, tablet: 157, desktop: 180);
+    final isProfessional = _isProfessionalRegistration;
+    final title =
+        isProfessional ? 'Scouting seguro' : 'Seguridad de la comunidad';
+    final intro = isProfessional
+        ? 'FutbolTalent ayuda a scouts y clubes a evaluar talento sin exponer datos personales ni abrir contactos fuera de la plataforma.'
+        : 'FutbolTalent es una plataforma de scouting deportivo diseñada para ayudar a jugadores a mostrar su talento a scouts y clubes.';
+    final contextLine = isProfessional
+        ? 'Como perfil profesional, recordá:'
+        : 'Para proteger a los jugadores menores de edad:';
+    final rules = isProfessional
+        ? const [
+            'no solicites datos personales o contacto privado fuera de FutbolTalent',
+            'usa las solicitudes de contacto mediadas por la plataforma',
+            'evalúa perfiles y videos con respeto y criterio profesional',
+            'guarda jugadores solo para seguimiento deportivo legítimo',
+          ]
+        : const [
+            'no existe chat ni mensajes privados entre jugadores y scouts',
+            'no publiques datos personales o de contacto',
+            'scouts y clubes solo pueden solicitar contacto a través de la plataforma',
+            'los perfiles y videos pueden ser visibles para scouts y clubes registrados',
+          ];
 
     Widget ruleItem(String text) {
       return Padding(
@@ -3730,7 +3851,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           Padding(
             padding: EdgeInsets.only(top: 20 * scale),
             child: Text(
-              'Seguridad de la comunidad',
+              title,
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize:
@@ -3754,7 +3875,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'FutbolTalent es una plataforma de scouting deportivo diseñada para ayudar a jugadores a mostrar su talento a scouts y clubes.',
+                  intro,
                   style: GoogleFonts.inter(
                     fontSize: 14 * scale,
                     fontWeight: FontWeight.w600,
@@ -3764,7 +3885,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                 ),
                 SizedBox(height: 14 * scale),
                 Text(
-                  'Para proteger a los jugadores menores de edad:',
+                  contextLine,
                   style: GoogleFonts.inter(
                     fontSize: 13 * scale,
                     fontWeight: FontWeight.w700,
@@ -3772,18 +3893,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                   ),
                 ),
                 SizedBox(height: 14 * scale),
-                ruleItem(
-                  'no existe chat ni mensajes privados entre jugadores y scouts',
-                ),
-                ruleItem(
-                  'no publiques datos personales o de contacto',
-                ),
-                ruleItem(
-                  'scouts y clubes solo pueden solicitar contacto a través de la plataforma',
-                ),
-                ruleItem(
-                  'los perfiles y videos pueden ser visibles para scouts y clubes registrados',
-                ),
+                ...rules.map(ruleItem),
               ],
             ),
           ),
@@ -4044,6 +4154,124 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           SizedBox(height: 40),
         ],
       ),
+    );
+  }
+
+  Widget _buildProfessionalRegistrationFields(BuildContext context) {
+    final scale = _scaleFactor(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Datos profesionales',
+          style: GoogleFonts.inter(
+            fontSize: 15 * scale,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF0D3B66),
+          ),
+        ),
+        SizedBox(height: 10 * scale),
+        _buildSimpleDropdown(
+          context: context,
+          label: 'Tipo de perfil profesional',
+          hint: 'Selecciona una opción',
+          value: _selectedOrganizationType,
+          options: _organizationTypeOptions,
+          onChanged: (value) =>
+              setState(() => _selectedOrganizationType = value),
+        ),
+        SizedBox(height: 15 * scale),
+        _buildTextField(
+          context: context,
+          label: 'Rol actual',
+          hint: 'Scout, analista, entrenador...',
+          controller: _currentRoleController,
+          focusNode: _currentRoleFocusNode,
+          width: double.infinity,
+        ),
+        SizedBox(height: 15 * scale),
+        _buildTextField(
+          context: context,
+          label: 'Club / organización',
+          hint: 'Nombre del club o red de scouting',
+          controller: _clubController,
+          focusNode: _clubFocusNode,
+          width: double.infinity,
+        ),
+        SizedBox(height: 15 * scale),
+        _buildTextField(
+          context: context,
+          label: 'Zona de trabajo',
+          hint: 'Buenos Aires, LATAM, España norte...',
+          controller: _workZoneController,
+          focusNode: _workZoneFocusNode,
+          width: double.infinity,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSimpleDropdown({
+    required BuildContext context,
+    required String label,
+    required String hint,
+    required String? value,
+    required List<String> options,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final scale = _scaleFactor(context);
+    final fontSize = 13 * scale;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(bottom: 8 * scale),
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: fontSize,
+              fontWeight: FontWeight.w500,
+              color: Colors.black,
+            ),
+          ),
+        ),
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(horizontal: 16 * scale),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: const Color(0xFFA0AEC0)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: options.contains(value) ? value : null,
+              hint: Text(
+                hint,
+                style: GoogleFonts.inter(
+                  fontSize: fontSize,
+                  color: const Color(0xFF2F3336),
+                ),
+              ),
+              isExpanded: true,
+              icon: const Icon(Icons.keyboard_arrow_down),
+              items: options
+                  .map(
+                    (option) => DropdownMenuItem<String>(
+                      value: option,
+                      child: Text(
+                        option,
+                        style: GoogleFonts.inter(fontSize: fontSize),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

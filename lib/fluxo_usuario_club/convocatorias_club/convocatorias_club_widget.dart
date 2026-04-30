@@ -374,7 +374,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
     try {
       await SupaFlow.client
           .from('convocatorias')
-          .update({'estado': 'cerrada'}).eq('id', id);
+          .update({'estado': 'cerrada', 'is_active': false}).eq('id', id);
       _loadData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -402,7 +402,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
     try {
       await SupaFlow.client
           .from('convocatorias')
-          .update({'estado': 'activa'}).eq('id', id);
+          .update({'estado': 'activa', 'is_active': true}).eq('id', id);
       _loadData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1491,6 +1491,7 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
         'edad_maxima': int.tryParse(_edadMaxController.text) ?? 99,
         'fecha_cierre': _fechaCierre.toIso8601String(),
         'estado': 'activa',
+        'is_active': true,
         'required_challenges': requiredChallengesPayload,
         'updated_at': DateTime.now().toIso8601String(),
       };

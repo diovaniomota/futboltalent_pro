@@ -1,6 +1,7 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
+import '/fluxo_compartilhado/video_like_utils.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -2202,15 +2203,21 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
 
   Future<void> _checkIfLiked() async {
     final uid = widget.currentUserId;
-    if (uid == null) return;
+    final vid = widget.videoData['id']?.toString() ?? '';
+    if (vid.isEmpty) return;
     try {
-      final res = await SupaFlow.client
-          .from('likes')
-          .select('id')
-          .eq('video_id', widget.videoData['id'])
-          .eq('user_id', uid)
-          .maybeSingle();
-      if (mounted) setState(() => _isLiked = res != null);
+      final snapshot = await fetchVideoLikeSnapshot(
+        videoId: vid,
+        userId: uid,
+        fallbackCount: _likesCount,
+      );
+      if (mounted) {
+        setState(() {
+          _isLiked = snapshot.isLiked;
+          _likesCount = snapshot.count;
+          widget.videoData['likes_count'] = snapshot.count;
+        });
+      }
     } catch (e) {}
   }
 
@@ -2242,15 +2249,38 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
             .eq('user_id', uid)
             .eq('video_id', vid);
       }
-      await SupaFlow.client
-          .from('videos')
-          .update({'likes_count': _likesCount}).eq('id', vid);
-    } catch (e) {
+      final snapshot = await fetchVideoLikeSnapshot(
+        videoId: vid,
+        userId: uid,
+        fallbackCount: _likesCount,
+      );
       if (mounted) {
         setState(() {
-          _isLiked = prevLiked;
-          _likesCount = prevCount;
+          _isLiked = snapshot.isLiked;
+          _likesCount = snapshot.count;
+          widget.videoData['likes_count'] = snapshot.count;
         });
+      }
+      await persistVideoLikeCount(videoId: vid, count: snapshot.count);
+    } catch (e) {
+      if (mounted) {
+        try {
+          final snapshot = await fetchVideoLikeSnapshot(
+            videoId: vid,
+            userId: uid,
+            fallbackCount: prevCount,
+          );
+          setState(() {
+            _isLiked = snapshot.isLiked;
+            _likesCount = snapshot.count;
+            widget.videoData['likes_count'] = snapshot.count;
+          });
+        } catch (_) {
+          setState(() {
+            _isLiked = prevLiked;
+            _likesCount = prevCount;
+          });
+        }
       }
     }
   }
@@ -2749,7 +2779,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                       _isSaved ? Icons.bookmark : Icons.bookmark_border,
                       _isSaved,
                       _canAddAuthorToScouting
-                          ? (_isSaved ? 'En scouting' : 'Agregar a scouting')
+                          ? 'Salvar'
                           : (_isSaved ? 'Guardado' : 'Guardar'),
                       _toggleSave),
                 ])),
