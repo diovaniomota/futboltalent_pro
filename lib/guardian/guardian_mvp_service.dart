@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/video_visibility_utils.dart';
 
 class GuardianMvpService {
   static const String pendingStatus = 'pending';
@@ -87,6 +88,7 @@ class GuardianMvpService {
     Map<String, dynamic> videoData, {
     Map<String, dynamic>? ownerData,
   }) {
+    if (!isPublicVideoCandidate(videoData)) return false;
     if (isLimitedProfile(ownerData)) return false;
     return normalizedVideoModerationStatus(videoData) == approvedStatus;
   }
@@ -164,10 +166,10 @@ class GuardianMvpService {
           .select()
           .not('approval_code', 'is', null);
       final match = (allGuardians as List).cast<Map<String, dynamic>>().where(
-        (g) =>
-            (g['approval_code']?.toString().trim().toUpperCase() ?? '') ==
-            normalized,
-      );
+            (g) =>
+                (g['approval_code']?.toString().trim().toUpperCase() ?? '') ==
+                normalized,
+          );
       if (match.isEmpty) {
         throw Exception('approval_code_not_found');
       }
@@ -297,4 +299,3 @@ class GuardianMvpService {
     }
   }
 }
-

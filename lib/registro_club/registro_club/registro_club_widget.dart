@@ -5,6 +5,7 @@ import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/index.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -158,9 +159,16 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
     try {
       final response =
           await SupaFlow.client.from('countrys').select().order('name');
+      final countryList = List<Map<String, dynamic>>.from(response ?? []);
+      // Sort manually to guarantee alphabetical order (A-Z)
+      countryList.sort((a, b) {
+        final nameA = (a['name']?.toString() ?? '').trim().toLowerCase();
+        final nameB = (b['name']?.toString() ?? '').trim().toLowerCase();
+        return nameA.compareTo(nameB);
+      });
+
       if (mounted) {
-        setState(
-            () => _countries = List<Map<String, dynamic>>.from(response ?? []));
+        setState(() => _countries = countryList);
       }
     } catch (e) {
       debugPrint('Erro ao carregar países: $e');
@@ -3719,6 +3727,10 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
               Navigator.pop(context);
               context.goNamed('dashboard_club');
             },
+            onExplore: () {
+              Navigator.pop(context);
+              context.goNamed(ExplorarWidget.routeName);
+            },
           ),
         );
       }
@@ -3944,9 +3956,17 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
         value: _selectedCountryId,
         hint: const Text('Selecciona país'),
         isExpanded: true,
-        items: _countries
+        items: (_countries.toList()
+              ..sort((a, b) {
+                final nameA =
+                    (a['name']?.toString() ?? '').trim().toLowerCase();
+                final nameB =
+                    (b['name']?.toString() ?? '').trim().toLowerCase();
+                return nameA.compareTo(nameB);
+              }))
             .map((c) => DropdownMenuItem(
-                value: c['id'].toString(), child: Text(c['name'])))
+                value: c['id'].toString(),
+                child: Text((c['name'] ?? '').toString().trim())))
             .toList(),
         onChanged: (v) {
           if (v == null) return;
@@ -4271,8 +4291,12 @@ class _SearchableListSheetState extends State<_SearchableListSheet> {
 // ===== DIALOG DE VALIDAÇÃO PENDENTE =====
 class _ValidationPendingDialog extends StatelessWidget {
   final VoidCallback onContinue;
+  final VoidCallback onExplore;
 
-  const _ValidationPendingDialog({required this.onContinue});
+  const _ValidationPendingDialog({
+    required this.onContinue,
+    required this.onExplore,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4315,7 +4339,7 @@ class _ValidationPendingDialog extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: onContinue,
+                onPressed: onExplore,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF0D3B66),
                   minimumSize: const Size(0, 43),
@@ -4323,9 +4347,23 @@ class _ValidationPendingDialog extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8)),
                 ),
                 child: Text(
-                  'Continuar',
+                  'Explorar jugadores',
                   style: GoogleFonts.inter(
                       color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: onContinue,
+                child: Text(
+                  'Ir al panel del club',
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF0D3B66),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),

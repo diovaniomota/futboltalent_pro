@@ -30,6 +30,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
         <string>futboltalentpro</string>
+        <string>futboltalent</string>
         </array>
         </dict>
     </array>

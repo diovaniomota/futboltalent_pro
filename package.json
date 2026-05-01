@@ -2,5 +2,12 @@
   "dependencies": {
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^3.11.174"
+  },
+  "scripts": {
+    "test": "flutter test",
+    "test:unit": "flutter test test/",
+    "test:integration": "flutter test integration_test/",
+    "test:e2e": "flutter test integration_test/bugs_integration_test.dart",
+    "test:all": "flutter test test/ && flutter test integration_test/"
   }
 }

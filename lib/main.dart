@@ -172,9 +172,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       await FFAppState().syncUserType();
       if (!FFAppState().registrationComplete &&
           !FFAppState().registrationFlowActive) {
-        await _forceLogoutWithMessage(
-          'Cadastro incompleto. Inicia el registro nuevamente.',
-        );
+        // Redirect to onboarding instead of forcing logout to avoid loops
+        FFAppState().registrationFlowActive = true;
+        _router.goNamed(SeleccionDelTipoDePerfilWidget.routeName);
         return;
       }
       final userData = await SupaFlow.client
@@ -216,10 +216,23 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         final guardianStatus =
             userData['guardian_status']?.toString().trim().toLowerCase() ?? '';
         if (guardianStatus != 'approved') {
-          await _forceLogoutWithMessage(
-            'Esta cuenta de menor aún no fue aprobada por el adulto responsable. '
-            'Usá el código de aprobación desde la pantalla de login.',
-          );
+          FFAppState().authBlockMessage =
+              'Esta cuenta de menor aún no fue aprobada por el adulto responsable. '
+              'Usá el código de aprobación desde la pantalla de login.';
+          _router.clearRedirectLocation();
+          _router.goNamed(LoginWidget.routeName);
+          return;
+        }
+      }
+
+      // Se tudo estiver OK e estivermos na tela de login/onboarding, vai para Home
+      final currentRoute = _router.getCurrentLocation();
+      if (currentRoute == LoginWidget.routePath ||
+          currentRoute == SeleccionDelTipoDePerfilWidget.routePath ||
+          currentRoute == EmpiezaComecarWidget.routePath ||
+          currentRoute == '/') {
+        if (FFAppState().registrationComplete) {
+          _router.go('/');
         }
       }
     } catch (e) {

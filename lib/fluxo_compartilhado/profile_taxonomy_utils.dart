@@ -238,7 +238,7 @@ List<String> buildNormalizedOptions(
   }
 
   final list = uniqueByKey.values.toList()
-    ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    ..sort((a, b) => a.trim().toLowerCase().compareTo(b.trim().toLowerCase()));
   return list;
 }
 

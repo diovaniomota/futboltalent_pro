@@ -6,6 +6,7 @@ import '/index.dart'; // For routes
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'login_model.dart';
 export 'login_model.dart';
 
@@ -158,7 +159,7 @@ class _LoginWidgetState extends State<LoginWidget> {
           final blockMessage =
               'Cuenta suspendida hasta $formattedDate. Contacte al administrador.';
           FFAppState().authBlockMessage = blockMessage;
-          await authManager.signOut();
+          FFAppState().authBlockMessage = blockMessage;
           if (mounted) {
             setState(() {
               _isLoading = false;
@@ -218,9 +219,41 @@ class _LoginWidgetState extends State<LoginWidget> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'No pudimos iniciar tu sesión. Verifica tus credenciales y conexión e intenta nuevamente.';
+          _errorMessage =
+              'No pudimos iniciar tu sessão. Verifica tus credenciales y conexión e intenta de nuevo.';
         });
       }
+    }
+  }
+
+  Future<void> _signInWithProvider(OAuthProvider provider) async {
+    setState(() => _isLoading = true);
+    try {
+      final String redirectTo = kIsWeb
+          ? '${Uri.base.origin}/auth/callback'
+          : 'futboltalent://login-callback';
+
+      final success = await SupaFlow.client.auth.signInWithOAuth(
+        provider,
+        redirectTo: redirectTo,
+      );
+      if (!success && mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage =
+              'No pudimos conectarnos con ${provider.name}. Verifica tu conexão e intenta de novo.';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage =
+              'Error al conectar con ${provider.name}. Intenta de novo.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -262,7 +295,27 @@ class _LoginWidgetState extends State<LoginWidget> {
                           _buildForm(context),
                           SizedBox(height: 100 * scale),
                           _buildLoginButton(context),
+                          SizedBox(height: 30 * scale),
+                          const Divider(thickness: 1, color: Color(0xFFE2E8F0)),
                           SizedBox(height: 20 * scale),
+                          _buildSocialButton(
+                              context,
+                              'Continuar con Google',
+                              FontAwesomeIcons.google,
+                              maxWidth,
+                              onPressed: () =>
+                                  _signInWithProvider(OAuthProvider.google)),
+                          if (isiOS) ...[
+                            SizedBox(height: 12 * scale),
+                            _buildSocialButton(
+                                context,
+                                'Continuar con Apple',
+                                Icons.apple,
+                                maxWidth,
+                                onPressed: () =>
+                                    _signInWithProvider(OAuthProvider.apple)),
+                          ],
+                          SizedBox(height: 30 * scale),
                           _buildRegisterLink(context),
                           SizedBox(height: 40 * scale),
                         ]),
@@ -486,7 +539,10 @@ class _LoginWidgetState extends State<LoginWidget> {
                           } catch (e) {
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('No pudimos enviar el correo de recuperación. Verifica el correo e intenta de nuevo.'), backgroundColor: Colors.red));
+                                const SnackBar(
+                                    content: Text(
+                                        'No pudimos enviar el correo de recuperación. Verifica el correo e intenta de nuevo.'),
+                                    backgroundColor: Colors.red));
                           }
                         }
                       },
@@ -565,6 +621,11 @@ class _LoginWidgetState extends State<LoginWidget> {
                             backgroundColor: Colors.green,
                           ),
                         );
+                        FFAppState().authBlockMessage = '';
+                        if (currentUserUid.isNotEmpty) {
+                          await FFAppState().syncUserType();
+                          if (mounted) context.goNamed(FeedWidget.routeName);
+                        }
                       } catch (error) {
                         final message = error.toString().toLowerCase();
                         setDialogState(() {
@@ -591,6 +652,41 @@ class _LoginWidgetState extends State<LoginWidget> {
                   : const Text('Aprobar'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSocialButton(
+    BuildContext context,
+    String label,
+    IconData icon,
+    double width, {
+    required VoidCallback onPressed,
+  }) {
+    final scale = _scaleFactor(context);
+    final buttonWidth =
+        _responsive(context, mobile: 231, tablet: 260, desktop: 280);
+
+    return SizedBox(
+      width: buttonWidth * scale,
+      height: 50 * scale,
+      child: OutlinedButton.icon(
+        onPressed: _isLoading ? null : onPressed,
+        icon: Icon(icon,
+            size: icon == Icons.apple ? 24 * scale : 18 * scale,
+            color: const Color(0xFF0D3B66)),
+        label: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 14 * scale,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF0D3B66),
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: Color(0xFFE2E8F0)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       ),
     );

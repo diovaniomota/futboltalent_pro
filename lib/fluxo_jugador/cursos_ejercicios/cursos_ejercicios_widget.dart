@@ -3,6 +3,7 @@ import '/backend/supabase/supabase.dart';
 import '/flutter_flow/app_modals.dart';
 import '/gamification/gamification_service.dart';
 import '/fluxo_compartilhado/video_source_utils.dart';
+import '/fluxo_compartilhado/video_visibility_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
@@ -357,13 +358,16 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     try {
       final videos = await SupaFlow.client
           .from('videos')
-          .select('id, user_id, description, video_url, created_at')
+          .select()
           .eq('user_id', currentUserUid)
+          .eq('is_public', true)
           .order('created_at', ascending: false)
           .limit(300);
       final tagExp = RegExp(r'\[challenge_ref:(course|exercise):([^\]]+)\]');
       for (final row in (videos as List)) {
-        final description = row['description']?.toString() ?? '';
+        final videoRow = Map<String, dynamic>.from(row as Map);
+        if (!isPublicVideoCandidate(videoRow)) continue;
+        final description = videoRow['description']?.toString() ?? '';
         final match = tagExp.firstMatch(description);
         if (match == null) continue;
         final itemType = match.group(1)?.trim() ?? '';
@@ -373,11 +377,11 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
         _attemptByItemKey[key] ??= _ChallengeAttempt(
           itemId: itemId,
           itemType: itemType,
-          profileVideoId: row['id']?.toString(),
-          videoUrl: row['video_url']?.toString() ?? '',
+          profileVideoId: videoRow['id']?.toString(),
+          videoUrl: videoRow['video_url']?.toString() ?? '',
           localPath: null,
           submittedAt:
-              DateTime.tryParse((row['created_at'] ?? '').toString()) ??
+              DateTime.tryParse((videoRow['created_at'] ?? '').toString()) ??
                   DateTime.now(),
         );
       }
@@ -435,28 +439,47 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     try {
       final videos = await SupaFlow.client
           .from('videos')
-          .select('id, description, video_url, created_at')
+          .select()
           .eq('user_id', currentUserUid)
+          .eq('is_public', true)
           .order('created_at', ascending: false)
           .limit(200);
       final token = '[challenge_ref:$itemType:$itemId]';
       for (final row in (videos as List)) {
-        final description = row['description']?.toString() ?? '';
+        final videoRow = Map<String, dynamic>.from(row as Map);
+        if (!isPublicVideoCandidate(videoRow)) continue;
+        final description = videoRow['description']?.toString() ?? '';
         if (!description.contains(token)) continue;
         _attemptByItemKey[key] = _ChallengeAttempt(
           itemId: itemId,
           itemType: itemType,
-          profileVideoId: row['id']?.toString(),
-          videoUrl: row['video_url']?.toString() ?? '',
+          profileVideoId: videoRow['id']?.toString(),
+          videoUrl: videoRow['video_url']?.toString() ?? '',
           localPath: _attemptByItemKey[key]?.localPath,
           submittedAt:
-              DateTime.tryParse((row['created_at'] ?? '').toString()) ??
+              DateTime.tryParse((videoRow['created_at'] ?? '').toString()) ??
                   DateTime.now(),
         );
         await _persistAttempts();
         break;
       }
     } catch (_) {}
+  }
+
+  Future<void> _insertVideoWithSchemaFallback(
+      Map<String, dynamic> payload) async {
+    final mutablePayload = Map<String, dynamic>.from(payload);
+    final optionalColumns = ['moderation_status', 'thumbnail_url', 'videoType'];
+
+    for (var attempt = 0; attempt <= optionalColumns.length; attempt++) {
+      try {
+        await SupaFlow.client.from('videos').insert(mutablePayload);
+        return;
+      } catch (_) {
+        if (attempt >= optionalColumns.length) rethrow;
+        mutablePayload.remove(optionalColumns[attempt]);
+      }
+    }
   }
 
   Future<void> _markItemCompletedFromAttempt(Map<String, dynamic> item) async {
@@ -577,6 +600,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       final challengeRef = '[challenge_ref:$itemType:$itemId]';
       var uploadExt = _fileExtension(video.name);
       Uint8List bytes;
+      Uint8List? thumbnailBytes;
       // Keep the original camera file for local preview.
       // Compressed files live in temporary cache and may be deleted later.
       String? localVideoPath = kIsWeb ? null : video.path;
@@ -602,6 +626,15 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           debugPrint('Challenge video compression failed, using original: $e');
           bytes = await File(video.path).readAsBytes();
         }
+        try {
+          thumbnailBytes = await VideoCompress.getByteThumbnail(
+            video.path,
+            quality: 75,
+            position: 1000,
+          );
+        } catch (e) {
+          debugPrint('Challenge thumbnail generation failed: $e');
+        }
       }
 
       final fileName =
@@ -619,6 +652,25 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       final publicUrl = SupaFlow.client.storage.from('Videos').getPublicUrl(
             fileName,
           );
+      String? thumbnailUrl;
+      if (thumbnailBytes != null && thumbnailBytes.isNotEmpty) {
+        try {
+          final thumbName =
+              'challenge_attempts/$currentUserUid/thumbnails/${itemType}_${itemId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          await SupaFlow.client.storage.from('Videos').uploadBinary(
+                thumbName,
+                thumbnailBytes,
+                fileOptions: const FileOptions(
+                  contentType: 'image/jpeg',
+                  upsert: true,
+                ),
+              );
+          thumbnailUrl =
+              SupaFlow.client.storage.from('Videos').getPublicUrl(thumbName);
+        } catch (e) {
+          debugPrint('Challenge thumbnail upload failed: $e');
+        }
+      }
 
       String? profileVideoId;
       Map<String, dynamic>? currentUserData;
@@ -635,6 +687,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
         final payload = <String, dynamic>{
           'user_id': currentUserUid,
           'video_url': publicUrl,
+          if (thumbnailUrl?.isNotEmpty == true) 'thumbnail_url': thumbnailUrl,
           'title': 'Desafío: ${item['title'] ?? itemType}',
           'description':
               'Video enviado al intentar un desafío de entrenamiento. $challengeRef',
@@ -644,17 +697,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           'created_at': DateTime.now().toIso8601String(),
           'moderation_status': moderationStatus,
         };
-        try {
-          await SupaFlow.client.from('videos').insert(payload);
-        } catch (_) {
-          try {
-            payload.remove('moderation_status');
-            await SupaFlow.client.from('videos').insert(payload);
-          } catch (_) {
-            payload.remove('videoType');
-            await SupaFlow.client.from('videos').insert(payload);
-          }
-        }
+        await _insertVideoWithSchemaFallback(payload);
         try {
           final lookup = await SupaFlow.client
               .from('videos')
@@ -1511,7 +1554,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                     ? Padding(
                                         padding: const EdgeInsets.all(24),
                                         child: PlanPaywallCard(
-                                          title: 'Desafíos y cursos en Plan Pro',
+                                          title:
+                                              'Desafíos y cursos en Plan Pro',
                                           message:
                                               'Este módulo de entrenamiento está disponible para usuarios Pro. Si el modo piloto está ON, el acceso es libre.',
                                         ),

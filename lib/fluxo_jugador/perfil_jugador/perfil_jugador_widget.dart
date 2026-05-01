@@ -5,6 +5,7 @@ import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/fluxo_compartilhado/profile_support_sheet.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/fluxo_compartilhado/video_like_utils.dart';
+import '/fluxo_compartilhado/video_visibility_utils.dart';
 import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
@@ -15,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:video_player/video_player.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'perfil_jugador_model.dart';
 export 'perfil_jugador_model.dart';
 
@@ -163,6 +165,117 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     }
   }
 
+  Future<List<Map<String, dynamic>>> _challengeAttemptsForVideo(
+      String videoId) async {
+    try {
+      final rows = await SupaFlow.client
+          .from('user_challenge_attempts')
+          .select('id, item_id, item_type')
+          .eq('user_id', currentUserUid)
+          .eq('video_id', videoId);
+      return List<Map<String, dynamic>>.from(rows as List);
+    } catch (e) {
+      debugPrint('Challenge attempt lookup failed for video $videoId: $e');
+      return const [];
+    }
+  }
+
+  Future<void> _clearLocalChallengeAttemptsCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('challenge_attempts_$currentUserUid');
+    } catch (e) {
+      debugPrint('Challenge attempt cache cleanup failed: $e');
+    }
+  }
+
+  Future<bool> _hasOtherChallengeAttempt({
+    required String videoId,
+    required String itemType,
+    required String itemId,
+  }) async {
+    try {
+      final rows = await SupaFlow.client
+          .from('user_challenge_attempts')
+          .select('id')
+          .eq('user_id', currentUserUid)
+          .eq('item_type', itemType)
+          .eq('item_id', itemId)
+          .neq('video_id', videoId)
+          .limit(1);
+      return (rows as List).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _revertChallengeCompletionForDeletedAttempts({
+    required String videoId,
+    required List<Map<String, dynamic>> attempts,
+  }) async {
+    for (final attempt in attempts) {
+      final itemType =
+          attempt['item_type']?.toString().trim().toLowerCase() ?? '';
+      final itemId = attempt['item_id']?.toString().trim() ?? '';
+      if (itemType.isEmpty || itemId.isEmpty) continue;
+      if (await _hasOtherChallengeAttempt(
+        videoId: videoId,
+        itemType: itemType,
+        itemId: itemId,
+      )) {
+        continue;
+      }
+
+      try {
+        if (itemType == 'course') {
+          try {
+            await SupaFlow.client
+                .from('user_courses')
+                .update({
+                  'status': 'not_started',
+                  'progress_percent': 0,
+                  'xp_earned': 0,
+                })
+                .eq('user_id', currentUserUid)
+                .eq('course_id', itemId)
+                .eq('status', 'completed');
+          } catch (_) {
+            await SupaFlow.client
+                .from('user_courses')
+                .update({'status': 'not_started'})
+                .eq('user_id', currentUserUid)
+                .eq('course_id', itemId)
+                .eq('status', 'completed');
+          }
+        } else if (itemType == 'exercise') {
+          try {
+            await SupaFlow.client
+                .from('user_exercises')
+                .update({
+                  'status': 'not_started',
+                  'total_xp_earned': 0,
+                })
+                .eq('user_id', currentUserUid)
+                .eq('exercise_id', itemId)
+                .eq('status', 'completed');
+          } catch (_) {
+            await SupaFlow.client
+                .from('user_exercises')
+                .update({'status': 'not_started'})
+                .eq('user_id', currentUserUid)
+                .eq('exercise_id', itemId)
+                .eq('status', 'completed');
+          }
+        }
+      } catch (e) {
+        debugPrint(
+            'Challenge completion revert failed for $itemType/$itemId: $e');
+      }
+    }
+
+    await _clearLocalChallengeAttemptsCache();
+  }
+
   Future<void> _deleteOwnVideo(Map<String, dynamic> video) async {
     final videoId = (video['id'] ?? '').toString().trim();
     final ownerId = (video['user_id'] ?? '').toString().trim();
@@ -211,6 +324,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       bool removed = false;
       bool hardDeleted = false;
       setState(() => _deletingVideoId = videoId);
+      final challengeAttempts = await _challengeAttemptsForVideo(videoId);
 
       // Try direct delete first in case the DB already cascades related rows.
       try {
@@ -247,21 +361,43 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       // don't allow a hard delete in production yet.
       if (!removed) {
         try {
+          final deletedAt = DateTime.now().toIso8601String();
           final updateResponse = await SupaFlow.client
               .from('videos')
               .update({
                 'is_public': false,
+                'is_deleted': true,
+                'deleted_at': deletedAt,
               })
               .eq('user_id', currentUserUid)
               .eq('id', videoId)
-              .select('id, is_public');
+              .select('id, is_public, is_deleted, deleted_at');
           removed = (updateResponse as List).isNotEmpty;
         } catch (e) {
-          debugPrint('Soft hide failed for video $videoId: $e');
+          debugPrint('Soft delete marker failed for video $videoId: $e');
+          try {
+            final updateResponse = await SupaFlow.client
+                .from('videos')
+                .update({
+                  'is_public': false,
+                })
+                .eq('user_id', currentUserUid)
+                .eq('id', videoId)
+                .select('id, is_public');
+            removed = (updateResponse as List).isNotEmpty;
+          } catch (fallbackError) {
+            debugPrint('Soft hide failed for video $videoId: $fallbackError');
+          }
         }
       }
 
       if (removed) {
+        await _revertChallengeCompletionForDeletedAttempts(
+          videoId: videoId,
+          attempts: challengeAttempts,
+        );
+        await _cleanupVideoRelations(videoId);
+
         if (hardDeleted) {
           final storageUrls = <String>{
             (video['video_url'] ?? '').toString().trim(),
@@ -309,7 +445,10 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       if (!mounted) return;
       setState(() => _deletingVideoId = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No pudimos eliminar este video. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
+        const SnackBar(
+            content: Text(
+                'No pudimos eliminar este video. Verifica tu conexión e intenta de nuevo.'),
+            backgroundColor: Colors.red),
       );
     }
   }
@@ -406,7 +545,9 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           .eq('is_public', true)
           .order('created_at', ascending: false);
       final videos = _sortVideosForProfile(
-          List<Map<String, dynamic>>.from(videosResponse));
+          List<Map<String, dynamic>>.from(videosResponse)
+              .where(isPublicVideoCandidate)
+              .toList());
       final savedVideos = await _loadSavedVideos(uid);
 
       // Calcular ranking do usuário (com tratamento de erro)
@@ -486,7 +627,9 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           .select()
           .inFilter('id', videoIds);
 
-      final videos = List<Map<String, dynamic>>.from(videosResponse);
+      final videos = List<Map<String, dynamic>>.from(videosResponse)
+          .where(isPublicVideoCandidate)
+          .toList();
       final videosById = <String, Map<String, dynamic>>{
         for (final video in videos)
           (video['id']?.toString() ?? ''): Map<String, dynamic>.from(video),
@@ -979,7 +1122,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Text(status == 'accepted' ? 'Aprobar' : 'Recusar'),
+                  : Text(status == 'accepted' ? 'Aprobar' : 'Rechazar'),
             ),
           ],
         ),
@@ -1188,7 +1331,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                       strokeWidth: 2,
                                     ),
                                   )
-                                : const Text('Recusar'),
+                                : const Text('Rechazar'),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -1215,7 +1358,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                               backgroundColor: const Color(0xFF0D3B66),
                             ),
                             child: const Text(
-                              'Aprovar',
+                              'Aprobar',
                               style: TextStyle(color: Colors.white),
                             ),
                           ),
@@ -1277,7 +1420,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : const Text('Recusar con código'),
+                                    : const Text('Rechazar con código'),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -1761,7 +1904,8 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     final filteredVideos = _videoFilterType == 'todos'
         ? orderedVideos
         : orderedVideos.where((v) {
-            final ct = v['content_type']?.toString().trim().toLowerCase() ?? 'video';
+            final ct =
+                v['content_type']?.toString().trim().toLowerCase() ?? 'video';
             return ct == _videoFilterType;
           }).toList();
 
@@ -1898,11 +2042,14 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                   (item) => item['id']?.toString() == videoId,
                 );
                 // 3.3 — Badge visual por content_type
-                final contentType = video['content_type']?.toString().trim().toLowerCase() ?? 'video';
+                final contentType =
+                    video['content_type']?.toString().trim().toLowerCase() ??
+                        'video';
                 Widget? typeBadge;
                 if (contentType == 'desafio') {
                   typeBadge = Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFF9800),
                       borderRadius: BorderRadius.circular(999),
@@ -1910,13 +2057,16 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                     child: Text(
                       'Desafío',
                       style: GoogleFonts.inter(
-                        color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   );
                 } else if (contentType == 'convocatoria') {
                   typeBadge = Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: const Color(0xFF7C3AED),
                       borderRadius: BorderRadius.circular(999),
@@ -1924,7 +2074,9 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                     child: Text(
                       'Convocatoria',
                       style: GoogleFonts.inter(
-                        color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   );
@@ -1965,8 +2117,9 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                             )
                           : typeBadge,
                       topRightAction: GestureDetector(
-                        onTap:
-                            isUpdating ? null : () => _toggleFeaturedVideo(video),
+                        onTap: isUpdating
+                            ? null
+                            : () => _toggleFeaturedVideo(video),
                         child: Container(
                           width: 30,
                           height: 30,
@@ -2051,7 +2204,8 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           color: isSelected ? const Color(0xFF0D3B66) : const Color(0xFFF1F5F9),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: isSelected ? const Color(0xFF0D3B66) : const Color(0xFFE2E8F0),
+            color:
+                isSelected ? const Color(0xFF0D3B66) : const Color(0xFFE2E8F0),
           ),
         ),
         child: Text(
@@ -3326,32 +3480,9 @@ class _VideoCardState extends State<_VideoCard> {
   }
 
   Future<void> _preparePreview() async {
-    if (_hasThumbnail || widget.videoUrl.trim().isEmpty) return;
-
-    final uri = Uri.tryParse(widget.videoUrl.trim());
-    if (uri == null) return;
-
-    final controller = VideoPlayerController.networkUrl(
-      uri,
-      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-    );
-    _previewController = controller;
-
-    try {
-      await controller.setVolume(0);
-      await controller.setLooping(false);
-      await controller.initialize();
-      await controller.pause();
-      await controller.seekTo(Duration.zero);
-      if (!mounted || !identical(_previewController, controller)) return;
-      setState(() => _isPreviewReady = true);
-    } catch (e) {
-      debugPrint('Video preview unavailable for ${widget.videoUrl}: $e');
-      if (identical(_previewController, controller)) {
-        await controller.dispose();
-        _previewController = null;
-      }
-    }
+    // The profile grid must not download a full video just to paint a preview.
+    // Rows without thumbnails render the static video placeholder below.
+    return;
   }
 
   void _disposePreviewController() {

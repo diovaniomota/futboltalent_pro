@@ -1,5 +1,6 @@
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/convocatoria_snapshot_service.dart';
+import '/fluxo_compartilhado/video_visibility_utils.dart';
 
 class GamificationService {
   static const int profileCompletePoints = 50;
@@ -127,6 +128,10 @@ class GamificationService {
     return count;
   }
 
+  static bool isXpEligibleVideoRow(Map<String, dynamic> video) {
+    return isPublicVideoCandidate(video);
+  }
+
   static int? birthYearFromRaw(dynamic raw) {
     if (raw == null) return null;
     final text = raw.toString().trim();
@@ -246,21 +251,47 @@ class GamificationService {
       videosRows =
           await SupaFlow.client.from('videos').select().eq('user_id', uid);
     } catch (_) {}
+    videosRows = videosRows.where((row) {
+      if (row is! Map) return false;
+      return isXpEligibleVideoRow(Map<String, dynamic>.from(row));
+    }).toList();
+    final validVideoIds = <String>{};
+    final validVideoUrls = <String>{};
+    for (final row in videosRows) {
+      final map = Map<String, dynamic>.from(row as Map);
+      final id = map['id']?.toString().trim() ?? '';
+      if (id.isNotEmpty) validVideoIds.add(id);
+      final url = playableVideoUrl(map);
+      if (url.isNotEmpty) validVideoUrls.add(url);
+    }
 
     final participatedKeys = <String>{};
     final completedKeys = <String>{};
+    final validAttemptKeys = <String>{};
     int coursesCompleted = 0;
     int exercisesCompleted = 0;
+
+    String challengeKeyFor(String type, String itemId) {
+      final safeType = type.trim().toLowerCase();
+      final safeId = itemId.trim();
+      if (safeType.isEmpty || safeId.isEmpty) return '';
+      return '$safeType:$safeId';
+    }
+
+    bool attemptReferencesValidVideo(Map<String, dynamic> attempt) {
+      final videoId = attempt['video_id']?.toString().trim() ?? '';
+      if (videoId.isNotEmpty) return validVideoIds.contains(videoId);
+      final videoUrl = playableVideoUrl(attempt);
+      return videoUrl.isNotEmpty && validVideoUrls.contains(videoUrl);
+    }
 
     void addChallengeKey({
       required String type,
       required String itemId,
       bool completed = false,
     }) {
-      final safeType = type.trim().toLowerCase();
-      final safeId = itemId.trim();
-      if (safeType.isEmpty || safeId.isEmpty) return;
-      final key = '$safeType:$safeId';
+      final key = challengeKeyFor(type, itemId);
+      if (key.isEmpty) return;
       participatedKeys.add(key);
       if (completed) completedKeys.add(key);
     }
@@ -268,7 +299,8 @@ class GamificationService {
     try {
       final attempts = await SupaFlow.client
           .from('user_challenge_attempts')
-          .select('item_type, item_id, status, submitted_at, valid_until')
+          .select(
+              'item_type, item_id, status, video_id, video_url, submitted_at, valid_until')
           .eq('user_id', uid);
       for (final row in (attempts as List)) {
         final map = Map<String, dynamic>.from(row as Map);
@@ -285,6 +317,14 @@ class GamificationService {
           continue; // Tentativa expirada, não conta
         }
 
+        if (!attemptReferencesValidVideo(map)) {
+          continue;
+        }
+        final key = challengeKeyFor(
+          map['item_type']?.toString() ?? '',
+          map['item_id']?.toString() ?? '',
+        );
+        if (key.isNotEmpty) validAttemptKeys.add(key);
         addChallengeKey(
           type: map['item_type']?.toString() ?? '',
           itemId: map['item_id']?.toString() ?? '',
@@ -302,14 +342,17 @@ class GamificationService {
         final map = Map<String, dynamic>.from(row as Map);
         final status = map['status']?.toString().toLowerCase().trim() ?? '';
         final completed = status == 'completed';
+        final itemId = map['course_id']?.toString() ?? '';
+        final completedWithVideo = completed &&
+            validAttemptKeys.contains(challengeKeyFor('course', itemId));
         if (completed || status == 'in_progress') {
           addChallengeKey(
             type: 'course',
-            itemId: map['course_id']?.toString() ?? '',
-            completed: completed,
+            itemId: itemId,
+            completed: completedWithVideo,
           );
         }
-        if (completed) coursesCompleted += 1;
+        if (completedWithVideo) coursesCompleted += 1;
       }
     } catch (_) {}
 
@@ -322,14 +365,17 @@ class GamificationService {
         final map = Map<String, dynamic>.from(row as Map);
         final status = map['status']?.toString().toLowerCase().trim() ?? '';
         final completed = status == 'completed';
+        final itemId = map['exercise_id']?.toString() ?? '';
+        final completedWithVideo = completed &&
+            validAttemptKeys.contains(challengeKeyFor('exercise', itemId));
         if (completed || status == 'in_progress') {
           addChallengeKey(
             type: 'exercise',
-            itemId: map['exercise_id']?.toString() ?? '',
-            completed: completed,
+            itemId: itemId,
+            completed: completedWithVideo,
           );
         }
-        if (completed) exercisesCompleted += 1;
+        if (completedWithVideo) exercisesCompleted += 1;
       }
     } catch (_) {}
 

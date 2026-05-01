@@ -4,6 +4,7 @@ import '/fluxo_compartilhado/club_application_utils.dart';
 import '/fluxo_compartilhado/club_identity_utils.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
+import '/fluxo_compartilhado/video_visibility_utils.dart';
 import 'package:flutter/material.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
@@ -175,10 +176,12 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
         try {
           final videosResponse = await SupaFlow.client
               .from('videos')
-              .select('id')
+              .select()
               .eq('is_public', true)
               .inFilter('user_id', playerIds);
-          _totalVideos = (videosResponse as List).length;
+          _totalVideos = List<Map<String, dynamic>>.from(videosResponse as List)
+              .where(isPublicVideoCandidate)
+              .length;
         } catch (_) {
           _totalVideos = 0;
         }
@@ -224,18 +227,22 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
         return;
       }
 
-      final jugadoresResponse = await SupaFlow.client
-          .from('users')
-          .select()
-          .inFilter('user_id', playerIds);
-
       final jugadoresById = <String, Map<String, dynamic>>{};
-      for (final row
-          in List<Map<String, dynamic>>.from(jugadoresResponse as List)) {
-        final id = row['user_id']?.toString() ?? '';
-        if (id.isNotEmpty) {
-          jugadoresById[id] = row;
+      try {
+        final jugadoresResponse = await SupaFlow.client
+            .from('users')
+            .select()
+            .inFilter('user_id', playerIds);
+
+        for (final row
+            in List<Map<String, dynamic>>.from(jugadoresResponse as List)) {
+          final id = row['user_id']?.toString() ?? '';
+          if (id.isNotEmpty) {
+            jugadoresById[id] = row;
+          }
         }
+      } catch (e) {
+        debugPrint('Error cargando users: $e');
       }
 
       for (final post in postulaciones) {
@@ -257,8 +264,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
         try {
           final videosResponse = await SupaFlow.client
               .from('videos')
-              .select(
-                  'id, user_id, title, thumbnail_url, video_url, created_at')
+              .select()
               .eq('is_public', true)
               .inFilter('user_id', playerIds)
               .order('created_at', ascending: false)
@@ -266,6 +272,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
 
           for (final row
               in List<Map<String, dynamic>>.from(videosResponse as List)) {
+            if (!isPublicVideoCandidate(row)) continue;
             final playerId = row['user_id']?.toString().trim() ?? '';
             if (playerId.isEmpty) continue;
             latestVideoByPlayer.putIfAbsent(playerId, () => row);
@@ -275,8 +282,10 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
 
       for (final post in postulaciones) {
         final playerId = clubApplicationPlayerId(post);
-        post['latest_video'] = latestVideoByPlayer[playerId];
-        post['has_video'] = latestVideoByPlayer[playerId] != null;
+        final latestVideo = latestVideoByPlayer[playerId];
+        post['latest_video'] = latestVideo;
+        post['has_video'] =
+            latestVideo != null && isPublicVideoCandidate(latestVideo);
       }
 
       _allPostulaciones = postulaciones;
@@ -371,7 +380,10 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No pudimos actualizar el estado. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text(
+                  'No pudimos actualizar el estado. Verifica tu conexión e intenta de nuevo.'),
+              backgroundColor: Colors.red),
         );
       }
     }
@@ -1270,11 +1282,11 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final estado = postulacion['estado']?.toString() ?? 'pendiente';
     final jugadorId = jugador?['user_id']?.toString() ?? '';
     final latestVideo = postulacion['latest_video'] as Map<String, dynamic>?;
-    final latestVideoUrl = latestVideo?['video_url']?.toString().trim() ?? '';
+    final latestVideoUrl =
+        latestVideo == null ? '' : playableVideoUrl(latestVideo);
     final latestVideoThumb =
         latestVideo?['thumbnail_url']?.toString().trim() ?? '';
-    final hasVideo =
-        latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
+    final hasVideo = latestVideoUrl.isNotEmpty;
     final convocatoria = postulacion['convocatoria'] as Map<String, dynamic>?;
     final convocatoriaTitle = (postulacion['convocatoria_titulo'] ??
             convocatoria?['titulo'] ??
@@ -1554,10 +1566,12 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     double buttonFontSize,
     double scale,
   ) {
+    final latestVideo = postulacion['latest_video'] is Map<String, dynamic>
+        ? postulacion['latest_video'] as Map<String, dynamic>
+        : null;
     final latestVideoUrl =
-        postulacion['latest_video']?['video_url']?.toString().trim() ?? '';
-    final hasVideo =
-        latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
+        latestVideo == null ? '' : playableVideoUrl(latestVideo);
+    final hasVideo = latestVideoUrl.isNotEmpty;
 
     return Row(
       children: [
@@ -1687,10 +1701,12 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     double buttonFontSize,
     double scale,
   ) {
+    final latestVideo = postulacion['latest_video'] is Map<String, dynamic>
+        ? postulacion['latest_video'] as Map<String, dynamic>
+        : null;
     final latestVideoUrl =
-        postulacion['latest_video']?['video_url']?.toString().trim() ?? '';
-    final hasVideo =
-        latestVideoUrl.isNotEmpty || postulacion['has_video'] == true;
+        latestVideo == null ? '' : playableVideoUrl(latestVideo);
+    final hasVideo = latestVideoUrl.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1883,8 +1899,11 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final age = _calculateAge(jugador?['birthday']);
     final photoUrl = jugador?['photo_url'];
     final mensaje = postulacion['mensaje'] ?? '';
+    final latestVideo = postulacion['latest_video'] is Map<String, dynamic>
+        ? postulacion['latest_video'] as Map<String, dynamic>
+        : null;
     final latestVideoUrl =
-        postulacion['latest_video']?['video_url']?.toString().trim() ?? '';
+        latestVideo == null ? '' : playableVideoUrl(latestVideo);
 
     String initials = '';
     if (name.isNotEmpty) initials += name[0].toUpperCase();
@@ -2239,7 +2258,10 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No pudimos agregar este jugador a tu lista. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text(
+                  'No pudimos agregar este jugador a tu lista. Verifica tu conexión e intenta de nuevo.'),
+              backgroundColor: Colors.red),
         );
       }
     } finally {

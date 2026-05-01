@@ -4149,10 +4149,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
           value: null,
           child: Text('Todos'),
         ),
-        ...options.map(
+        ...(options.toList()
+              ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase())))
+            .map(
           (opt) => DropdownMenuItem<String>(
             value: opt,
-            child: Text(opt, overflow: TextOverflow.ellipsis),
+            child: Text(opt.trim(), overflow: TextOverflow.ellipsis),
           ),
         ),
       ],

@@ -4,6 +4,7 @@ import '/fluxo_compartilhado/club_application_utils.dart';
 import '/fluxo_compartilhado/club_identity_utils.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
+import '/fluxo_compartilhado/video_visibility_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
 import 'package:flutter/material.dart';
@@ -1587,7 +1588,10 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
       debugPrint('Error guardando convocatoria: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No pudimos guardar los cambios en la convocatoria. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text(
+                  'No pudimos guardar los cambios en la convocatoria. Verifica tu conexión e intenta de nuevo.'),
+              backgroundColor: Colors.red),
         );
         setState(() => _isSaving = false);
       }
@@ -2377,12 +2381,13 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
       ]);
 
       final publicVideoByPlayer = <String, Map<String, dynamic>>{};
+      final validPublicVideoIds = <String>{};
+      final validPublicVideoUrls = <String>{};
       if (playerIds.isNotEmpty) {
         try {
           final videosResponse = await SupaFlow.client
               .from('videos')
-              .select(
-                  'id, user_id, title, thumbnail_url, video_url, created_at')
+              .select()
               .eq('is_public', true)
               .inFilter('user_id', playerIds)
               .order('created_at', ascending: false)
@@ -2390,6 +2395,11 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
 
           for (final video
               in List<Map<String, dynamic>>.from(videosResponse as List)) {
+            if (!isPublicVideoCandidate(video)) continue;
+            final videoId = video['id']?.toString().trim() ?? '';
+            final videoUrl = playableVideoUrl(video);
+            if (videoId.isNotEmpty) validPublicVideoIds.add(videoId);
+            if (videoUrl.isNotEmpty) validPublicVideoUrls.add(videoUrl);
             final userId = video['user_id']?.toString().trim() ?? '';
             if (userId.isEmpty) continue;
             publicVideoByPlayer.putIfAbsent(userId, () => video);
@@ -2405,6 +2415,12 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
               final id = challenge['id']?.toString().trim() ?? '';
               final attempt = attemptByKey['$playerId::$type:$id'];
               if (attempt == null) return null;
+              final videoId = attempt['video_id']?.toString().trim() ?? '';
+              final videoUrl = playableVideoUrl(attempt);
+              final referencesValidVideo = videoId.isNotEmpty
+                  ? validPublicVideoIds.contains(videoId)
+                  : validPublicVideoUrls.contains(videoUrl);
+              if (videoUrl.isEmpty || !referencesValidVideo) return null;
               return {
                 ...attempt,
                 'challenge_title': _convocatoriaChallengeTitle(challenge),
@@ -2480,8 +2496,10 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
     final latestPublicVideo =
         candidate['latest_public_video'] as Map<String, dynamic>?;
     final primaryVideoUrl = attemptVideos.isNotEmpty
-        ? attemptVideos.first['video_url']?.toString() ?? ''
-        : latestPublicVideo?['video_url']?.toString() ?? '';
+        ? playableVideoUrl(attemptVideos.first)
+        : latestPublicVideo == null
+            ? ''
+            : playableVideoUrl(latestPublicVideo);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -2590,7 +2608,7 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
               final submittedAt = DateTime.tryParse(
                 attempt['submitted_at']?.toString() ?? '',
               );
-              final videoUrl = attempt['video_url']?.toString() ?? '';
+              final videoUrl = playableVideoUrl(attempt);
               return Container(
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.all(12),
@@ -2657,7 +2675,7 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
                   const SizedBox(width: 12),
                   TextButton(
                     onPressed: () => _openVideo(
-                      latestPublicVideo['video_url']?.toString() ?? '',
+                      playableVideoUrl(latestPublicVideo),
                     ),
                     child: const Text('Ver postulación'),
                   ),

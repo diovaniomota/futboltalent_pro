@@ -267,9 +267,16 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
     try {
       final response =
           await SupaFlow.client.from('countrys').select().order('name');
+      final countryList = List<Map<String, dynamic>>.from(response ?? []);
+      // Sort manually to guarantee alphabetical order (A-Z)
+      countryList.sort((a, b) {
+        final nameA = (a['name']?.toString() ?? '').trim().toLowerCase();
+        final nameB = (b['name']?.toString() ?? '').trim().toLowerCase();
+        return nameA.compareTo(nameB);
+      });
+
       if (mounted) {
-        setState(
-            () => _countries = List<Map<String, dynamic>>.from(response ?? []));
+        setState(() => _countries = countryList);
       }
     } catch (e) {
       debugPrint('Error cargando países: $e');
@@ -2293,13 +2300,21 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                   padding: EdgeInsets.symmetric(horizontal: 12),
                   child: Text('Selecciona un país'),
                 ),
-                items: _countries.map((c) {
+                items: (_countries.toList()
+                      ..sort((a, b) {
+                        final nameA =
+                            (a['name']?.toString() ?? '').trim().toLowerCase();
+                        final nameB =
+                            (b['name']?.toString() ?? '').trim().toLowerCase();
+                        return nameA.compareTo(nameB);
+                      }))
+                    .map((c) {
                   final name = normalizeCountryName(c['name'] ?? '');
                   return DropdownMenuItem(
                     value: name,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(name),
+                      child: Text(name.trim()),
                     ),
                   );
                 }).toList(),

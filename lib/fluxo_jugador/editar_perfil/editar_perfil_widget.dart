@@ -467,9 +467,18 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           .from('countrys')
           .select('id, name')
           .order('name');
+
+      final countryList = List<Map<String, dynamic>>.from(response as List);
+      // Sort manually to guarantee alphabetical order (A-Z)
+      countryList.sort((a, b) {
+        final nameA = (a['name']?.toString() ?? '').trim().toLowerCase();
+        final nameB = (b['name']?.toString() ?? '').trim().toLowerCase();
+        return nameA.compareTo(nameB);
+      });
+
       if (!mounted) return;
       setState(() {
-        _countries = List<Map<String, dynamic>>.from(response as List);
+        _countries = countryList;
         _applySelectedCountryByName(
           _countryController?.text,
           updateController: false,
@@ -2813,9 +2822,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                         isProfilePhoto: isProfilePhoto);
                   },
                 ),
-                if (isProfilePhoto &&
-                    _photoUrl != null &&
-                    _photoUrl!.isNotEmpty)
+                if ((isProfilePhoto
+                    ? (_photoUrl?.isNotEmpty ?? false)
+                    : (_coverUrl?.isNotEmpty ?? false)))
                   ListTile(
                     leading: Container(
                       width: 48,
@@ -2830,7 +2839,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                       ),
                     ),
                     title: Text(
-                      'Eliminar Foto',
+                      isProfilePhoto
+                          ? 'Eliminar Foto'
+                          : 'Eliminar Foto de Portada',
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
@@ -2838,7 +2849,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                       ),
                     ),
                     subtitle: Text(
-                      'Quitar la foto actual',
+                      isProfilePhoto
+                          ? 'Quitar la foto actual'
+                          : 'Quitar la portada actual',
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         color: Colors.grey[600],
@@ -2900,7 +2913,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       debugPrint('Error al seleccionar imagen: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No pudimos procesar tu imagen. Verifica tu conexión e intenta de nuevo con una imagen más liviana.'),
+            content: Text(
+                'No pudimos procesar tu imagen. Verifica tu conexión e intenta de nuevo con una imagen más liviana.'),
             backgroundColor: Colors.red));
       }
     }
@@ -2979,7 +2993,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       debugPrint('Error al subir imagen: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No pudimos subir tu imagen. Verifica tu conexión e intenta de nuevo con una imagen más liviana.'),
+            content: Text(
+                'No pudimos subir tu imagen. Verifica tu conexión e intenta de nuevo con una imagen más liviana.'),
             backgroundColor: Colors.red));
       }
     } finally {
@@ -2996,6 +3011,39 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   }
 
   // Deletar foto
+  String? _extractPhotoStoragePath(String? rawUrl) {
+    final url = rawUrl?.trim() ?? '';
+    if (url.isEmpty) return null;
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) return null;
+
+    final segments = uri.pathSegments;
+    final publicIndex = segments.indexOf('public');
+    if (publicIndex == -1) return null;
+
+    final bucketIndex = publicIndex + 1;
+    if (bucketIndex >= segments.length || segments[bucketIndex] != 'Fotos') {
+      return null;
+    }
+
+    final objectSegments = segments.skip(bucketIndex + 1).toList();
+    if (objectSegments.isEmpty) return null;
+
+    return objectSegments.map(Uri.decodeComponent).join('/');
+  }
+
+  Future<void> _deletePhotoStorageAsset(String? rawUrl) async {
+    final storagePath = _extractPhotoStoragePath(rawUrl);
+    if (storagePath == null || storagePath.isEmpty) return;
+
+    try {
+      await SupaFlow.client.storage.from('Fotos').remove([storagePath]);
+    } catch (e) {
+      debugPrint('Storage delete failed for $storagePath: $e');
+    }
+  }
+
   Future<void> _deletePhoto({required bool isProfilePhoto}) async {
     try {
       setState(() {
@@ -3007,10 +3055,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       });
 
       final uid = currentUserUid;
+      final previousUrl = isProfilePhoto ? _photoUrl : _coverUrl;
       final updateData =
           isProfilePhoto ? {'photo_url': null} : {'cover_url': null};
 
       await SupaFlow.client.from('users').update(updateData).eq('user_id', uid);
+      await _deletePhotoStorageAsset(previousUrl);
 
       setState(() {
         if (isProfilePhoto) {
@@ -3036,7 +3086,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       debugPrint('Error al eliminar foto: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No pudimos eliminar la foto en este momento. Intenta de nuevo más tarde.'),
+            content: Text(
+                'No pudimos eliminar la foto en este momento. Intenta de nuevo más tarde.'),
             backgroundColor: Colors.red));
       }
     } finally {
@@ -3157,9 +3208,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       final experienceText = _experienceController?.text.trim() ?? '';
       if (experienceText.isNotEmpty) {
         final experience = int.tryParse(experienceText);
-        if (experience == null || experience < 0) {
+        if (experience == null || experience < 0 || experience > 60) {
           throw Exception(
-            'La experiencia debe ser un número mayor o igual a 0.',
+            'La experiencia debe estar entre 0 y 60 años.',
           );
         }
       }
@@ -3239,11 +3290,15 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       );
       final normalizedPosition =
           normalizePlayerPosition(_posicaoController?.text);
-      final normalizedCategory = normalizePlayerCategory(
-        _categoryController?.text,
-        birthday:
-            _selectedBirthday?.toIso8601String() ?? _birthdayController?.text,
-      );
+      var normalizedCategory =
+          normalizePlayerCategory(_categoryController?.text);
+      if (normalizedCategory.isEmpty) {
+        normalizedCategory = normalizePlayerCategory(
+          '',
+          birthday:
+              _selectedBirthday?.toIso8601String() ?? _birthdayController?.text,
+        );
+      }
       final normalizedFoot =
           normalizeDominantFoot(_pieDominanteController?.text);
       final normalizedPhone = _validateAndNormalizeLatamPhone(
@@ -3424,7 +3479,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       debugPrint('Error al guardar: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Hubo un problema al guardar tus cambios. Por favor, verifica tu conexión e intenta nuevamente.'),
+            content: Text(
+                'Hubo un problema al guardar tus cambios. Por favor, verifica tu conexión e intenta nuevamente.'),
             backgroundColor: Colors.red));
       }
     } finally {
@@ -3634,10 +3690,10 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     return text;
   }
 
-  List<String> get _countryOptions => _countries
-      .map((country) => normalizeCountryName(country['name']))
-      .where((country) => country.isNotEmpty)
-      .toList();
+  List<String> get _countryOptions => buildNormalizedOptions(
+        _countries.map((country) => country['name']),
+        normalizeCountryName,
+      );
 
   void _applySelectedCountryByName(
     String? countryName, {
@@ -4385,12 +4441,17 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               setState(() => _posicaoController?.text = value ?? '');
             },
             options: canonicalPlayerPositions),
-        _buildTextField(
+        _buildDropdownField(
             label: 'Categoría',
-            controller: _categoryController,
-            focusNode: null,
-            hintText: 'Se calcula por edad',
-            readOnly: true),
+            hintText: 'Selecciona tu categoría',
+            value: canonicalPlayerCategories
+                    .contains(_categoryController?.text.trim())
+                ? _categoryController?.text.trim()
+                : null,
+            onChanged: (value) {
+              setState(() => _categoryController?.text = value ?? '');
+            },
+            options: canonicalPlayerCategories),
         _buildDropdownField(
             label: 'Status del jugador',
             hintText: 'Selecciona tu momento actual',

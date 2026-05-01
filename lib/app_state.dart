@@ -139,7 +139,9 @@ class FFAppState extends ChangeNotifier {
       _userType = normalizeUserType(
         prefs.getString('ff_userType') ?? _userType,
       );
-      debugPrint('FFAppState: cache carregado: "$_userType"');
+      _registrationComplete = prefs.getBool('ff_registrationComplete') ?? false;
+      _registrationFlowActive = prefs.getBool('ff_registrationFlowActive') ?? false;
+      debugPrint('FFAppState: cache carregado: "$_userType", complete: $_registrationComplete, flow: $_registrationFlowActive');
 
       _setupAuthListener();
 
@@ -184,6 +186,7 @@ class FFAppState extends ChangeNotifier {
         if (_registrationComplete) {
           _registrationFlowActive = false;
         }
+        await prefs.setBool('ff_registrationComplete', _registrationComplete);
         _hydrateViewerAccessFromUser(response);
       } else {
         _resetViewerAccessState(
@@ -212,9 +215,8 @@ class FFAppState extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('FFAppState: erro no sync: $e');
-      _resetViewerAccessState(
-        clearCachedUserType: !_registrationFlowActive,
-      );
+      // Do NOT reset viewer access state on error to avoid kicking the user out
+      // during temporary network issues.
       notifyListeners();
     }
   }
@@ -342,6 +344,11 @@ class FFAppState extends ChangeNotifier {
   set registrationFlowActive(bool value) {
     if (_registrationFlowActive == value) return;
     _registrationFlowActive = value;
+    prefs.setBool('ff_registrationFlowActive', value);
+    if (value) {
+      _registrationComplete = false;
+      prefs.setBool('ff_registrationComplete', false);
+    }
     notifyListeners();
   }
 

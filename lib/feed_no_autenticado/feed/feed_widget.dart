@@ -827,7 +827,8 @@ class _FeedWidgetState extends State<FeedWidget>
             .from('videos')
             .select()
             .eq('is_public', true)
-            .order('created_at', ascending: false);
+            .order('created_at', ascending: false)
+            .limit(60);
         _isFollowingAnyone = true;
       } else {
         if (userId == null) {
@@ -852,7 +853,8 @@ class _FeedWidgetState extends State<FeedWidget>
                 .select()
                 .inFilter('user_id', followingIds)
                 .eq('is_public', true)
-                .order('created_at', ascending: false);
+                .order('created_at', ascending: false)
+                .limit(60);
           }
         }
       }
@@ -2779,7 +2781,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                       _isSaved ? Icons.bookmark : Icons.bookmark_border,
                       _isSaved,
                       _canAddAuthorToScouting
-                          ? 'Salvar'
+                          ? 'Guardar'
                           : (_isSaved ? 'Guardado' : 'Guardar'),
                       _toggleSave),
                 ])),

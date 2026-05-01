@@ -43,6 +43,7 @@ class _CrearPublicacinDeVideoWidgetState
   bool _isPublishing = false;
   bool _videoSelected = false;
   String? _uploadedVideoUrl;
+  String? _uploadedThumbnailUrl;
   String _uploadStatus = '';
   double _uploadProgress = 0;
 
@@ -147,6 +148,7 @@ class _CrearPublicacinDeVideoWidgetState
       });
 
       Uint8List videoBytes;
+      Uint8List? thumbnailBytes;
       if (kIsWeb) {
         setState(() => _uploadStatus = 'Leyendo video...');
         videoBytes = await video.readAsBytes();
@@ -169,6 +171,15 @@ class _CrearPublicacinDeVideoWidgetState
         } catch (e) {
           debugPrint('⚠️ Erro ao comprimir: $e');
           videoBytes = await File(video.path).readAsBytes();
+        }
+        try {
+          thumbnailBytes = await VideoCompress.getByteThumbnail(
+            video.path,
+            quality: 75,
+            position: 1000,
+          );
+        } catch (e) {
+          debugPrint('Video thumbnail generation failed: $e');
         }
         setState(() => _uploadProgress = 0.4);
       }
@@ -193,9 +204,29 @@ class _CrearPublicacinDeVideoWidgetState
 
       final String publicUrl =
           SupaFlow.client.storage.from('Videos').getPublicUrl(fileName);
+      String? thumbnailUrl;
+      if (thumbnailBytes != null && thumbnailBytes.isNotEmpty) {
+        try {
+          final thumbName =
+              'thumbnails/${fileName.replaceAll(RegExp(r'\.[^.]+$'), '')}.jpg';
+          await SupaFlow.client.storage.from('Videos').uploadBinary(
+                thumbName,
+                thumbnailBytes,
+                fileOptions: const FileOptions(
+                  contentType: 'image/jpeg',
+                  upsert: true,
+                ),
+              );
+          thumbnailUrl =
+              SupaFlow.client.storage.from('Videos').getPublicUrl(thumbName);
+        } catch (e) {
+          debugPrint('Video thumbnail upload failed: $e');
+        }
+      }
 
       setState(() {
         _uploadedVideoUrl = publicUrl;
+        _uploadedThumbnailUrl = thumbnailUrl;
         _videoSelected = true;
         _isUploading = false;
         _uploadProgress = 1.0;
@@ -214,10 +245,12 @@ class _CrearPublicacinDeVideoWidgetState
         _uploadProgress = 0;
         _uploadStatus = '';
         _videoSelected = false;
+        _uploadedThumbnailUrl = null;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No pudimos subir tu video. Verifica tu conexión a internet o intenta con un archivo más ligero.'),
+            content: Text(
+                'No pudimos subir tu video. Verifica tu conexión a internet o intenta con un archivo más ligero.'),
             backgroundColor: Colors.red));
       }
     }
@@ -290,6 +323,8 @@ class _CrearPublicacinDeVideoWidgetState
       final payload = <String, dynamic>{
         'user_id': user.id,
         'video_url': _uploadedVideoUrl,
+        if (_uploadedThumbnailUrl?.isNotEmpty == true)
+          'thumbnail_url': _uploadedThumbnailUrl,
         'title': _tituloController.text.trim(),
         'description': _descripcionController.text.trim(),
         'tags': _etiquetasController.text.trim(),
@@ -299,17 +334,7 @@ class _CrearPublicacinDeVideoWidgetState
         'created_at': DateTime.now().toIso8601String(),
         'moderation_status': moderationStatus,
       };
-      try {
-        await SupaFlow.client.from('videos').insert(payload);
-      } catch (_) {
-        try {
-          payload.remove('moderation_status');
-          await SupaFlow.client.from('videos').insert(payload);
-        } catch (_) {
-          payload.remove('videoType');
-          await SupaFlow.client.from('videos').insert(payload);
-        }
-      }
+      await _insertVideoWithSchemaFallback(payload);
       await GamificationService.recalculateUserProgress(userId: user.id);
       if (mounted) {
         final gained = GamificationService.videoUploadPoints +
@@ -333,6 +358,22 @@ class _CrearPublicacinDeVideoWidgetState
       }
     } finally {
       if (mounted) setState(() => _isPublishing = false);
+    }
+  }
+
+  Future<void> _insertVideoWithSchemaFallback(
+      Map<String, dynamic> payload) async {
+    final mutablePayload = Map<String, dynamic>.from(payload);
+    final optionalColumns = ['moderation_status', 'thumbnail_url', 'videoType'];
+
+    for (var attempt = 0; attempt <= optionalColumns.length; attempt++) {
+      try {
+        await SupaFlow.client.from('videos').insert(mutablePayload);
+        return;
+      } catch (_) {
+        if (attempt >= optionalColumns.length) rethrow;
+        mutablePayload.remove(optionalColumns[attempt]);
+      }
     }
   }
 

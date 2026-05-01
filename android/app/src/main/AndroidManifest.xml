@@ -51,6 +51,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="futboltalentpro" android:host="futboltalentpro.com" />
+                <data android:scheme="futboltalent" android:host="login-callback" />
             </intent-filter>
 
         </activity>

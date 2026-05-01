@@ -12,8 +12,11 @@ class SupaFlow {
   static SupaFlow? _instance;
   static SupaFlow get instance => _instance ??= SupaFlow._();
 
+  static SupabaseClient? _testClient;
+  static set testClient(SupabaseClient? client) => _testClient = client;
+
   final _supabase = Supabase.instance.client;
-  static SupabaseClient get client => instance._supabase;
+  static SupabaseClient get client => _testClient ?? instance._supabase;
 
   static Future initialize() => Supabase.initialize(
         url: _kSupabaseUrl,

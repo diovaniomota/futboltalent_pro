@@ -135,7 +135,14 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     _model = createModel(context, () => EmpiezaComecarModel());
     _tabController = TabController(length: 5, vsync: this);
     _loadCountries();
-    WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Se já estiver logado (ex: voltou de OAuth), pula para a fase de dados (Tab 3)
+      if (currentUserUid.isNotEmpty && _tabController.index < 2) {
+        _tabController.animateTo(2);
+      }
+      safeSetState(() {});
+    });
   }
 
   @override
@@ -171,8 +178,16 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     try {
       final response =
           await SupaFlow.client.from('countrys').select().order('name');
+      final countryList = List<Map<String, dynamic>>.from(response as List);
+      // Sort manually to guarantee alphabetical order (A-Z)
+      countryList.sort((a, b) {
+        final nameA = (a['name']?.toString() ?? '').trim().toLowerCase();
+        final nameB = (b['name']?.toString() ?? '').trim().toLowerCase();
+        return nameA.compareTo(nameB);
+      });
+
       if (mounted) {
-        setState(() => _countries = List<Map<String, dynamic>>.from(response));
+        setState(() => _countries = countryList);
       }
     } catch (e) {
       debugPrint('Error loading countries: $e');
@@ -2582,13 +2597,25 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   Future<void> _signInWithProvider(OAuthProvider provider) async {
     setState(() => _isRegistering = true);
     try {
+      final String redirectTo = kIsWeb
+          ? '${Uri.base.origin}/auth/callback'
+          : 'futboltalent://login-callback';
+
       final success = await SupaFlow.client.auth.signInWithOAuth(
         provider,
-        redirectTo: 'io.supabase.futboltalentpro://login-callback/',
+        redirectTo: redirectTo,
       );
-        _showSnackBar('No pudimos conectarnos con ${provider.name}. Verifica tu conexión e intenta de nuevo.');
+      if (!success && mounted) {
+        _showSnackBar(
+            'No pudimos conectarnos con ${provider.name}. Verifica tu conexão e intenta de novo.');
+      }
     } catch (e) {
-      _showSnackBar('No pudimos iniciar sesión. Verifica tus datos e intenta de nuevo.');
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('not enabled') || msg.contains('not configured')) {
+        _showSnackBar('El inicio de sesión con ${provider.name} no está disponible en este momento.');
+      } else {
+        _showSnackBar('No pudimos iniciar sesión con ${provider.name}. Verifica tu conexión e intenta de nuevo.');
+      }
     } finally {
       if (mounted) setState(() => _isRegistering = false);
     }
@@ -3610,10 +3637,12 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           _buildSocialButton(context, 'Registrarse con Google',
               FontAwesomeIcons.google, buttonWidth,
               onPressed: () => _signInWithProvider(OAuthProvider.google)),
-          SizedBox(height: 10 * scale),
-          _buildSocialButton(
-              context, 'Registrarse con Apple', Icons.apple, buttonWidth,
-              onPressed: () => _signInWithProvider(OAuthProvider.apple)),
+          if (isiOS) ...[
+            SizedBox(height: 10 * scale),
+            _buildSocialButton(
+                context, 'Registrarse con Apple', Icons.apple, buttonWidth,
+                onPressed: () => _signInWithProvider(OAuthProvider.apple)),
+          ],
           SizedBox(height: 40 * scale),
           _buildPrimaryButton(
             context: context,
@@ -4324,7 +4353,14 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                       fontSize: fontSize, color: const Color(0xFF2F3336))),
               isExpanded: true,
               icon: const Icon(Icons.keyboard_arrow_down),
-              items: _countries
+              items: (_countries.toList()
+                    ..sort((a, b) {
+                      final nameA =
+                          (a['name']?.toString() ?? '').trim().toLowerCase();
+                      final nameB =
+                          (b['name']?.toString() ?? '').trim().toLowerCase();
+                      return nameA.compareTo(nameB);
+                    }))
                   .map((c) => DropdownMenuItem<String>(
                       value: c['id'].toString(),
                       child: Text(c['name']?.toString() ?? '',

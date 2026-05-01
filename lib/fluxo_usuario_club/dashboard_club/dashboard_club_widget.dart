@@ -6,6 +6,7 @@ import '/fluxo_compartilhado/club_identity_utils.dart' as club_utils;
 import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
+import '/fluxo_compartilhado/video_visibility_utils.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/gamification/gamification_service.dart';
@@ -286,7 +287,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       final response = await SupaFlow.client
           .from('countrys')
           .select('id, name')
-          .order('name');
+          .order('name', ascending: true);
       _countryNameById.clear();
       for (final row in (response as List)) {
         final map = Map<String, dynamic>.from(row);
@@ -371,7 +372,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     try {
       final response = await SupaFlow.client
           .from('videos')
-          .select('id, user_id, title, thumbnail_url, video_url, created_at')
+          .select()
           .eq('is_public', true)
           .inFilter('user_id', playerIds)
           .order('created_at', ascending: false)
@@ -379,6 +380,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
       final videos = List<Map<String, dynamic>>.from(response);
       for (final video in videos) {
+        if (!isPublicVideoCandidate(video)) continue;
         final uid = video['user_id']?.toString() ?? '';
         if (uid.isEmpty) continue;
 
@@ -509,14 +511,14 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         try {
           final videos = await SupaFlow.client
               .from('videos')
-              .select(
-                  'id, user_id, title, thumbnail_url, video_url, created_at')
+              .select()
               .eq('is_public', true)
               .inFilter('user_id', ids)
               .order('created_at', ascending: false)
               .limit(200);
           for (final row in (videos as List)) {
             final map = Map<String, dynamic>.from(row);
+            if (!isPublicVideoCandidate(map)) continue;
             final uid = map['user_id']?.toString() ?? '';
             if (uid.isEmpty) continue;
             videoCountByUser[uid] = (videoCountByUser[uid] ?? 0) + 1;
@@ -2024,7 +2026,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       return;
     }
 
-    if (videoData == null) {
+    if (videoData == null || playableVideoUrl(videoData).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Este jugador no tiene video público')),
       );
@@ -2060,7 +2062,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
       try {
         final videosResponse = await SupaFlow.client
             .from('videos')
-            .select('id, user_id, title, thumbnail_url, video_url, created_at')
+            .select()
             .eq('is_public', true)
             .inFilter('user_id', playerIds)
             .order('created_at', ascending: false)
@@ -2068,6 +2070,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
 
         for (final row in (videosResponse as List)) {
           final video = Map<String, dynamic>.from(row);
+          if (!isPublicVideoCandidate(video)) continue;
           final uid = video['user_id']?.toString() ?? '';
           if (uid.isNotEmpty) {
             latestVideoMap.putIfAbsent(uid, () => video);
@@ -3226,7 +3229,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     final city = _playerCity(player);
     final club = player['club']?.toString() ?? '';
     final latestVideo = player['latest_video'] as Map<String, dynamic>?;
-    final hasVideo = (player['video_count'] as int? ?? 0) > 0;
+    final hasVideo =
+        latestVideo != null && playableVideoUrl(latestVideo).isNotEmpty;
     final mediaUrl = latestVideo?['thumbnail_url']?.toString().trim() ?? '';
     final photoUrl = player['photo_url']?.toString().trim() ?? '';
     final isSaved = _savedPlayerIds.contains(userId);
@@ -3908,7 +3912,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         post['convocatoria_titulo']?.toString() ?? 'Convocatoria';
     final stage = _normalizeStatus(post['estado']);
     final videoData = post['video_data'] as Map<String, dynamic>?;
-    final hasVideo = post['has_video'] == true || videoData != null;
+    final hasVideo =
+        videoData != null && playableVideoUrl(videoData).isNotEmpty;
 
     final isVerified = _resolveVerification(user, defaultIfMissing: false);
     final hasVerificationInfo = _hasVerificationInfo(user);
@@ -4549,8 +4554,8 @@ class _SingleVideoSheetState extends State<_SingleVideoSheet> {
   }
 
   Future<void> _init() async {
-    final url = widget.video['video_url']?.toString() ?? '';
-    if (!url.startsWith('http')) {
+    final url = playableVideoUrl(widget.video);
+    if (url.isEmpty) {
       setState(() {
         _hasError = true;
         _isLoading = false;
