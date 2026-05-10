@@ -2,6 +2,7 @@ import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/fluxo_compartilhado/video_like_utils.dart';
+import '/fluxo_compartilhado/video_visibility_utils.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -859,102 +860,121 @@ class _FeedWidgetState extends State<FeedWidget>
         }
       }
 
-      final videos = List<Map<String, dynamic>>.from(response);
-      for (var video in videos) {
-        final videoUserId = video['user_id']?.toString().trim() ?? '';
-        final videoId = video['id']?.toString() ?? '';
+      final videos = List<Map<String, dynamic>>.from(response)
+          .where(isPublicVideoCandidate)
+          .toList();
 
-        if (videoUserId.isNotEmpty) {
-          try {
-            final userResponse = await SupaFlow.client
-                .from('users')
-                .select()
-                .eq('user_id', videoUserId)
-                .maybeSingle();
-            if (userResponse != null) video['user_data'] = userResponse;
-          } catch (e) {}
-
-          try {
-            if (userId != null && videoUserId != userId) {
-              final followCheck = await SupaFlow.client
-                  .from('follows')
-                  .select('id')
-                  .eq('follower_id', userId)
-                  .eq('following_id', videoUserId)
-                  .maybeSingle();
-              video['is_following'] = followCheck != null;
-            } else {
-              video['is_following'] = false;
-            }
-          } catch (e) {
-            video['is_following'] = false;
-          }
-
-          try {
-            if (userId != null && videoId.isNotEmpty) {
-              final userData = video['user_data'] is Map
-                  ? Map<String, dynamic>.from(video['user_data'] as Map)
-                  : <String, dynamic>{};
-              final authorType = FFAppState.normalizeUserType(
-                userData['userType'] ??
-                    userData['usertype'] ??
-                    userData['user_type'],
-              );
-              final useScoutScoutingSave =
-                  _isScoutViewer && authorType == 'jugador';
-
-              if (useScoutScoutingSave) {
-                final savedCheck = await SupaFlow.client
-                    .from('jugadores_guardados')
-                    .select('id')
-                    .eq('scout_id', userId)
-                    .eq('jugador_id', videoUserId)
-                    .maybeSingle();
-                video['is_saved'] = savedCheck != null;
-              } else {
-                final savedCheck = await SupaFlow.client
-                    .from('saved_videos')
-                    .select('id')
-                    .eq('user_id', userId)
-                    .eq('video_id', videoId)
-                    .maybeSingle();
-                video['is_saved'] = savedCheck != null;
-              }
-            } else {
-              video['is_saved'] = false;
-            }
-          } catch (e) {
-            video['is_saved'] = false;
-          }
-        } else {
-          video['is_following'] = false;
-          video['is_saved'] = false;
-          video['user_data'] = null;
-        }
-
+      // --- BATCH: user data ---
+      final allUserIds = videos
+          .map((v) => v['user_id']?.toString().trim() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      final userDataById = <String, Map<String, dynamic>>{};
+      if (allUserIds.isNotEmpty) {
         try {
-          if (videoId.isNotEmpty) {
-            try {
-              final commentsResponse = await SupaFlow.client
-                  .from('comments')
-                  .select('id')
-                  .eq('video_id', videoId)
-                  .isFilter('deleted_at', null)
-                  .eq('moderation_status', GuardianMvpService.approvedStatus);
-              video['comments_count'] = (commentsResponse as List).length;
-            } catch (_) {
-              final commentsResponse = await SupaFlow.client
-                  .from('comments')
-                  .select('id')
-                  .eq('video_id', videoId);
-              video['comments_count'] = (commentsResponse as List).length;
-            }
-          } else {
-            video['comments_count'] = 0;
+          final usersResponse = await SupaFlow.client
+              .from('users')
+              .select()
+              .inFilter('user_id', allUserIds);
+          for (final u in List<Map<String, dynamic>>.from(usersResponse)) {
+            final uid = u['user_id']?.toString().trim() ?? '';
+            if (uid.isNotEmpty) userDataById[uid] = u;
           }
-        } catch (e) {
-          video['comments_count'] = 0;
+        } catch (_) {}
+      }
+
+      // --- BATCH: follow status ---
+      final followingSet = <String>{};
+      if (userId != null && allUserIds.isNotEmpty) {
+        try {
+          final followsResponse = await SupaFlow.client
+              .from('follows')
+              .select('following_id')
+              .eq('follower_id', userId)
+              .inFilter('following_id', allUserIds);
+          for (final f in (followsResponse as List)) {
+            final fid = f['following_id']?.toString().trim() ?? '';
+            if (fid.isNotEmpty) followingSet.add(fid);
+          }
+        } catch (_) {}
+      }
+
+      // --- BATCH: saved videos ---
+      final savedVideoIds = <String>{};
+      final savedPlayerIds = <String>{};
+      if (userId != null) {
+        final videoIds = videos
+            .map((v) => v['id']?.toString().trim() ?? '')
+            .where((id) => id.isNotEmpty)
+            .toList();
+        if (_isScoutViewer && allUserIds.isNotEmpty) {
+          try {
+            final savedRows = await SupaFlow.client
+                .from('jugadores_guardados')
+                .select('jugador_id')
+                .eq('scout_id', userId)
+                .inFilter('jugador_id', allUserIds);
+            for (final r in (savedRows as List)) {
+              final jid = r['jugador_id']?.toString().trim() ?? '';
+              if (jid.isNotEmpty) savedPlayerIds.add(jid);
+            }
+          } catch (_) {}
         }
+        if (videoIds.isNotEmpty) {
+          try {
+            final savedRows = await SupaFlow.client
+                .from('saved_videos')
+                .select('video_id')
+                .eq('user_id', userId)
+                .inFilter('video_id', videoIds);
+            for (final r in (savedRows as List)) {
+              final vid = r['video_id']?.toString().trim() ?? '';
+              if (vid.isNotEmpty) savedVideoIds.add(vid);
+            }
+          } catch (_) {}
+        }
+      }
+
+      // --- BATCH: comment counts ---
+      final commentCountByVideoId = <String, int>{};
+      final videoIdsForComments = videos
+          .map((v) => v['id']?.toString().trim() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      if (videoIdsForComments.isNotEmpty) {
+        try {
+          final commentsRows = await SupaFlow.client
+              .from('comments')
+              .select('video_id')
+              .inFilter('video_id', videoIdsForComments);
+          for (final c in (commentsRows as List)) {
+            final vid = c['video_id']?.toString().trim() ?? '';
+            if (vid.isNotEmpty) {
+              commentCountByVideoId[vid] =
+                  (commentCountByVideoId[vid] ?? 0) + 1;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // --- Apply batch results to each video ---
+      for (final video in videos) {
+        final videoUserId = video['user_id']?.toString().trim() ?? '';
+        final videoId = video['id']?.toString().trim() ?? '';
+
+        video['user_data'] = userDataById[videoUserId];
+        video['is_following'] = (userId != null &&
+            videoUserId.isNotEmpty &&
+            videoUserId != userId &&
+            followingSet.contains(videoUserId));
+
+        if (_isScoutViewer) {
+          video['is_saved'] = savedPlayerIds.contains(videoUserId);
+        } else {
+          video['is_saved'] = savedVideoIds.contains(videoId);
+        }
+        video['comments_count'] = commentCountByVideoId[videoId] ?? 0;
       }
 
       final visibleVideos = videos.where((video) {
@@ -1234,7 +1254,7 @@ class _FeedWidgetState extends State<FeedWidget>
       return _buildNoVideosContent();
     }
 
-    if (_currentIndex >= feedItems.length) {
+    if (_currentIndex > feedItems.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         setState(() => _currentIndex = 0);
@@ -1247,9 +1267,44 @@ class _FeedWidgetState extends State<FeedWidget>
     return PageView.builder(
         controller: _pageController,
         scrollDirection: Axis.vertical,
-        itemCount: feedItems.length,
+        itemCount: feedItems.length + 1,
         onPageChanged: _onPageChanged,
         itemBuilder: (context, index) {
+          if (index == feedItems.length) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.check_circle_outline,
+                      color: Colors.white54, size: 64),
+                  const SizedBox(height: 16),
+                  const Text('¡Estás al día!',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  const Text('No hay más contenido por ahora.',
+                      style: TextStyle(color: Colors.white70, fontSize: 14)),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: () {
+                      if (_pageController?.hasClients ?? false) {
+                        _pageController?.animateToPage(0,
+                            duration: const Duration(milliseconds: 500),
+                            curve: Curves.easeInOut);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0D3B66)),
+                    child: const Text('Volver al inicio',
+                        style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
+            );
+          }
+
           final feedItem = feedItems[index];
           final payload = feedItem['payload'];
           final itemData = payload is Map
@@ -1762,7 +1817,6 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
   VoidCallback? _controllerListener;
   bool _isInitialized = false;
   bool _hasError = false;
-  String _errorMessage = ''; // Debug logging
   bool _isLoading = true;
   bool _isPaused = false; // Intenção do usuário
   bool _isPausedBySystem = false; // Gestão automática (navegação/lifecycle)
@@ -2452,7 +2506,6 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
       if (mounted) {
         setState(() {
           _hasError = true;
-          _errorMessage = e.toString();
           _isLoading = false;
         });
         print('Error initializes video: $e');
@@ -2669,7 +2722,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
               const Icon(Icons.error, color: Colors.red, size: 40),
               const SizedBox(height: 12),
               Text(
-                'No pudimos reproducir este video. Verifica tu conexión e intenta de nuevo.\n$_errorMessage',
+                'No pudimos reproducir este video. Verifica tu conexión e intenta de nuevo.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),

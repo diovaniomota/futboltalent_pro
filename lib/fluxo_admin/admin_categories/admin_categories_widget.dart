@@ -249,7 +249,8 @@ class _AdminCategoriesWidgetState extends State<AdminCategoriesWidget> {
               if (ctx.mounted) Navigator.pop(ctx, true);
             } catch (e) {
               debugPrint('AdminCategories save error: $e');
-              _showSnack('No se pudo guardar la categoría: $e',
+              _showSnack(
+                  'No se pudo guardar la categoría. Verifica los datos e intenta de nuevo.',
                   color: Colors.red);
               setDialogState(() => isSaving = false);
             }
@@ -605,7 +606,9 @@ class _AdminCategoriesWidgetState extends State<AdminCategoriesWidget> {
       _showSnack('Categoría eliminada.', color: const Color(0xFF0D3B66));
     } catch (e) {
       debugPrint('AdminCategories delete error: $e');
-      _showSnack('No se pudo eliminar la categoría: $e', color: Colors.red);
+      _showSnack(
+          'No se pudo eliminar la categoría. Verifica tu conexión e intenta de nuevo.',
+          color: Colors.red);
     }
   }
 

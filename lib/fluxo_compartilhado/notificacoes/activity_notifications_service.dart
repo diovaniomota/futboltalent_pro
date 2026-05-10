@@ -50,7 +50,7 @@ class ActivityNotificationsService {
       );
     } catch (e) {
       developer.log(
-        'Erro ao criar notificação ($eventType): $e',
+        'Error al crear notificación ($eventType): $e',
         name: 'ActivityNotificationsService',
       );
     }

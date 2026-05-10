@@ -33,6 +33,21 @@ class GuardianMvpService {
     return buffer.toString();
   }
 
+  static String _newApprovalExpiryIso() {
+    return DateTime.now()
+        .toUtc()
+        .add(const Duration(days: 7))
+        .toIso8601String();
+  }
+
+  static bool _isCodeExpired(dynamic value) {
+    final raw = value?.toString().trim();
+    if (raw == null || raw.isEmpty) return true;
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return true;
+    return !parsed.toUtc().isAfter(DateTime.now().toUtc());
+  }
+
   static String normalizedGuardianStatus(Map<String, dynamic>? userData) {
     final raw = userData?['guardian_status']?.toString().trim().toLowerCase();
     if (raw == pendingStatus ||
@@ -117,17 +132,37 @@ class GuardianMvpService {
     return null;
   }
 
-  static Future<Map<String, dynamic>> approveGuardianCode(String code) async {
+  static Future<Map<String, dynamic>> approveGuardianCode(
+    String code, {
+    String? playerId,
+  }) async {
     final normalized = code.trim().toUpperCase();
     if (normalized.isEmpty) {
       throw Exception('Ingresá el código del responsable.');
+    }
+
+    final currentUid = SupaFlow.client.auth.currentUser?.id ?? '';
+    final uid = (playerId ?? currentUid).trim();
+    if (uid.isEmpty || currentUid.isEmpty || currentUid != uid) {
+      throw Exception('approval_context_required');
+    }
+
+    final guardianInfo = await fetchGuardianInfo(uid);
+    final guardianEmail =
+        guardianInfo?['email']?.toString().trim().toLowerCase() ?? '';
+    if (guardianInfo == null || guardianEmail.isEmpty) {
+      throw Exception('approval_context_required');
     }
 
     // Try RPC first
     try {
       final response = await SupaFlow.client.rpc(
         'approve_guardian_by_code',
-        params: <String, dynamic>{'p_approval_code': normalized},
+        params: <String, dynamic>{
+          'p_approval_code': normalized,
+          'p_player_id': uid,
+          'p_guardian_email': guardianEmail,
+        },
       );
 
       if (response is Map) {
@@ -139,11 +174,14 @@ class GuardianMvpService {
       return <String, dynamic>{};
     } catch (rpcError) {
       final rpcMessage = rpcError.toString().toLowerCase();
-      // If the error is 'code not found', re-throw as-is
-      if (rpcMessage.contains('approval_code_not_found')) {
+      if (rpcMessage.contains('approval_code_not_found') ||
+          rpcMessage.contains('approval_context_required') ||
+          rpcMessage.contains('approval_code_expired') ||
+          rpcMessage.contains('approval_code_used') ||
+          rpcMessage.contains('approval_not_pending') ||
+          rpcMessage.contains('approval_player_not_pending')) {
         rethrow;
       }
-      // If the RPC function simply doesn't exist, fall through to manual logic
       if (!rpcMessage.contains('approve_guardian_by_code') &&
           !rpcMessage.contains('could not find the function') &&
           !rpcMessage.contains('42883') &&
@@ -152,31 +190,26 @@ class GuardianMvpService {
       }
     }
 
-    // Fallback: manual approval when RPC is not deployed
-    final guardianRow = await SupaFlow.client
-        .from('guardians')
-        .select()
-        .eq('approval_code', normalized)
-        .maybeSingle();
+    final status = guardianInfo['status']?.toString().trim().toLowerCase() ??
+        pendingStatus;
+    final storedCode =
+        guardianInfo['approval_code']?.toString().trim().toUpperCase() ?? '';
+    final usedAt = guardianInfo['approval_code_used_at']?.toString().trim();
 
-    if (guardianRow == null) {
-      // Try case-insensitive search
-      final allGuardians = await SupaFlow.client
-          .from('guardians')
-          .select()
-          .not('approval_code', 'is', null);
-      final match = (allGuardians as List).cast<Map<String, dynamic>>().where(
-            (g) =>
-                (g['approval_code']?.toString().trim().toUpperCase() ?? '') ==
-                normalized,
-          );
-      if (match.isEmpty) {
-        throw Exception('approval_code_not_found');
-      }
-      return _manualApprove(Map<String, dynamic>.from(match.first));
+    if (status != pendingStatus) {
+      throw Exception('approval_not_pending');
+    }
+    if (usedAt != null && usedAt.isNotEmpty) {
+      throw Exception('approval_code_used');
+    }
+    if (_isCodeExpired(guardianInfo['approval_code_expires_at'])) {
+      throw Exception('approval_code_expired');
+    }
+    if (storedCode != normalized) {
+      throw Exception('approval_code_not_found');
     }
 
-    return _manualApprove(Map<String, dynamic>.from(guardianRow));
+    return _manualApprove(Map<String, dynamic>.from(guardianInfo));
   }
 
   static Future<Map<String, dynamic>> _manualApprove(
@@ -190,10 +223,13 @@ class GuardianMvpService {
     }
 
     // Update guardian status
+    final nowIso = DateTime.now().toUtc().toIso8601String();
     try {
       await SupaFlow.client.from('guardians').update({
         'status': approvedStatus,
-        'approved_at': DateTime.now().toIso8601String(),
+        'approved_at': nowIso,
+        'approval_code_used_at': nowIso,
+        'approval_code': null,
       }).eq('id', guardianId);
     } catch (_) {
       // Fallback without approved_at
@@ -250,6 +286,9 @@ class GuardianMvpService {
     try {
       await SupaFlow.client.from('guardians').update({
         'approval_code': newCode,
+        'approval_code_expires_at': _newApprovalExpiryIso(),
+        'approval_code_used_at': null,
+        'approved_at': null,
         'status': pendingStatus,
       }).eq('player_id', uid);
     } catch (e) {
@@ -262,22 +301,51 @@ class GuardianMvpService {
   }
 
   /// 1.3 — Atualiza o e-mail do responsável para um jogador menor.
-  static Future<void> updateGuardianEmail(
-    String playerId,
-    String newEmail,
-  ) async {
-    final uid = playerId.trim();
+  /// Regenerates the approval code so the new email receives a fresh code.
+  /// Returns a user-friendly success message.
+  static Future<String?> updateGuardianEmail({
+    String? playerId,
+    required String newEmail,
+  }) async {
     final email = newEmail.trim();
-    if (uid.isEmpty) {
-      throw Exception('ID del jugador no proporcionado.');
-    }
     if (email.isEmpty || !email.contains('@')) {
       throw Exception('Ingresá un email válido del responsable.');
     }
 
-    await SupaFlow.client.from('guardians').update({
-      'email': email,
-    }).eq('player_id', uid);
+    // Resolve player ID: if not provided, look up from current user
+    var uid = (playerId ?? '').trim();
+    if (uid.isEmpty) {
+      // Try to find a guardian entry where the current session user is the player
+      try {
+        final currentUid = SupaFlow.client.auth.currentUser?.id ?? '';
+        if (currentUid.isNotEmpty) {
+          uid = currentUid;
+        }
+      } catch (_) {}
+    }
+    if (uid.isEmpty) {
+      throw Exception('No se pudo identificar al jugador.');
+    }
+
+    final newCode = generateApprovalCode();
+    try {
+      await SupaFlow.client.from('guardians').update({
+        'email': email,
+        'approval_code': newCode,
+        'approval_code_expires_at': _newApprovalExpiryIso(),
+        'approval_code_used_at': null,
+        'approved_at': null,
+        'status': pendingStatus,
+      }).eq('player_id', uid);
+    } catch (_) {
+      // Fallback without status field
+      await SupaFlow.client.from('guardians').update({
+        'email': email,
+        'approval_code': newCode,
+      }).eq('player_id', uid);
+    }
+
+    return 'Email actualizado. Nuevo código: $newCode — compartilo con $email.';
   }
 
   /// 1.3 — Recupera dados do guardian de um jogador.
@@ -288,14 +356,26 @@ class GuardianMvpService {
     if (uid.isEmpty) return null;
 
     try {
-      final row = await SupaFlow.client
+      final rows = await SupaFlow.client
           .from('guardians')
           .select()
           .eq('player_id', uid)
-          .maybeSingle();
-      return row;
+          .order('created_at', ascending: false)
+          .limit(1);
+      final list = List<Map<String, dynamic>>.from(rows as List);
+      return list.isEmpty ? null : list.first;
     } catch (_) {
-      return null;
+      try {
+        final rows = await SupaFlow.client
+            .from('guardians')
+            .select()
+            .eq('player_id', uid)
+            .limit(1);
+        final list = List<Map<String, dynamic>>.from(rows as List);
+        return list.isEmpty ? null : list.first;
+      } catch (_) {
+        return null;
+      }
     }
   }
 }

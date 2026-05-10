@@ -4,6 +4,7 @@ import '/flutter_flow/flutter_flow_util.dart';
 import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/guardian/guardian_mvp_service.dart';
+import '/gamification/gamification_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import 'dart:convert';
@@ -111,9 +112,11 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           .maybeSingle();
       if (u != null) {
         final merged = <String, dynamic>{...u};
-        final targetType =
-            (u['userType']?.toString().trim().toLowerCase() ?? '')
-                .replaceAll('jogador', 'jugador');
+        var targetType = (u['userType']?.toString().trim().toLowerCase() ?? '');
+        if (const ['jugador', 'jogador', 'player', 'athlete', 'atleta']
+            .contains(targetType)) {
+          targetType = 'jugador';
+        }
         if (targetType == 'jugador') {
           try {
             final player = await SupaFlow.client
@@ -124,6 +127,10 @@ class _PerfilProfesionalSolicitarContatoWidgetState
             if (player != null) {
               merged.addAll(Map<String, dynamic>.from(player));
             }
+          } catch (_) {}
+          try {
+            await GamificationService.recalculateUserProgress(
+                userId: widget.userId!);
           } catch (_) {}
           try {
             final progress = await SupaFlow.client
@@ -161,8 +168,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           await _registerProfileView();
         }
       }
-      await _loadPlayerVideos();
-      // Check if minor
+      // Check if minor and load guardian before loading videos to ensure proper visibility
       if (u != null && u['is_minor'] == true) {
         _isMinor = true;
         final guardian = await SupaFlow.client
@@ -175,8 +181,11 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         final guardianStatus = guardian?['status']?.toString().trim();
         if (guardianStatus != null && guardianStatus.isNotEmpty) {
           _guardianStatus = guardianStatus.toLowerCase();
+          _userData?['guardian_status'] = _guardianStatus;
         }
       }
+
+      await _loadPlayerVideos();
       await _checkStatus();
       await _loadHistory();
       await _checkGuardado();
@@ -497,8 +506,10 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     } catch (e) {
       if (mounted) {
         setState(() => _isProcessing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No pudimos enviar tu solicitud. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'No pudimos enviar tu solicitud. Verifica tu conexión e intenta de nuevo.'),
+            backgroundColor: Colors.red));
       }
     }
   }
@@ -652,7 +663,10 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No pudimos agregar el jugador. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text(
+                  'No pudimos agregar el jugador. Verifica tu conexión e intenta de nuevo.'),
+              backgroundColor: Colors.red),
         );
       }
     }
@@ -738,7 +752,10 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No pudimos abrir la lista. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red),
+          const SnackBar(
+              content: Text(
+                  'No pudimos abrir la lista. Verifica tu conexión e intenta de nuevo.'),
+              backgroundColor: Colors.red),
         );
       }
     }
@@ -2169,8 +2186,10 @@ class _AddToListBottomSheetState extends State<_AddToListBottomSheet> {
         await _addToList(res['id']);
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('No pudimos crear la lista. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                  'No pudimos crear la lista. Verifica tu conexión e intenta de nuevo.'),
+              backgroundColor: Colors.red));
         }
       }
     }

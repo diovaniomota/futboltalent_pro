@@ -775,11 +775,71 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No pudimos guardar los cambios. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'No pudimos guardar los cambios. Verifica tu conexión e intenta de nuevo.'),
+            backgroundColor: Colors.red));
       }
     }
     if (mounted) setState(() => _isSaving = false);
+  }
+
+  Future<void> _deleteBanner() async {
+    setState(() {
+      _isSaving = true;
+    });
+    try {
+      final previousUrls = <String>{
+        (_bannerUrl ?? '').trim(),
+        (_clubData?['cover_url'] ?? '').toString().trim(),
+        (_clubData?['banner_url'] ?? '').toString().trim(),
+      }..removeWhere((url) => url.isEmpty);
+      if (_clubData?['id'] != null) {
+        await SupaFlow.client.from('clubs').update({
+          'banner_url': null,
+          'cover_url': null,
+        }).eq('id', _clubData!['id']);
+      }
+      for (final url in previousUrls) {
+        final storagePath = _storagePathFromPublicUrl(url, 'Fotos');
+        if (storagePath == null || storagePath.isEmpty) continue;
+        try {
+          await SupaFlow.client.storage.from('Fotos').remove([storagePath]);
+        } catch (storageError) {
+          debugPrint('No se pudo remover el banner del storage: $storageError');
+        }
+      }
+      setState(() {
+        _bannerUrl = null;
+        if (_clubData != null) {
+          _clubData!['banner_url'] = null;
+          _clubData!['cover_url'] = null;
+        }
+        if (_currentUserData != null) {
+          _currentUserData!['cover_url'] = null;
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Banner eliminado')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error al eliminar banner: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text(
+                  'No pudimos eliminar el banner. Verifica tu conexión e intenta de nuevo.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 
   Future<void> _uploadLogo() async {
@@ -815,7 +875,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       setState(() => _isSaving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No pudimos subir el logo. Verifica tu conexión e intenta con una imagen más pequeña.'),
+            content: Text(
+                'No pudimos subir el logo. Verifica tu conexión e intenta con una imagen más pequeña.'),
             backgroundColor: Colors.red));
       }
     }
@@ -857,7 +918,8 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       setState(() => _isSaving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No pudimos subir el banner. Verifica tu conexión e intenta con una imagen más pequeña.'),
+            content: Text(
+                'No pudimos subir el banner. Verifica tu conexión e intenta con una imagen más pequeña.'),
             backgroundColor: Colors.red));
       }
     }
@@ -945,8 +1007,10 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No pudimos invitar a este miembro. Verifica los datos e intenta de nuevo.'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'No pudimos invitar a este miembro. Verifica los datos e intenta de nuevo.'),
+            backgroundColor: Colors.red));
       }
     }
     if (mounted) setState(() => _isSaving = false);
@@ -1210,6 +1274,24 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
       _currentUserData?['cover_url'],
     ]);
     return cover.isEmpty ? null : cover;
+  }
+
+  String? _storagePathFromPublicUrl(String? rawUrl, String bucketName) {
+    final url = rawUrl?.trim() ?? '';
+    if (url.isEmpty) return null;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return null;
+    final segments = uri.pathSegments;
+    final publicIndex = segments.indexOf('public');
+    final bucketIndex = publicIndex + 1;
+    if (publicIndex == -1 ||
+        bucketIndex >= segments.length ||
+        segments[bucketIndex] != bucketName) {
+      return null;
+    }
+    final objectSegments = segments.skip(bucketIndex + 1).toList();
+    if (objectSegments.isEmpty) return null;
+    return objectSegments.map(Uri.decodeComponent).join('/');
   }
 
   String? _clubLogoUrl() {
@@ -2529,17 +2611,25 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                 : null,
           ),
           SizedBox(width: 12 * scale),
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Banner del Club',
-                  style: TextStyle(fontWeight: FontWeight.w500)),
-              Text('Imagen de portada (horizontal)',
-                  style: TextStyle(fontSize: 12, color: Colors.grey)),
-              Text('Toca para subir',
-                  style: TextStyle(fontSize: 11, color: Colors.grey))
-            ],
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Banner del Club',
+                    style: TextStyle(fontWeight: FontWeight.w500)),
+                Text('Imagen de portada (horizontal)',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                Text('Toca para subir',
+                    style: TextStyle(fontSize: 11, color: Colors.grey))
+              ],
+            ),
           ),
+          if (bannerUrl != null)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              onPressed: _deleteBanner,
+              tooltip: 'Eliminar banner',
+            ),
         ],
       ),
     );

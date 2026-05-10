@@ -47,13 +47,13 @@ void main() async {
     debugPrint('❌ Erro Fatal na Inicialização: $e');
     debugPrint('📝 StackTrace: $stackTrace');
 
-    runApp(MaterialApp(
+    runApp(const MaterialApp(
       home: Scaffold(
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(20.0),
             child: Text(
-              'No pudimos iniciar la aplicación. Verifica tu conexión a internet o intenta reiniciar la app.\n\nDetalles:\n$e',
+              'No pudimos iniciar la aplicación. Verifica tu conexión a internet o intenta reiniciar la app.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.red),
             ),
@@ -211,16 +211,22 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         return;
       }
 
-      // Block minor with pending guardian approval
+      // Block minor with pending guardian approval — redirect to login
+      // where they can access the guardian approval dialog (with email change).
+      // Importantly: do NOT sign them out so they stay authenticated.
       if (userData['is_minor'] == true) {
         final guardianStatus =
             userData['guardian_status']?.toString().trim().toLowerCase() ?? '';
         if (guardianStatus != 'approved') {
-          FFAppState().authBlockMessage =
-              'Esta cuenta de menor aún no fue aprobada por el adulto responsable. '
-              'Usá el código de aprobación desde la pantalla de login.';
-          _router.clearRedirectLocation();
-          _router.goNamed(LoginWidget.routeName);
+          final currentRoute = _router.getCurrentLocation();
+          // Only redirect if not already on the login page
+          if (currentRoute != LoginWidget.routePath) {
+            FFAppState().authBlockMessage =
+                'Esta cuenta de menor aún no fue aprobada por el adulto responsable. '
+                'Usá el botón "Aprobar cuenta de menor" para ingresar el código o cambiar el email del responsable.';
+            _router.clearRedirectLocation();
+            _router.goNamed(LoginWidget.routeName);
+          }
           return;
         }
       }

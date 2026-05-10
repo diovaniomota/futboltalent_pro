@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
@@ -72,6 +70,10 @@ class ExplorarWidget extends StatefulWidget {
 }
 
 class _ExplorarWidgetState extends State<ExplorarWidget> {
+  static const int _explorerPageSize = 200;
+  static const int _explorerFilterMaxRows = 900;
+  static const int _explorerClubMaxRows = 900;
+
   late ExplorarModel _model;
   final scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -140,23 +142,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   // Filtros "Valores reales" pre-cargados
   List<String> _realPlayerPositions = [];
   List<String> _realPlayerCategories = [];
-  List<String> _realPlayerCountries = [];
   List<String> _realPlayerCities = [];
-  List<String> _realPlayerLevels = [];
-  List<String> _realClubCountries = [];
-  List<String> _realClubStates = [];
   List<String> _realClubCities = [];
   List<String> _realClubLeagues = [];
   List<String> _realConvocatoriaCategories = [];
   List<String> _realConvocatoriaPositions = [];
-  List<String> _realConvocatoriaCountries = [];
   List<String> _realConvocatoriaCities = [];
   List<String> _realConvocatoriaLocations = [];
-
-  // Country→Cities maps for cooperative filtering
-  Map<String, Set<String>> _playerCountryCities = {};
-  Map<String, Set<String>> _clubCountryCities = {};
-  Map<String, Set<String>> _convocatoriaCountryCities = {};
 
   Widget _buildFeatureUnavailableState({
     required String title,
@@ -277,52 +269,47 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
   Future<void> _loadRealFilterOptions() async {
     try {
-      dynamic pRes;
-      try {
-        pRes = await SupaFlow.client
-            .from('users')
-            .select()
-            .eq('userType', 'jugador')
-            .limit(3000);
-      } catch (_) {
-        pRes = await SupaFlow.client
-            .from('users')
-            .select()
-            .eq('usertype', 'jugador')
-            .limit(3000);
+      var listP = await _selectExplorerRowsPaged(
+        'users',
+        equalsColumn: 'userType',
+        equalsValue: 'jugador',
+      );
+      if (listP.isEmpty) {
+        listP = await _selectExplorerRowsPaged(
+          'users',
+          equalsColumn: 'usertype',
+          equalsValue: 'jugador',
+        );
       }
-      final listP = List<Map<String, dynamic>>.from(pRes as List);
+      if (listP.isEmpty) {
+        final allUsers = await _selectExplorerRowsPaged('users');
+        listP = allUsers.where((u) {
+          return FFAppState.normalizeUserType(
+                u['userType'] ?? u['usertype'] ?? u['user_type'],
+              ) ==
+              'jugador';
+        }).toList(growable: false);
+      }
       _realPlayerPositions = buildNormalizedOptions(
           listP.map(_resolvePlayerPosition), normalizePlayerPosition);
       _realPlayerCategories = buildNormalizedOptions(
         listP.map((u) => _resolvePlayerCategory(u)),
         normalizePlayerCategory,
       );
-      _realPlayerCountries = buildNormalizedOptions(
-        listP.map(_resolveCountryFromUser),
-        normalizeCountryName,
-      );
       _realPlayerCities =
           buildNormalizedOptions(listP.map(_resolveCity), normalizeCityName);
-      _realPlayerLevels = _extractUniqueStrings(listP.map(_resolvePlayerLevel));
-      // Build country→cities map for players
-      _playerCountryCities = _buildCountryCityMap(
-        listP,
-        (row) => normalizeCountryName(_resolveCountryFromUser(row)),
-        (row) => normalizeCityName(_resolveCity(row)),
-      );
     } catch (_) {}
     try {
-      final listC = await _fetchVisibleExplorerClubs(limit: 1500);
+      final listC = await _fetchVisibleExplorerClubs();
       _setRealClubFilterOptions(listC);
     } catch (_) {}
     try {
-      final convRes = await SupaFlow.client
-          .from('convocatorias')
-          .select()
-          .eq('is_active', true)
-          .limit(1500);
-      final listConv = List<Map<String, dynamic>>.from(convRes as List);
+      final listConv = await _selectExplorerRowsPaged(
+        'convocatorias',
+        equalsColumn: 'is_active',
+        equalsValue: true,
+        orderByCreatedAt: true,
+      );
       _realConvocatoriaCategories = buildNormalizedOptions(
         listConv.map(_resolveConvocatoriaCategory),
         normalizePlayerCategory,
@@ -330,10 +317,6 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       _realConvocatoriaPositions = buildNormalizedOptions(
         listConv.map(_resolveConvocatoriaPosition),
         normalizePlayerPosition,
-      );
-      _realConvocatoriaCountries = buildNormalizedOptions(
-        listConv.map(_resolveConvocatoriaCountry),
-        normalizeCountryName,
       );
       _realConvocatoriaCities = buildNormalizedOptions(
         listConv.map(_resolveConvocatoriaCity),
@@ -343,41 +326,44 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         listConv.map(_resolveConvocatoriaLocationLabel),
         titleCaseLabel,
       );
-      // Build country→cities map for convocatorias
-      _convocatoriaCountryCities = _buildCountryCityMap(
-        listConv,
-        (row) => normalizeCountryName(_resolveConvocatoriaCountry(row)),
-        (row) => normalizeCityName(_resolveConvocatoriaCity(row)),
-      );
     } catch (_) {}
   }
 
-  Map<String, Set<String>> _buildCountryCityMap(
-    List<Map<String, dynamic>> rows,
-    String Function(Map<String, dynamic>) countryResolver,
-    String Function(Map<String, dynamic>) cityResolver,
-  ) {
-    final map = <String, Set<String>>{};
-    for (final row in rows) {
-      final country = countryResolver(row);
-      final city = cityResolver(row);
-      if (country.isEmpty || city.isEmpty) continue;
-      map.putIfAbsent(country, () => <String>{}).add(city);
-    }
-    return map;
-  }
+  Future<List<Map<String, dynamic>>> _selectExplorerRowsPaged(
+    String table, {
+    String? equalsColumn,
+    Object? equalsValue,
+    bool orderByCreatedAt = false,
+    int maxRows = _explorerFilterMaxRows,
+    int pageSize = _explorerPageSize,
+  }) async {
+    final rows = <Map<String, dynamic>>[];
+    var from = 0;
 
-  List<String> _citiesForCountry(
-    Map<String, Set<String>> countryCityMap,
-    List<String> allCities,
-    String? selectedCountry,
-  ) {
-    if (selectedCountry == null || selectedCountry.isEmpty) return allCities;
-    final cities = countryCityMap[selectedCountry];
-    if (cities == null || cities.isEmpty) return allCities;
-    final sorted = cities.toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return sorted;
+    while (rows.length < maxRows) {
+      final remaining = maxRows - rows.length;
+      final currentPageSize = remaining < pageSize ? remaining : pageSize;
+      final to = from + currentPageSize - 1;
+
+      try {
+        dynamic query = SupaFlow.client.from(table).select();
+        if (equalsColumn != null) {
+          query = query.eq(equalsColumn, equalsValue);
+        }
+        if (orderByCreatedAt) {
+          query = query.order('created_at', ascending: false);
+        }
+        final response = await query.range(from, to);
+        final page = List<Map<String, dynamic>>.from(response as List);
+        rows.addAll(page);
+        if (page.length < currentPageSize) break;
+        from += currentPageSize;
+      } catch (_) {
+        return rows;
+      }
+    }
+
+    return rows;
   }
 
   Future<void> _loadViewerContext() async {
@@ -438,7 +424,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
   Future<void> _loadClubs() async {
     try {
-      _clubs = await _fetchVisibleExplorerClubs(limit: 1500);
+      _clubs = await _fetchVisibleExplorerClubs();
       _setRealClubFilterOptions(_clubs);
     } catch (_) {
       _clubs = [];
@@ -446,9 +432,9 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchVisibleExplorerClubs({
-    int limit = 1500,
+    int maxRows = _explorerClubMaxRows,
   }) async {
-    final clubUsers = await _loadClubUsersForExplorer(limit: limit);
+    final clubUsers = await _loadClubUsersForExplorer(maxRows: maxRows);
 
     final ownerByRef = <String, String>{};
     final ownerDataById = <String, Map<String, dynamic>>{};
@@ -467,7 +453,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     final modernRows = await _safeSelectExplorerRows(
       'clubs',
-      limit: limit,
+      maxRows: maxRows,
       orderByCreatedAt: true,
     );
     for (final row in modernRows) {
@@ -485,7 +471,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     final legacyRows = await _safeSelectExplorerRows(
       'clubes',
-      limit: limit,
+      maxRows: maxRows,
       orderByCreatedAt: true,
     );
     for (final row in legacyRows) {
@@ -509,31 +495,33 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
     final visible = visibleByOwner.values.toList()
       ..sort((a, b) => _clubSortValue(b).compareTo(_clubSortValue(a)));
-    return visible.take(limit).toList(growable: false);
+    return visible.take(maxRows).toList(growable: false);
   }
 
   Future<List<Map<String, dynamic>>> _loadClubUsersForExplorer({
-    int limit = 1500,
+    int maxRows = _explorerClubMaxRows,
   }) async {
     final byUserId = <String, Map<String, dynamic>>{};
-    final attempts = <Future<dynamic> Function()>[
-      () => SupaFlow.client
-          .from('users')
-          .select()
-          .eq('userType', 'club')
-          .limit(limit),
-      () => SupaFlow.client
-          .from('users')
-          .select()
-          .eq('usertype', 'club')
-          .limit(limit),
-      () => SupaFlow.client.from('users').select().limit(limit),
+    final attempts = <Future<List<Map<String, dynamic>>> Function()>[
+      () => _selectExplorerRowsPaged(
+            'users',
+            equalsColumn: 'userType',
+            equalsValue: 'club',
+            maxRows: maxRows,
+          ),
+      () => _selectExplorerRowsPaged(
+            'users',
+            equalsColumn: 'usertype',
+            equalsValue: 'club',
+            maxRows: maxRows,
+          ),
+      () => _selectExplorerRowsPaged('users', maxRows: maxRows),
     ];
 
     for (final attempt in attempts) {
       try {
         final response = await attempt();
-        for (final user in List<Map<String, dynamic>>.from(response as List)) {
+        for (final user in response) {
           if (_isSoftDeletedRow(user)) continue;
           final type = FFAppState.normalizeUserType(
             user['userType'] ?? user['usertype'] ?? user['user_type'],
@@ -551,25 +539,19 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
 
   Future<List<Map<String, dynamic>>> _safeSelectExplorerRows(
     String table, {
-    required int limit,
+    required int maxRows,
     bool orderByCreatedAt = false,
   }) async {
-    try {
-      dynamic query = SupaFlow.client.from(table).select();
-      if (orderByCreatedAt) {
-        query = query.order('created_at', ascending: false);
-      }
-      final response = await query.limit(limit);
-      return List<Map<String, dynamic>>.from(response as List);
-    } catch (_) {
-      try {
-        final response =
-            await SupaFlow.client.from(table).select().limit(limit);
-        return List<Map<String, dynamic>>.from(response as List);
-      } catch (_) {
-        return const [];
-      }
+    final orderedRows = await _selectExplorerRowsPaged(
+      table,
+      orderByCreatedAt: orderByCreatedAt,
+      maxRows: maxRows,
+    );
+    if (orderedRows.isNotEmpty || !orderByCreatedAt) {
+      return orderedRows;
     }
+
+    return _selectExplorerRowsPaged(table, maxRows: maxRows);
   }
 
   String _resolveClubOwnerId(
@@ -679,22 +661,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   }
 
   void _setRealClubFilterOptions(List<Map<String, dynamic>> clubs) {
-    _realClubCountries = buildNormalizedOptions(
-      clubs.map(_resolveCountryFromClub),
-      normalizeCountryName,
-    );
-    _realClubStates =
-        buildNormalizedOptions(clubs.map(_resolveState), normalizeStateName);
     _realClubCities =
         buildNormalizedOptions(clubs.map(_resolveCity), normalizeCityName);
     _realClubLeagues = buildNormalizedOptions(
       clubs.map(_resolveClubLeague),
       normalizeLeagueName,
-    );
-    _clubCountryCities = _buildCountryCityMap(
-      clubs,
-      (row) => normalizeCountryName(_resolveCountryFromClub(row)),
-      (row) => normalizeCityName(_resolveCity(row)),
     );
   }
 
@@ -1384,19 +1355,6 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       }
     }
     return null;
-  }
-
-  List<String> _extractUniqueStrings(Iterable<dynamic> values) {
-    final uniqueByKey = <String, String>{};
-    for (final raw in values) {
-      final value =
-          raw?.toString().trim().replaceAll(RegExp(r'\s+'), ' ') ?? '';
-      if (value.isEmpty || value.toLowerCase() == 'null') continue;
-      uniqueByKey.putIfAbsent(value.toLowerCase(), () => value);
-    }
-    final list = uniqueByKey.values.toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return list;
   }
 
   String _resolveCountryFromUser(Map<String, dynamic> user) {
@@ -2265,6 +2223,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     )) {
       return;
     }
+    if (!mounted) return;
 
     final playerId = player['user_id']?.toString() ?? '';
     if (playerId.isEmpty) return;
@@ -2334,14 +2293,6 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       message: message,
       confirmLabel: 'Entendido',
     );
-  }
-
-  void _openVerifiedScoutsResults() {
-    _openJugadorSearchMode(initialTab: _JugadorSearchTab.scouts);
-  }
-
-  void _openClubShortcuts() {
-    _openJugadorSearchMode(initialTab: _JugadorSearchTab.clubes);
   }
 
   void _openJugadorSearchMode({
@@ -2539,15 +2490,15 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   Widget _buildScoutExplorer() {
     final playerPositionOptions = _realPlayerPositions;
     final playerCategoryOptions = _realPlayerCategories;
-    final playerCountryOptions = LatamTaxonomy.countries;
+    const playerCountryOptions = LatamTaxonomy.countries;
     final playerCityOptions = _realPlayerCities;
     final playerLevelOptions = GamificationService.allLevelNames;
 
-    final clubCountryOptions = LatamTaxonomy.countries;
+    const clubCountryOptions = LatamTaxonomy.countries;
     final clubCityOptions = _realClubCities;
     final clubLeagueOptions = _realClubLeagues;
 
-    final convocatoriaCountryOptions = LatamTaxonomy.countries;
+    const convocatoriaCountryOptions = LatamTaxonomy.countries;
     final convocatoriaCityOptions = _realConvocatoriaCities;
     final convocatoriaCategoryOptions = _realConvocatoriaCategories;
     final convocatoriaPositionOptions = _realConvocatoriaPositions;
@@ -3179,7 +3130,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   Widget _buildJugadorSearchMode() {
     final playerCategoryOptions = _realPlayerCategories;
     final playerPositionOptions = _realPlayerPositions;
-    final playerCountryOptions = LatamTaxonomy.countries;
+    const playerCountryOptions = LatamTaxonomy.countries;
     final playerStateOptions =
         LatamTaxonomy.statesForCountry(_jugadorPlayerCountry);
     final playerCityOptions = LatamTaxonomy.citiesForState(
@@ -3190,20 +3141,14 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     final convocatoriaPositionOptions = _realConvocatoriaPositions;
     final convocatoriaLocationOptions = _realConvocatoriaLocations;
 
-    final clubCountryOptions = LatamTaxonomy.countries;
+    const clubCountryOptions = LatamTaxonomy.countries;
     final clubStateOptions =
         LatamTaxonomy.statesForCountry(_jugadorClubCountry);
     final clubCityOptions =
         LatamTaxonomy.citiesForState(_jugadorClubCountry, _jugadorClubState);
     final clubLeagueOptions = _realClubLeagues;
 
-    final verifiedScouts = _users.where((user) {
-      final isScout =
-          (user['userType']?.toString().trim().toLowerCase() ?? '') ==
-              'profesional';
-      return isScout && _isVerified(user);
-    }).toList();
-    final scoutCountryOptions = LatamTaxonomy.countries;
+    const scoutCountryOptions = LatamTaxonomy.countries;
     final scoutStateOptions =
         LatamTaxonomy.statesForCountry(_jugadorScoutCountry);
     final currentResults = _jugadorCurrentResults;

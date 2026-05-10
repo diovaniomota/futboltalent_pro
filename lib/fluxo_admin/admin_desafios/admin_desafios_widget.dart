@@ -357,7 +357,9 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
-      _showSnack('Error al cargar desafíos: $e', color: Colors.red);
+      _showSnack(
+          'No se pudieron cargar los desafíos. Verifica tu conexión e intenta de nuevo.',
+          color: Colors.red);
     }
   }
 
@@ -601,7 +603,8 @@ class _AdminDesafiosWidgetState extends State<AdminDesafiosWidget> {
             } catch (e) {
               debugPrint('Create challenge failed: $e');
               if (mounted) {
-                _showSnack('No se pudo crear el desafío: $e',
+                _showSnack(
+                    'No se pudo crear el desafío. Verifica los datos e intenta de nuevo.',
                     color: Colors.red);
               }
               setDialogState(() => isSaving = false);

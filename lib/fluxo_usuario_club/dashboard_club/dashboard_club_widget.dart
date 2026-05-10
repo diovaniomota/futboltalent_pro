@@ -1694,9 +1694,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         }
       }
     } catch (e) {
+      debugPrint('No se pudo guardar el jugador: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo guardar el jugador: $e')),
+          const SnackBar(
+              content: Text(
+                  'No se pudo guardar el jugador. Verifica tu conexión e intenta de nuevo.')),
         );
       }
     } finally {
@@ -1786,9 +1789,12 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         ),
       );
     } catch (e) {
+      debugPrint('No se pudo invitar al jugador: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo invitar al jugador: $e')),
+        const SnackBar(
+            content: Text(
+                'No se pudo invitar al jugador. Verifica tu conexión e intenta de nuevo.')),
       );
     } finally {
       if (mounted) {

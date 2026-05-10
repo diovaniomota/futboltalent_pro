@@ -25,15 +25,27 @@ Future<VideoLikeSnapshot> fetchVideoLikeSnapshot({
   }
 
   try {
-    final response = await SupaFlow.client
-        .from('likes')
-        .select('user_id')
-        .eq('video_id', cleanVideoId)
-        .limit(10000);
-    final rows = List<Map<String, dynamic>>.from(response as List);
-    final isLiked = cleanUserId.isNotEmpty &&
-        rows.any((row) => row['user_id']?.toString() == cleanUserId);
-    return VideoLikeSnapshot(isLiked: isLiked, count: rows.length);
+    const pageSize = 250;
+    var from = 0;
+    var total = 0;
+    var isLiked = false;
+
+    while (true) {
+      final response = await SupaFlow.client
+          .from('likes')
+          .select('user_id')
+          .eq('video_id', cleanVideoId)
+          .range(from, from + pageSize - 1);
+      final rows = List<Map<String, dynamic>>.from(response as List);
+      total += rows.length;
+      if (!isLiked && cleanUserId.isNotEmpty) {
+        isLiked = rows.any((row) => row['user_id']?.toString() == cleanUserId);
+      }
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return VideoLikeSnapshot(isLiked: isLiked, count: total);
   } catch (_) {
     return VideoLikeSnapshot(
       isLiked: false,

@@ -65,8 +65,26 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
       _showError('Por favor, ingresa una contraseña');
       return;
     }
-    if (_senhaController.text.length < 6) {
-      _showError('La contraseña debe tener al menos 6 caracteres');
+    if (_senhaController.text.length < 8) {
+      _showError('La contraseña debe tener al menos 8 caracteres');
+      return;
+    }
+    if (!RegExp(r'[A-Z]').hasMatch(_senhaController.text)) {
+      _showError('La contraseña debe contener al menos una letra mayúscula');
+      return;
+    }
+    if (!RegExp(r'[a-z]').hasMatch(_senhaController.text)) {
+      _showError('La contraseña debe contener al menos una letra minúscula');
+      return;
+    }
+    if (!RegExp(r'[0-9]').hasMatch(_senhaController.text)) {
+      _showError('La contraseña debe contener al menos un número');
+      return;
+    }
+    if (!RegExp(r'[!@#\$%\^&\*\(\)_\+\-=\[\]\{\};:,\.<>\?/\\|`~]')
+        .hasMatch(_senhaController.text)) {
+      _showError(
+          'La contraseña debe contener al menos un carácter especial (!@#\$%...)');
       return;
     }
     if (_senhaController.text != _confirmarSenhaController.text) {
@@ -89,7 +107,7 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
         );
       }
     } catch (e) {
-      debugPrint('Erro ao registrar: $e');
+      debugPrint('Error al registrar: $e');
       FFAppState().registrationFlowActive = false;
       _showError('Error: ${e.toString()}');
     } finally {
@@ -208,24 +226,6 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
                         onPressed: () => setState(() =>
                             _confirmarSenhaVisibility =
                                 !_confirmarSenhaVisibility),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Esqueceu a senha
-              Padding(
-                padding: const EdgeInsets.only(top: 10, right: 40),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: GestureDetector(
-                    onTap: () => context.pushNamed('recuperar_contrasena'),
-                    child: Text(
-                      '¿Olvidaste tu contraseña?',
-                      style: GoogleFonts.inter(
-                        color: const Color(0xFF0D3B66),
-                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),

@@ -295,7 +295,8 @@ class _AdminVideosWidgetState extends State<AdminVideosWidget> {
       }
     } catch (e) {
       debugPrint('Error deleting video: $e');
-      _showSnack('Error al eliminar: $e');
+      _showSnack(
+          'No pudimos eliminar el video. Verifica tu conexión e intenta de nuevo.');
     }
   }
 

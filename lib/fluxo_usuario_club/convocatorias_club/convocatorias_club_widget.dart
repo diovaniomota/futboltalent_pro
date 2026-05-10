@@ -358,10 +358,12 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
         );
       }
     } catch (e) {
+      debugPrint('Error al eliminar convocatoria: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al eliminar: $e'),
+          const SnackBar(
+            content: Text(
+                'No pudimos eliminar la convocatoria. Verifica tu conexión e intenta de nuevo.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -386,10 +388,12 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
         );
       }
     } catch (e) {
+      debugPrint('Error al cerrar convocatoria: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al cerrar: $e'),
+          const SnackBar(
+            content: Text(
+                'No pudimos cerrar la convocatoria. Verifica tu conexión e intenta de nuevo.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -414,10 +418,12 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
         );
       }
     } catch (e) {
+      debugPrint('Error al reabrir convocatoria: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al reabrir: $e'),
+          const SnackBar(
+            content: Text(
+                'No pudimos reabrir la convocatoria. Verifica tu conexión e intenta de nuevo.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -1556,7 +1562,7 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
                 ElevatedButton(
                   onPressed: () {
                     Navigator.pop(ctx);
-                    context.pushNamed(DashboardClubWidget.routeName);
+                    context.pushNamed('Lista_y_nota');
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0D3B66),
@@ -1638,10 +1644,12 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
         ),
       );
     } catch (e) {
+      debugPrint('Error al subir imagen de convocatoria: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al subir imagen: $e'),
+        const SnackBar(
+          content: Text(
+              'No pudimos subir la imagen. Verifica tu conexión e intenta con una imagen más pequeña.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -2218,10 +2226,12 @@ class _ViewConvocatoriaModalState extends State<_ViewConvocatoriaModal> {
         ),
       );
     } catch (e) {
+      debugPrint('No se pudo actualizar el estado de la convocatoria: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo actualizar el estado: $e'),
+        const SnackBar(
+          content: Text(
+              'No se pudo actualizar el estado. Verifica tu conexión e intenta de nuevo.'),
           backgroundColor: Colors.red,
         ),
       );

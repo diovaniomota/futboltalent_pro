@@ -437,10 +437,12 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
               .order('created_at', ascending: false);
       listas = List<Map<String, dynamic>>.from(response);
     } catch (e) {
+      debugPrint('Error al cargar listas: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error al cargar listas: $e'),
+          const SnackBar(
+              content: Text(
+                  'No pudimos cargar tus listas. Verifica tu conexión e intenta de nuevo.'),
               backgroundColor: Colors.red),
         );
       }
@@ -2202,10 +2204,12 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
         _newListNameCtrl.clear();
       });
     } catch (e) {
+      debugPrint('Error al crear lista: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error al crear lista: $e'),
+          const SnackBar(
+              content: Text(
+                  'No pudimos crear la lista. Verifica tu conexión e intenta de nuevo.'),
               backgroundColor: Colors.red),
         );
       }

@@ -173,11 +173,39 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           .select('id, item_id, item_type')
           .eq('user_id', currentUserUid)
           .eq('video_id', videoId);
-      return List<Map<String, dynamic>>.from(rows as List);
+      final attempts = List<Map<String, dynamic>>.from(rows as List);
+      if (attempts.isNotEmpty) return attempts;
     } catch (e) {
       debugPrint('Challenge attempt lookup failed for video $videoId: $e');
-      return const [];
     }
+
+    try {
+      final videoRow = await SupaFlow.client
+          .from('videos')
+          .select('id, description')
+          .eq('user_id', currentUserUid)
+          .eq('id', videoId)
+          .maybeSingle();
+      final description = videoRow?['description']?.toString() ?? '';
+      final match = RegExp(r'\[challenge_ref:(course|exercise):([^\]]+)\]')
+          .firstMatch(description);
+      final itemType = match?.group(1)?.trim() ?? '';
+      final itemId = match?.group(2)?.trim() ?? '';
+      if (itemType.isNotEmpty && itemId.isNotEmpty) {
+        return [
+          {
+            'item_type': itemType,
+            'item_id': itemId,
+            'video_id': videoId,
+          }
+        ];
+      }
+    } catch (fallbackError) {
+      debugPrint(
+          'Challenge tag fallback failed for video $videoId: $fallbackError');
+    }
+
+    return const [];
   }
 
   Future<void> _clearLocalChallengeAttemptsCache() async {
@@ -739,9 +767,12 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       );
     } catch (e) {
       if (!mounted) return;
+      debugPrint('No se pudo quitar el video guardado: $e');
       setState(() => _removingSavedVideoId = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo quitar el video: $e')),
+        const SnackBar(
+            content: Text(
+                'No se pudo quitar el video. Verifica tu conexión e intenta de nuevo.')),
       );
     }
   }

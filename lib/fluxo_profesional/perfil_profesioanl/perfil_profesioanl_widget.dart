@@ -414,9 +414,12 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
       );
     } catch (e) {
       if (!mounted) return;
+      debugPrint('No se pudo quitar el video guardado: $e');
       setState(() => _removingSavedVideoId = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo quitar el video: $e')),
+        const SnackBar(
+            content: Text(
+                'No se pudo quitar el video. Verifica tu conexión e intenta de nuevo.')),
       );
     }
   }

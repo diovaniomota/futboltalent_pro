@@ -404,6 +404,26 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     }
   }
 
+  Future<void> _persistAttemptToServer(Map<String, dynamic> payload) async {
+    try {
+      await SupaFlow.client.from('user_challenge_attempts').insert(payload);
+      return;
+    } catch (insertError) {
+      final message = insertError.toString().toLowerCase();
+      final isLegacyUniqueConflict = message.contains('duplicate key') ||
+          message.contains('unique') ||
+          message.contains('23505');
+      if (!isLegacyUniqueConflict) rethrow;
+    }
+
+    await SupaFlow.client
+        .from('user_challenge_attempts')
+        .update(payload)
+        .eq('user_id', payload['user_id'])
+        .eq('item_id', payload['item_id'])
+        .eq('item_type', payload['item_type']);
+  }
+
   Future<void> _syncAttemptForItem(Map<String, dynamic> item) async {
     final itemId = item['id']?.toString() ?? '';
     final itemType = item['type']?.toString() ?? '';
@@ -734,19 +754,16 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       await _markItemCompletedFromAttempt(item);
 
       try {
-        await SupaFlow.client.from('user_challenge_attempts').upsert(
-          {
-            'user_id': currentUserUid,
-            'item_id': itemId,
-            'item_type': itemType,
-            'video_id': profileVideoId,
-            'video_url': publicUrl,
-            'status': 'submitted',
-            'submitted_at': attempt.submittedAt.toIso8601String(),
-            'updated_at': DateTime.now().toIso8601String(),
-          },
-          onConflict: 'user_id,item_id,item_type',
-        );
+        await _persistAttemptToServer({
+          'user_id': currentUserUid,
+          'item_id': itemId,
+          'item_type': itemType,
+          'video_id': profileVideoId,
+          'video_url': publicUrl,
+          'status': 'submitted',
+          'submitted_at': attempt.submittedAt.toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
       } catch (e) {
         debugPrint('Optional server sync for attempts unavailable: $e');
       }

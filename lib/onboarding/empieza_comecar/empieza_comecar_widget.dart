@@ -2607,14 +2607,16 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       );
       if (!success && mounted) {
         _showSnackBar(
-            'No pudimos conectarnos con ${provider.name}. Verifica tu conexão e intenta de novo.');
+            'No pudimos conectarnos con ${provider.name}. Verifica tu conexión e intenta de nuevo.');
       }
     } catch (e) {
       final msg = e.toString().toLowerCase();
       if (msg.contains('not enabled') || msg.contains('not configured')) {
-        _showSnackBar('El inicio de sesión con ${provider.name} no está disponible en este momento.');
+        _showSnackBar(
+            'El inicio de sesión con ${provider.name} no está disponible en este momento.');
       } else {
-        _showSnackBar('No pudimos iniciar sesión con ${provider.name}. Verifica tu conexión e intenta de nuevo.');
+        _showSnackBar(
+            'No pudimos iniciar sesión con ${provider.name}. Verifica tu conexión e intenta de nuevo.');
       }
     } finally {
       if (mounted) setState(() => _isRegistering = false);
@@ -2650,12 +2652,30 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       _showSnackBar('Por favor ingresa una contraseña');
       return;
     }
-    if (_senhaController.text != _confirmarSenhaController.text) {
-      _showSnackBar('Las contraseñas no coinciden');
+    if (_senhaController.text.length < 8) {
+      _showSnackBar('La contraseña debe tener al menos 8 caracteres');
       return;
     }
-    if (_senhaController.text.length < 6) {
-      _showSnackBar('La contraseña debe tener al menos 6 caracteres');
+    if (!RegExp(r'[A-Z]').hasMatch(_senhaController.text)) {
+      _showSnackBar('La contraseña debe contener al menos una letra mayúscula');
+      return;
+    }
+    if (!RegExp(r'[a-z]').hasMatch(_senhaController.text)) {
+      _showSnackBar('La contraseña debe contener al menos una letra minúscula');
+      return;
+    }
+    if (!RegExp(r'[0-9]').hasMatch(_senhaController.text)) {
+      _showSnackBar('La contraseña debe contener al menos un número');
+      return;
+    }
+    if (!RegExp(r'[!@#\$%\^&\*\(\)_\+\-=\[\]\{\};:,\.<>\?/\\|`~]')
+        .hasMatch(_senhaController.text)) {
+      _showSnackBar(
+          'La contraseña debe contener al menos un carácter especial (!@#\$%...)');
+      return;
+    }
+    if (_senhaController.text != _confirmarSenhaController.text) {
+      _showSnackBar('Las contraseñas no coinciden');
       return;
     }
 
@@ -2664,7 +2684,8 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       FFAppState().registrationFlowActive = true;
       _goToNextTab();
     } catch (e) {
-      _showSnackBar('Ocurrió un problema con el registro. Verifica tu conexión e intenta de nuevo.');
+      _showSnackBar(
+          'Ocurrió un problema con el registro. Verifica tu conexión e intenta de nuevo.');
     } finally {
       if (mounted) {
         setState(() => _isRegistering = false);
@@ -3134,6 +3155,10 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
       // Se menor, salvar guardian
       if (isMinor) {
+        final approvalCodeExpiresAt = DateTime.now()
+            .toUtc()
+            .add(const Duration(days: 7))
+            .toIso8601String();
         final guardianPayload = {
           'name': 'Responsable legal',
           'relationship': _guardianRelationship,
@@ -3141,11 +3166,15 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           'player_id': uid,
           'status': GuardianMvpService.pendingStatus,
           'approval_code': approvalCode,
+          'approval_code_expires_at': approvalCodeExpiresAt,
+          'approval_code_used_at': null,
           'approved_at': null,
         };
         final legacyGuardianPayload = Map<String, dynamic>.from(guardianPayload)
           ..remove('status')
           ..remove('approval_code')
+          ..remove('approval_code_expires_at')
+          ..remove('approval_code_used_at')
           ..remove('approved_at');
         try {
           await SupaFlow.client.from('guardians').insert(guardianPayload);
@@ -3224,15 +3253,11 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           guardianEmail: _guardianEmailController.text.trim(),
         );
 
-        // After the minor sees the code, log out and send to login.
         // The minor must NOT access the app until the guardian approves.
         FFAppState().authBlockMessage =
             'Cuenta creada. El adulto responsable debe aprobar el acceso '
             'usando el código de aprobación desde la pantalla de login.';
         FFAppState().registrationFlowActive = false;
-        try {
-          await authManager.signOut();
-        } catch (_) {}
         if (mounted) {
           context.goNamed('login');
         }
@@ -4988,69 +5013,74 @@ class _SearchableListSheetState extends State<_SearchableListSheet> {
             .toList();
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      maxChildSize: 0.9,
+      initialChildSize: 0.7,
+      maxChildSize: 0.95,
       minChildSize: 0.3,
       expand: false,
-      builder: (_, scrollController) => Column(
-        children: [
-          const SizedBox(height: 8),
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              widget.title,
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF0D3B66),
+      builder: (_, scrollController) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Buscar...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-              onChanged: (v) => setState(() => _query = v),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (filtered.isEmpty)
             Padding(
-              padding: const EdgeInsets.all(32),
+              padding: const EdgeInsets.all(16),
               child: Text(
-                'Sin resultados para "$_query"',
-                style: TextStyle(color: Colors.grey[500]),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                controller: scrollController,
-                itemCount: filtered.length,
-                itemBuilder: (_, i) => ListTile(
-                  title: Text(filtered[i]),
-                  onTap: () => widget.onSelected(filtered[i]),
+                widget.title,
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF0D3B66),
                 ),
               ),
             ),
-        ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Buscar...',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onChanged: (v) => setState(() => _query = v),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (filtered.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(
+                  'Sin resultados para "$_query"',
+                  style: TextStyle(color: Colors.grey[500]),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  itemCount: filtered.length,
+                  itemBuilder: (_, i) => ListTile(
+                    title: Text(filtered[i]),
+                    onTap: () => widget.onSelected(filtered[i]),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
