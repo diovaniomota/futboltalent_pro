@@ -235,10 +235,14 @@ class _LoginWidgetState extends State<LoginWidget> {
       final String redirectTo = kIsWeb
           ? '${Uri.base.origin}/auth/callback'
           : 'futboltalent://login-callback';
+      final queryParams = provider == OAuthProvider.google
+          ? const {'prompt': 'select_account'}
+          : null;
 
       final success = await SupaFlow.client.auth.signInWithOAuth(
         provider,
         redirectTo: redirectTo,
+        queryParams: queryParams,
       );
       if (!success && mounted) {
         setState(() {

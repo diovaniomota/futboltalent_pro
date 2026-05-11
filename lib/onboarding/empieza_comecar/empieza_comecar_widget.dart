@@ -2600,10 +2600,14 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       final String redirectTo = kIsWeb
           ? '${Uri.base.origin}/auth/callback'
           : 'futboltalent://login-callback';
+      final queryParams = provider == OAuthProvider.google
+          ? const {'prompt': 'select_account'}
+          : null;
 
       final success = await SupaFlow.client.auth.signInWithOAuth(
         provider,
         redirectTo: redirectTo,
+        queryParams: queryParams,
       );
       if (!success && mounted) {
         _showSnackBar(
