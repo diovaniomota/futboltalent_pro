@@ -1,6 +1,8 @@
 import 'dart:async';
 import '/auth/supabase_auth/auth_util.dart';
+import '/auth/supabase_auth/social_oauth.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/geo_selection_bottom_sheet.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
@@ -27,6 +29,18 @@ class EmpiezaComecarWidget extends StatefulWidget {
   @override
   State<EmpiezaComecarWidget> createState() => _EmpiezaComecarWidgetState();
 }
+
+typedef _WelcomeBenefit = ({String title, IconData icon});
+
+typedef _WelcomeContent = ({
+  String eyebrow,
+  IconData badgeIcon,
+  Color accent,
+  String title,
+  String subtitle,
+  String primaryButton,
+  List<_WelcomeBenefit> benefits,
+});
 
 class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     with TickerProviderStateMixin {
@@ -2597,31 +2611,14 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   Future<void> _signInWithProvider(OAuthProvider provider) async {
     setState(() => _isRegistering = true);
     try {
-      final String redirectTo = kIsWeb
-          ? '${Uri.base.origin}/auth/callback'
-          : 'futboltalent://login-callback';
-      final queryParams = provider == OAuthProvider.google
-          ? const {'prompt': 'select_account'}
-          : null;
-
-      final success = await SupaFlow.client.auth.signInWithOAuth(
-        provider,
-        redirectTo: redirectTo,
-        queryParams: queryParams,
-      );
+      final success = await signInWithSocialProvider(provider);
       if (!success && mounted) {
-        _showSnackBar(
-            'No pudimos conectarnos con ${provider.name}. Verifica tu conexión e intenta de nuevo.');
+        _showSnackBar(socialAuthLaunchErrorMessage(provider));
       }
     } catch (e) {
-      final msg = e.toString().toLowerCase();
-      if (msg.contains('not enabled') || msg.contains('not configured')) {
-        _showSnackBar(
-            'El inicio de sesión con ${provider.name} no está disponible en este momento.');
-      } else {
-        _showSnackBar(
-            'No pudimos iniciar sesión con ${provider.name}. Verifica tu conexión e intenta de nuevo.');
-      }
+      debugPrint('Social auth failed for ${socialProviderLabel(provider)}: $e');
+      if (isSocialAuthCanceled(e)) return;
+      _showSnackBar(socialAuthFriendlyErrorMessage(e, provider));
     } finally {
       if (mounted) setState(() => _isRegistering = false);
     }
@@ -2727,7 +2724,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         return date;
       }
     } catch (e) {
-      debugPrint('Erro ao converter data: $e');
+      debugPrint('Error al convertir la fecha: $e');
     }
     return null;
   }
@@ -2744,15 +2741,63 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   bool get _isProfessionalRegistration =>
       _normalizedSelectedUserType == 'profesional';
 
-  String get _introSubtitleText {
+  _WelcomeContent get _introWelcomeContent {
     switch (_normalizedSelectedUserType) {
       case 'profesional':
-        return 'Buscá el talento, gestioná convocatorias, creá listas de seguimiento y mostrá tu historial de exito en scouting!';
+        return (
+          eyebrow: 'Perfil profesional',
+          badgeIcon: Icons.manage_search,
+          accent: const Color(0xFF0F766E),
+          title: 'Evaluá talento con criterio y contexto.',
+          subtitle:
+              'Usa filtros deportivos, videos, listas y convocatorias para seguir jugadores sin exponer datos personales ni abrir contactos fuera de la plataforma.',
+          primaryButton: 'Crear perfil scout',
+          benefits: const [
+            (title: 'Evaluación', icon: Icons.fact_check_outlined),
+            (title: 'Filtros', icon: Icons.tune),
+            (title: 'Listas', icon: Icons.bookmark_border),
+            (title: 'Convocatorias', icon: Icons.flag),
+            (title: 'Contacto mediado', icon: Icons.shield),
+            (title: 'Seguimiento', icon: Icons.timeline),
+          ],
+        );
       case 'club':
-        return 'Analizá estadísticas, gestioná convocatorias, controlá talentos y optimizá tu estrategia!';
+        return (
+          eyebrow: 'Perfil institucional',
+          badgeIcon: Icons.groups,
+          accent: const Color(0xFF6D5BD0),
+          title: 'Gestioná talento para tu institución.',
+          subtitle:
+              'Organizá evaluaciones, convocatorias y seguimiento de jugadores con herramientas pensadas para clubes y academias.',
+          primaryButton: 'Crear perfil de club',
+          benefits: const [
+            (title: 'Candidatos', icon: Icons.groups),
+            (title: 'Evaluación', icon: Icons.fact_check_outlined),
+            (title: 'Convocatorias', icon: Icons.flag),
+            (title: 'Listas', icon: Icons.bookmark_border),
+            (title: 'Filtros', icon: Icons.tune),
+            (title: 'Control', icon: Icons.admin_panel_settings_outlined),
+          ],
+        );
       case 'jugador':
       default:
-        return 'Entrená, participá y hacé visible tu progreso dentro y fuera de la cancha.';
+        return (
+          eyebrow: 'Perfil jugador',
+          badgeIcon: Icons.sports_soccer,
+          accent: const Color(0xFF2B6CB0),
+          title: 'Convertí tu progreso en oportunidades.',
+          subtitle:
+              'Mostrá videos, completá desafíos y construí una ficha deportiva clara para que scouts y clubes entiendan tu potencial.',
+          primaryButton: 'Crear perfil jugador',
+          benefits: const [
+            (title: 'Videos', icon: Icons.videocam),
+            (title: 'Desafíos', icon: Icons.flag),
+            (title: 'Ficha deportiva', icon: Icons.assignment_ind_outlined),
+            (title: 'Visibilidad', icon: Icons.travel_explore),
+            (title: 'Seguridad', icon: Icons.shield),
+            (title: 'Progreso', icon: Icons.trending_up),
+          ],
+        );
     }
   }
 
@@ -2893,12 +2938,12 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       // Se menor, validar guardian
       if (isMinor) {
         if (_guardianEmailController.text.trim().isEmpty) {
-          _showSnackBar('Es necesario el email del adulto responsable');
+          _showSnackBar('Es necesario el correo del adulto responsable.');
           setState(() => _isSavingProfile = false);
           return;
         }
         if (!_guardianEmailController.text.trim().contains('@')) {
-          _showSnackBar('Ingresá un email válido del responsable.');
+          _showSnackBar('Ingresa un correo válido del responsable.');
           setState(() => _isSavingProfile = false);
           return;
         }
@@ -3321,8 +3366,8 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           children: [
             Text(
               guardianEmail.isNotEmpty
-                  ? 'La cuenta quedó en modo limitado hasta que el adulto responsable apruebe el acceso. Compartí este código con $guardianEmail.'
-                  : 'La cuenta quedó en modo limitado hasta que el adulto responsable apruebe el acceso. Compartí este código con tu responsable.',
+                  ? 'La cuenta quedó en modo limitado hasta que el adulto responsable apruebe el acceso. Comparte este código con $guardianEmail.'
+                  : 'La cuenta quedó en modo limitado hasta que el adulto responsable apruebe el acceso. Comparte este código con tu responsable.',
             ),
             const SizedBox(height: 14),
             Container(
@@ -3439,28 +3484,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         _responsive(context, mobile: 320, tablet: 357, desktop: 400);
     final horizontalPadding =
         _responsive(context, mobile: 20, tablet: 40, desktop: 60);
-    final isProfessional = _isProfessionalRegistration;
-    final titleText = isProfessional
-        ? 'Descubrí talento con contexto.'
-        : 'Mostrá tu talento al mundo.';
-    final subtitleText = _introSubtitleText;
-    final benefitCards = isProfessional
-        ? const [
-            ('Talentos', Icons.manage_search),
-            ('Filtros', Icons.tune),
-            ('Listas', Icons.bookmark_border),
-            ('Convocatorias', Icons.flag),
-            ('Contacto seguro', Icons.shield),
-            ('Clubes', Icons.groups),
-          ]
-        : const [
-            ('Scouting', Icons.travel_explore),
-            ('Desarrollo', Icons.school),
-            ('Seguridad', Icons.shield),
-            ('Videos', Icons.videocam),
-            ('Desafíos', Icons.flag),
-            ('Explorer', Icons.manage_search),
-          ];
+    final welcome = _introWelcomeContent;
 
     return SingleChildScrollView(
       child: Padding(
@@ -3493,9 +3517,42 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
             SizedBox(height: 16 * scale),
 
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: 14 * scale,
+                vertical: 8 * scale,
+              ),
+              decoration: BoxDecoration(
+                color: welcome.accent.withAlpha(24),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: welcome.accent.withAlpha(80)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    welcome.badgeIcon,
+                    color: welcome.accent,
+                    size: 18 * scale,
+                  ),
+                  SizedBox(width: 8 * scale),
+                  Text(
+                    welcome.eyebrow,
+                    style: GoogleFonts.inter(
+                      fontSize: 12 * scale,
+                      fontWeight: FontWeight.w800,
+                      color: welcome.accent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            SizedBox(height: 14 * scale),
+
             // Título
             Text(
-              titleText,
+              welcome.title,
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: titleFontSize,
@@ -3508,7 +3565,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
 
             // Subtítulo
             Text(
-              subtitleText,
+              welcome.subtitle,
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: subtitleFontSize,
@@ -3520,31 +3577,18 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             SizedBox(height: screenHeight * 0.05),
 
             // Cards de benefícios
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: cardSpacing,
+              runSpacing: cardSpacing,
               children: [
-                _buildBenefitCard(
-                    benefitCards[0].$1, benefitCards[0].$2, cardSize),
-                SizedBox(width: cardSpacing),
-                _buildBenefitCard(
-                    benefitCards[1].$1, benefitCards[1].$2, cardSize),
-                SizedBox(width: cardSpacing),
-                _buildBenefitCard(
-                    benefitCards[2].$1, benefitCards[2].$2, cardSize),
-              ],
-            ),
-            SizedBox(height: cardSpacing),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildBenefitCard(
-                    benefitCards[3].$1, benefitCards[3].$2, cardSize),
-                SizedBox(width: cardSpacing),
-                _buildBenefitCard(
-                    benefitCards[4].$1, benefitCards[4].$2, cardSize),
-                SizedBox(width: cardSpacing),
-                _buildBenefitCard(
-                    benefitCards[5].$1, benefitCards[5].$2, cardSize),
+                for (final benefit in welcome.benefits)
+                  _buildBenefitCard(
+                    benefit.title,
+                    benefit.icon,
+                    cardSize,
+                    welcome.accent,
+                  ),
               ],
             ),
 
@@ -3553,24 +3597,26 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             // Botón Siguiente
             _buildPrimaryButton(
               context: context,
-              text: isProfessional ? 'Crear perfil scout' : 'Crear perfil',
+              text: welcome.primaryButton,
               onPressed: _goToNextTab,
               width: buttonWidth,
             ),
-            SizedBox(height: 40),
+            const SizedBox(height: 40),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildBenefitCard(String title, IconData icon, double size) {
+  Widget _buildBenefitCard(
+      String title, IconData icon, double size, Color accent) {
     final scale = _scaleFactor(context);
     return Container(
       width: size,
-      height: size * 0.85,
+      height: size * 0.9,
+      padding: EdgeInsets.symmetric(horizontal: 6 * scale),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B6CB0),
+        color: accent,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -3581,9 +3627,11 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           Text(
             title,
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
               fontSize: 12 * scale,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w700,
               color: Colors.white,
             ),
           ),
@@ -3620,7 +3668,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           SizedBox(height: 30 * scale),
           _buildTextField(
             context: context,
-            label: 'Correo Electrónico',
+            label: 'Correo electrónico',
             hint: 'tu.correo@ejemplo.com',
             controller: _emailController,
             focusNode: _emailFocusNode,
@@ -3646,7 +3694,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           SizedBox(height: 15 * scale),
           _buildTextField(
             context: context,
-            label: 'Confirmar Contraseña',
+            label: 'Confirmar contraseña',
             hint: 'Confirma tu contraseña',
             controller: _confirmarSenhaController,
             focusNode: _confirmarSenhaFocusNode,
@@ -3684,14 +3732,14 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('¿Ya tenes cuenta? ',
+                Text('¿Ya tienes cuenta? ',
                     style: GoogleFonts.inter(
                         fontSize: 14 * scale,
                         fontWeight: FontWeight.w500,
                         color: const Color(0xFF444444))),
                 GestureDetector(
                   onTap: () => context.pushNamed('login'),
-                  child: Text('Iniciar Sesión',
+                  child: Text('Iniciar sesión',
                       style: GoogleFonts.inter(
                           fontSize: 14 * scale,
                           fontWeight: FontWeight.bold,
@@ -4154,8 +4202,8 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           SizedBox(height: 24 * scale),
           _buildTextField(
             context: context,
-            label: 'Email del responsable',
-            hint: 'email@ejemplo.com',
+            label: 'Correo del adulto responsable',
+            hint: 'correo@ejemplo.com',
             controller: _guardianEmailController,
             focusNode: _guardianEmailFocusNode,
             keyboardType: TextInputType.emailAddress,
@@ -4355,6 +4403,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   Widget _buildCountryDropdown(BuildContext context) {
     final scale = _scaleFactor(context);
     final fontSize = 13 * scale;
+    final selectedCountryName = _paisController.text.trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4366,54 +4415,72 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                   fontWeight: FontWeight.w500,
                   color: Colors.black)),
         ),
-        Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(horizontal: 16 * scale),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: const Color(0xFFA0AEC0)),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _selectedCountryId,
-              hint: Text('Selecciona el país',
-                  style: GoogleFonts.inter(
-                      fontSize: fontSize, color: const Color(0xFF2F3336))),
-              isExpanded: true,
-              icon: const Icon(Icons.keyboard_arrow_down),
-              items: (_countries.toList()
-                    ..sort((a, b) {
-                      final nameA =
-                          (a['name']?.toString() ?? '').trim().toLowerCase();
-                      final nameB =
-                          (b['name']?.toString() ?? '').trim().toLowerCase();
-                      return nameA.compareTo(nameB);
-                    }))
-                  .map((c) => DropdownMenuItem<String>(
-                      value: c['id'].toString(),
-                      child: Text(c['name']?.toString() ?? '',
-                          style: GoogleFonts.inter(fontSize: fontSize))))
-                  .toList(),
-              onChanged: (v) {
-                final countryName = _countries
-                        .firstWhere((c) => c['id'].toString() == v,
-                            orElse: () => {})['name']
-                        ?.toString() ??
-                    '';
-                setState(() {
-                  _selectedCountryId = v;
-                  _paisController.text = countryName;
-                  _selectedState = null;
-                  _states = [];
-                  _cities = [];
-                  _selectedCity = null;
-                  _cidadeController.text = '';
-                  _cityFreeText = false;
-                  _isStatesLoading = true;
-                });
-                if (countryName.isNotEmpty) _loadStates(countryName);
-              },
+        GestureDetector(
+          onTap: _countries.isEmpty
+              ? null
+              : () async {
+                  final countryName = await showGeoSelectionBottomSheet(
+                    context: context,
+                    title: 'Selecciona el país',
+                    options: _countries.map(
+                      (country) => country['name']?.toString() ?? '',
+                    ),
+                    selectedValue: selectedCountryName,
+                  );
+                  if (!mounted || countryName == null) return;
+
+                  final selectedCountry = _countries.firstWhere(
+                    (country) =>
+                        (country['name']?.toString() ?? '').trim() ==
+                        countryName.trim(),
+                    orElse: () => <String, dynamic>{},
+                  );
+                  final countryId = selectedCountry['id']?.toString();
+                  if (countryId == null || countryId.isEmpty) return;
+
+                  setState(() {
+                    _selectedCountryId = countryId;
+                    _paisController.text = countryName;
+                    _selectedState = null;
+                    _states = [];
+                    _cities = [];
+                    _selectedCity = null;
+                    _cidadeController.text = '';
+                    _cityFreeText = false;
+                    _isStatesLoading = true;
+                  });
+                  _loadStates(countryName);
+                },
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(
+              horizontal: 16 * scale,
+              vertical: 14 * scale,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: const Color(0xFFA0AEC0)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    selectedCountryName.isNotEmpty
+                        ? selectedCountryName
+                        : (_countries.isEmpty
+                            ? 'Cargando países...'
+                            : 'Selecciona el país'),
+                    style: GoogleFonts.inter(
+                      fontSize: fontSize,
+                      color: selectedCountryName.isNotEmpty
+                          ? const Color(0xFF0F172A)
+                          : const Color(0xFF9CA3AF),
+                    ),
+                  ),
+                ),
+                const Icon(Icons.keyboard_arrow_down, color: Color(0xFF6B7280)),
+              ],
             ),
           ),
         ),
@@ -4657,6 +4724,7 @@ Para cualquier consulta sobre privacidad: info@futboltalent.pro
             onTap: () => _showSearchableBottomSheet(
               title: 'Selecciona el estado',
               items: _states,
+              selectedValue: _selectedState,
               onSelected: (v) {
                 setState(() {
                   _selectedState = v;
@@ -4762,6 +4830,7 @@ Para cualquier consulta sobre privacidad: info@futboltalent.pro
             onTap: () => _showSearchableBottomSheet(
               title: 'Selecciona la ciudad',
               items: _cities,
+              selectedValue: _selectedCity,
               onSelected: (v) {
                 setState(() {
                   _selectedCity = v;
@@ -4802,28 +4871,20 @@ Para cualquier consulta sobre privacidad: info@futboltalent.pro
     );
   }
 
-  void _showSearchableBottomSheet({
+  Future<void> _showSearchableBottomSheet({
     required String title,
     required List<String> items,
     required ValueChanged<String> onSelected,
-  }) {
-    showModalBottomSheet(
+    String? selectedValue,
+  }) async {
+    final selected = await showGeoSelectionBottomSheet(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return _SearchableListSheet(
-          title: title,
-          items: items,
-          onSelected: (v) {
-            onSelected(v);
-            Navigator.pop(ctx);
-          },
-        );
-      },
+      title: title,
+      options: items,
+      selectedValue: selectedValue,
     );
+    if (!mounted || selected == null) return;
+    onSelected(selected);
   }
 
   Widget _buildTextField({
@@ -4985,107 +5046,6 @@ class _LegalModal extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-// ===== SEARCHABLE LIST BOTTOM SHEET =====
-class _SearchableListSheet extends StatefulWidget {
-  final String title;
-  final List<String> items;
-  final ValueChanged<String> onSelected;
-
-  const _SearchableListSheet({
-    required this.title,
-    required this.items,
-    required this.onSelected,
-  });
-
-  @override
-  State<_SearchableListSheet> createState() => _SearchableListSheetState();
-}
-
-class _SearchableListSheetState extends State<_SearchableListSheet> {
-  String _query = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = _query.isEmpty
-        ? widget.items
-        : widget.items
-            .where((i) => i.toLowerCase().contains(_query.toLowerCase()))
-            .toList();
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      maxChildSize: 0.95,
-      minChildSize: 0.3,
-      expand: false,
-      builder: (_, scrollController) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                widget.title,
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF0D3B66),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Buscar...',
-                  prefixIcon: const Icon(Icons.search),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                ),
-                onChanged: (v) => setState(() => _query = v),
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (filtered.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  'Sin resultados para "$_query"',
-                  style: TextStyle(color: Colors.grey[500]),
-                ),
-              )
-            else
-              Expanded(
-                child: ListView.builder(
-                  controller: scrollController,
-                  itemCount: filtered.length,
-                  itemBuilder: (_, i) => ListTile(
-                    title: Text(filtered[i]),
-                    onTap: () => widget.onSelected(filtered[i]),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 }

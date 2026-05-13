@@ -44,7 +44,7 @@ void main() async {
       child: MyApp(),
     ));
   } catch (e, stackTrace) {
-    debugPrint('❌ Erro Fatal na Inicialização: $e');
+    debugPrint('❌ Error fatal durante la inicialización: $e');
     debugPrint('📝 StackTrace: $stackTrace');
 
     runApp(const MaterialApp(
@@ -107,6 +107,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   bool _isCheckingAccountGuard = false;
   bool _isForcingLogout = false;
 
+  String get _activeAuthUid {
+    final uid = currentUserUid.trim();
+    if (uid.isNotEmpty) return uid;
+    return SupaFlow.client.auth.currentUser?.id.trim() ?? '';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -120,7 +126,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _onAuthUserChanged(user);
     });
     _enforceAccountAccessRules();
-    jwtTokenStream.listen((_) {});
+    jwtTokenStream.listen(
+      (_) {},
+      onError: (error, stackTrace) {
+        debugPrint('JWT stream listener error: $error');
+      },
+    );
     Future.delayed(
       Duration(milliseconds: 1000),
       () => _appStateNotifier.stopShowingSplashImage(),
@@ -143,7 +154,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   void _onAuthUserChanged(BaseAuthUser user) {
-    if (user.loggedIn && (user.uid?.isNotEmpty ?? false)) {
+    final uid = (user.uid?.trim().isNotEmpty ?? false)
+        ? user.uid!.trim()
+        : _activeAuthUid;
+    if (user.loggedIn && uid.isNotEmpty) {
       _startAccountGuard();
       _enforceAccountAccessRules();
       return;
@@ -164,12 +178,28 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _accountGuardTimer = null;
   }
 
+  Future<Map<String, dynamic>?> _loadGuardUserData(String uid) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final userData = await SupaFlow.client
+          .from('users')
+          .select('banned_until, is_minor, has_guardian, guardian_status')
+          .eq('user_id', uid)
+          .maybeSingle();
+      if (userData != null) return Map<String, dynamic>.from(userData);
+      if (attempt == 0) {
+        await Future.delayed(const Duration(milliseconds: 350));
+      }
+    }
+    return null;
+  }
+
   Future<void> _enforceAccountAccessRules() async {
     if (_isCheckingAccountGuard || _isForcingLogout) return;
-    if (currentUserUid.isEmpty) return;
+    final uid = _activeAuthUid;
+    if (uid.isEmpty) return;
     _isCheckingAccountGuard = true;
     try {
-      await FFAppState().syncUserType();
+      await FFAppState().syncUserType(expectedUid: uid);
       if (!FFAppState().registrationComplete &&
           !FFAppState().registrationFlowActive) {
         // Redirect to onboarding instead of forcing logout to avoid loops
@@ -177,16 +207,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         _router.goNamed(SeleccionDelTipoDePerfilWidget.routeName);
         return;
       }
-      final userData = await SupaFlow.client
-          .from('users')
-          .select('banned_until, is_minor, has_guardian, guardian_status')
-          .eq('user_id', currentUserUid)
-          .maybeSingle();
+      final userData = await _loadGuardUserData(uid);
       if (userData == null) {
         if (!FFAppState().registrationFlowActive) {
-          await _forceLogoutWithMessage(
-            'Sesión sin perfil activo. Inicia sesión nuevamente.',
-          );
+          FFAppState().registrationFlowActive = true;
+          _router.clearRedirectLocation();
+          _router.goNamed(SeleccionDelTipoDePerfilWidget.routeName);
         }
         return;
       }
@@ -199,14 +225,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         final formattedDate =
             '${bannedUntil.day.toString().padLeft(2, '0')}/${bannedUntil.month.toString().padLeft(2, '0')}/${bannedUntil.year}';
         await _forceLogoutWithMessage(
-          'Cuenta suspendida hasta $formattedDate. Contacte al administrador.',
+          'Cuenta suspendida hasta $formattedDate. Contacta al administrador.',
         );
         return;
       }
 
       if (userData['is_minor'] == true && userData['has_guardian'] != true) {
         await _forceLogoutWithMessage(
-          'Cuenta de menor sin adulto responsable. Registre nuevamente con un responsable.',
+          'Cuenta de menor sin adulto responsable. Vuelve a registrarte con un adulto responsable.',
         );
         return;
       }
@@ -223,7 +249,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           if (currentRoute != LoginWidget.routePath) {
             FFAppState().authBlockMessage =
                 'Esta cuenta de menor aún no fue aprobada por el adulto responsable. '
-                'Usá el botón "Aprobar cuenta de menor" para ingresar el código o cambiar el email del responsable.';
+                'Usa el botón "Aprobar cuenta de menor" para ingresar el código o cambiar el correo del responsable.';
             _router.clearRedirectLocation();
             _router.goNamed(LoginWidget.routeName);
           }

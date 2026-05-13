@@ -13,6 +13,7 @@ import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import '/modal/comments_sheet/comments_sheet_widget.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -38,6 +39,11 @@ class _FeedWidgetState extends State<FeedWidget>
     with WidgetsBindingObserver, RouteAware {
   late FeedModel _model;
   final scaffoldKey = GlobalKey<ScaffoldState>();
+
+  static const String _feedVideoSelect =
+      'id, created_at, title, video_url, user_id, thumbnail, thumbnail_url, description, is_public, likes_count, views_count, level_number, moderation_status, featured_in_explorer, videoType, content_type, is_deleted, deleted_at';
+  static const String _feedUserSelect =
+      'user_id, created_at, name, lastname, username, photo_url, birthday, birth_date, categoria, posicion, city, ciudad, lugar, country, pais, userType, is_minor, has_guardian, guardian_status, visibility_status, verification_status, is_verified, full_profile, club_actual, followers_count, following_count';
 
   // Video Feed State
   String _selectedTab = 'todos';
@@ -385,6 +391,15 @@ class _FeedWidgetState extends State<FeedWidget>
 
       final courses = List<Map<String, dynamic>>.from(results[0] as List);
       final exercises = List<Map<String, dynamic>>.from(results[1] as List);
+      final courseIds = courses
+          .map((course) => course['id']?.toString().trim() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final exerciseIds = exercises
+          .map((exercise) => exercise['id']?.toString().trim() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final challengeIds = <String>{...courseIds, ...exerciseIds}.toList();
 
       final courseStatusById = <String, String>{};
       final exerciseStatusById = <String, String>{};
@@ -393,35 +408,44 @@ class _FeedWidgetState extends State<FeedWidget>
       if (userId != null) {
         try {
           final userResults = await Future.wait([
-            SupaFlow.client
-                .from('user_courses')
-                .select('course_id, status')
-                .eq('user_id', userId),
-            SupaFlow.client
-                .from('user_exercises')
-                .select('exercise_id, status')
-                .eq('user_id', userId),
-            SupaFlow.client
-                .from('user_challenge_attempts')
-                .select('item_id, item_type, status')
-                .eq('user_id', userId),
+            courseIds.isEmpty
+                ? Future.value(<dynamic>[])
+                : SupaFlow.client
+                    .from('user_courses')
+                    .select('course_id, status')
+                    .eq('user_id', userId)
+                    .inFilter('course_id', courseIds),
+            exerciseIds.isEmpty
+                ? Future.value(<dynamic>[])
+                : SupaFlow.client
+                    .from('user_exercises')
+                    .select('exercise_id, status')
+                    .eq('user_id', userId)
+                    .inFilter('exercise_id', exerciseIds),
+            challengeIds.isEmpty
+                ? Future.value(<dynamic>[])
+                : SupaFlow.client
+                    .from('user_challenge_attempts')
+                    .select('item_id, item_type, status')
+                    .eq('user_id', userId)
+                    .inFilter('item_id', challengeIds),
           ]);
 
-          for (final row in (userResults[0] as List)) {
+          for (final row in userResults[0]) {
             final itemId = row['course_id']?.toString() ?? '';
             if (itemId.isNotEmpty) {
               courseStatusById[itemId] = row['status']?.toString() ?? '';
             }
           }
 
-          for (final row in (userResults[1] as List)) {
+          for (final row in userResults[1]) {
             final itemId = row['exercise_id']?.toString() ?? '';
             if (itemId.isNotEmpty) {
               exerciseStatusById[itemId] = row['status']?.toString() ?? '';
             }
           }
 
-          for (final row in (userResults[2] as List)) {
+          for (final row in userResults[2]) {
             final itemId = row['item_id']?.toString() ?? '';
             final itemType = row['item_type']?.toString() ?? '';
             if (itemId.isEmpty || itemType.isEmpty) continue;
@@ -826,8 +850,10 @@ class _FeedWidgetState extends State<FeedWidget>
       if (_selectedTab == 'todos') {
         response = await SupaFlow.client
             .from('videos')
-            .select()
+            .select(_feedVideoSelect)
             .eq('is_public', true)
+            .eq('is_deleted', false)
+            .isFilter('deleted_at', null)
             .order('created_at', ascending: false)
             .limit(60);
         _isFollowingAnyone = true;
@@ -851,9 +877,11 @@ class _FeedWidgetState extends State<FeedWidget>
           } else {
             response = await SupaFlow.client
                 .from('videos')
-                .select()
+                .select(_feedVideoSelect)
                 .inFilter('user_id', followingIds)
                 .eq('is_public', true)
+                .eq('is_deleted', false)
+                .isFilter('deleted_at', null)
                 .order('created_at', ascending: false)
                 .limit(60);
           }
@@ -875,7 +903,7 @@ class _FeedWidgetState extends State<FeedWidget>
         try {
           final usersResponse = await SupaFlow.client
               .from('users')
-              .select()
+              .select(_feedUserSelect)
               .inFilter('user_id', allUserIds);
           for (final u in List<Map<String, dynamic>>.from(usersResponse)) {
             final uid = u['user_id']?.toString().trim() ?? '';
@@ -944,15 +972,15 @@ class _FeedWidgetState extends State<FeedWidget>
           .toList();
       if (videoIdsForComments.isNotEmpty) {
         try {
-          final commentsRows = await SupaFlow.client
-              .from('comments')
-              .select('video_id')
-              .inFilter('video_id', videoIdsForComments);
+          final commentsRows = await SupaFlow.client.rpc(
+            'video_comment_counts',
+            params: <String, dynamic>{'p_video_ids': videoIdsForComments},
+          );
           for (final c in (commentsRows as List)) {
             final vid = c['video_id']?.toString().trim() ?? '';
             if (vid.isNotEmpty) {
               commentCountByVideoId[vid] =
-                  (commentCountByVideoId[vid] ?? 0) + 1;
+                  GamificationService.toInt(c['comments_count']);
             }
           }
         } catch (_) {}
@@ -1271,38 +1299,7 @@ class _FeedWidgetState extends State<FeedWidget>
         onPageChanged: _onPageChanged,
         itemBuilder: (context, index) {
           if (index == feedItems.length) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.check_circle_outline,
-                      color: Colors.white54, size: 64),
-                  const SizedBox(height: 16),
-                  const Text('¡Estás al día!',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  const Text('No hay más contenido por ahora.',
-                      style: TextStyle(color: Colors.white70, fontSize: 14)),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: () {
-                      if (_pageController?.hasClients ?? false) {
-                        _pageController?.animateToPage(0,
-                            duration: const Duration(milliseconds: 500),
-                            curve: Curves.easeInOut);
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0D3B66)),
-                    child: const Text('Volver al inicio',
-                        style: TextStyle(color: Colors.white)),
-                  ),
-                ],
-              ),
-            );
+            return _buildEndOfFeedContent();
           }
 
           final feedItem = feedItems[index];
@@ -1357,6 +1354,136 @@ class _FeedWidgetState extends State<FeedWidget>
             }),
           );
         });
+  }
+
+  Widget _buildEndOfFeedContent() {
+    final hasBottomNav = FFAppState().userType == 'jugador' ||
+        FFAppState().userType == 'profesional';
+    final message = _isScoutViewer
+        ? 'No hay más jugadores para evaluar con los filtros actuales. Actualiza el feed para comprobar si hay nuevos perfiles.'
+        : 'No hay más contenido disponible actualmente. Actualiza el feed para comprobar si hay nuevas publicaciones.';
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(24, 88, 24, hasBottomNav ? 120 : 32),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 82,
+                height: 82,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.18),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: Colors.white,
+                  size: 42,
+                ),
+              ),
+              const SizedBox(height: 22),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.16),
+                  ),
+                ),
+                child: Text(
+                  'Contenido al día',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Estás al día',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _loadVideos,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF0D3B66),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: Text(
+                      'Actualizar feed',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      if (_pageController?.hasClients ?? false) {
+                        _pageController?.animateToPage(
+                          0,
+                          duration: const Duration(milliseconds: 450),
+                          curve: Curves.easeInOut,
+                        );
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.42),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon:
+                        const Icon(Icons.vertical_align_top_rounded, size: 18),
+                    label: Text(
+                      'Volver al inicio',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildNoFollowingContent() {

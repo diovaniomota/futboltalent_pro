@@ -1,6 +1,7 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/fluxo_compartilhado/player_public_progress_service.dart';
 import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/guardian/guardian_mvp_service.dart';
@@ -125,19 +126,25 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                 .eq('id', widget.userId!)
                 .maybeSingle();
             if (player != null) {
-              merged.addAll(Map<String, dynamic>.from(player));
+              _mergePlayerProfileData(
+                merged,
+                Map<String, dynamic>.from(player),
+              );
             }
           } catch (_) {}
+          Map<String, dynamic>? recalculatedProgress;
+          if (currentUserUid == widget.userId) {
+            try {
+              recalculatedProgress =
+                  await GamificationService.recalculateUserProgress(
+                      userId: widget.userId!);
+            } catch (_) {}
+          }
           try {
-            await GamificationService.recalculateUserProgress(
-                userId: widget.userId!);
-          } catch (_) {}
-          try {
-            final progress = await SupaFlow.client
-                .from('user_progress')
-                .select('total_xp, courses_completed, exercises_completed')
-                .eq('user_id', widget.userId!)
-                .maybeSingle();
+            final progress = await PlayerPublicProgressService.loadOne(
+                  widget.userId!,
+                ) ??
+                recalculatedProgress;
             if (progress != null) {
               merged.addAll(Map<String, dynamic>.from(progress));
             }
@@ -281,6 +288,36 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     }
   }
 
+  void _mergePlayerProfileData(
+    Map<String, dynamic> target,
+    Map<String, dynamic> player,
+  ) {
+    for (final entry in player.entries) {
+      final key = entry.key;
+      final value = entry.value;
+      if (key == 'id' && _hasMeaningfulProfileValue(target['user_id'])) {
+        target['player_id'] = value;
+        continue;
+      }
+      if (!_hasMeaningfulProfileValue(value) &&
+          _hasMeaningfulProfileValue(target[key])) {
+        continue;
+      }
+      target[key] = value;
+    }
+  }
+
+  bool _hasMeaningfulProfileValue(dynamic value) {
+    if (value == null) return false;
+    if (value is String) {
+      final text = value.trim().toLowerCase();
+      return text.isNotEmpty && text != 'null';
+    }
+    if (value is Iterable) return value.isNotEmpty;
+    if (value is Map) return value.isNotEmpty;
+    return true;
+  }
+
   String? _firstNonEmptyValue(List<dynamic> values) {
     for (final value in values) {
       final text = value?.toString().trim() ?? '';
@@ -312,6 +349,18 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     if (raw is int) return raw;
     if (raw is double) return raw.round();
     return int.tryParse(raw?.toString() ?? '') ?? 0;
+  }
+
+  String? _firstPositiveMetricValue(List<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isEmpty || text.toLowerCase() == 'null') continue;
+      final parsed = double.tryParse(text.replaceAll(',', '.'));
+      if (parsed == null || parsed <= 0) continue;
+      if (parsed == parsed.roundToDouble()) return parsed.round().toString();
+      return parsed.toStringAsFixed(1);
+    }
+    return null;
   }
 
   Map<String, String>? _parseChallengeRef(String description) {
@@ -1544,12 +1593,12 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           '',
       birthday: birthDateRaw,
     );
-    final height = _firstNonEmptyValue([
+    final height = _firstPositiveMetricValue([
       _userData?['height'],
       _userData?['altura'],
       _userData?['estatura'],
     ]);
-    final weight = _firstNonEmptyValue([
+    final weight = _firstPositiveMetricValue([
       _userData?['weight'],
       _userData?['peso'],
     ]);
@@ -2309,9 +2358,13 @@ class _PublicPlayerVideoFeedScreenState
           PageView.builder(
             controller: _pageController,
             scrollDirection: Axis.vertical,
-            itemCount: widget.videos.length,
+            itemCount: widget.videos.length + 1,
             onPageChanged: (index) => setState(() => _currentIndex = index),
             itemBuilder: (context, index) {
+              if (index == widget.videos.length) {
+                return _buildEndOfVideoFeedContent();
+              }
+
               final video = widget.videos[index];
               return _PublicPlayerVideoFeedItem(
                 key: ValueKey(video['id'] ?? video['video_url'] ?? index),
@@ -2336,6 +2389,81 @@ class _PublicPlayerVideoFeedScreenState
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEndOfVideoFeedContent() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 72, 24, 32),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 78,
+                height: 78,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.18),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Llegaste al final',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Ya viste todos los videos disponibles de este perfil.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () {
+                  _pageController.animateToPage(
+                    0,
+                    duration: const Duration(milliseconds: 450),
+                    curve: Curves.easeInOut,
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D3B66),
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.vertical_align_top_rounded, size: 18),
+                label: Text(
+                  'Volver al inicio',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

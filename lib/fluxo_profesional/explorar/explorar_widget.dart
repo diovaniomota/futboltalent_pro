@@ -1,6 +1,7 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
+import '/fluxo_compartilhado/player_public_progress_service.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
@@ -73,6 +74,11 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
   static const int _explorerPageSize = 200;
   static const int _explorerFilterMaxRows = 900;
   static const int _explorerClubMaxRows = 900;
+  static const int _explorerVideoLimit = 120;
+  static const String _explorerVideoSelect =
+      'id, created_at, title, video_url, user_id, thumbnail, thumbnail_url, description, is_public, likes_count, views_count, level_number, moderation_status, featured_in_explorer, videoType, content_type, is_deleted, deleted_at';
+  static const String _explorerChallengeSelect =
+      'id, title, description, thumbnail_url, video_url, difficulty, duration_minutes, order_index, is_active, is_premium, created_at, updated_at';
 
   late ExplorarModel _model;
   final scaffoldKey = GlobalKey<ScaffoldState>();
@@ -245,7 +251,6 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     try {
       await _loadViewerContext();
       await Future.wait([
-        _loadRealFilterOptions(),
         _loadUsers(),
         _loadClubs(),
         _loadConvocatorias(),
@@ -257,6 +262,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
       await _loadNextChallenge();
       _decorateUserData();
       _decorateConvocatoriasData();
+      _refreshRealFilterOptionsFromLoadedData();
       await _loadPlayerProgressData();
     } catch (e) {
       _errorMessage = 'Error al cargar Explorer';
@@ -267,66 +273,36 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     }
   }
 
-  Future<void> _loadRealFilterOptions() async {
-    try {
-      var listP = await _selectExplorerRowsPaged(
-        'users',
-        equalsColumn: 'userType',
-        equalsValue: 'jugador',
-      );
-      if (listP.isEmpty) {
-        listP = await _selectExplorerRowsPaged(
-          'users',
-          equalsColumn: 'usertype',
-          equalsValue: 'jugador',
-        );
-      }
-      if (listP.isEmpty) {
-        final allUsers = await _selectExplorerRowsPaged('users');
-        listP = allUsers.where((u) {
-          return FFAppState.normalizeUserType(
-                u['userType'] ?? u['usertype'] ?? u['user_type'],
-              ) ==
-              'jugador';
-        }).toList(growable: false);
-      }
-      _realPlayerPositions = buildNormalizedOptions(
-          listP.map(_resolvePlayerPosition), normalizePlayerPosition);
-      _realPlayerCategories = buildNormalizedOptions(
-        listP.map((u) => _resolvePlayerCategory(u)),
-        normalizePlayerCategory,
-      );
-      _realPlayerCities =
-          buildNormalizedOptions(listP.map(_resolveCity), normalizeCityName);
-    } catch (_) {}
-    try {
-      final listC = await _fetchVisibleExplorerClubs();
-      _setRealClubFilterOptions(listC);
-    } catch (_) {}
-    try {
-      final listConv = await _selectExplorerRowsPaged(
-        'convocatorias',
-        equalsColumn: 'is_active',
-        equalsValue: true,
-        orderByCreatedAt: true,
-      );
-      _realConvocatoriaCategories = buildNormalizedOptions(
-        listConv.map(_resolveConvocatoriaCategory),
-        normalizePlayerCategory,
-      );
-      _realConvocatoriaPositions = buildNormalizedOptions(
-        listConv.map(_resolveConvocatoriaPosition),
-        normalizePlayerPosition,
-      );
-      _realConvocatoriaCities = buildNormalizedOptions(
-        listConv.map(_resolveConvocatoriaCity),
-        normalizeCityName,
-      );
-      _realConvocatoriaLocations = buildNormalizedOptions(
-        listConv.map(_resolveConvocatoriaLocationLabel),
-        titleCaseLabel,
-      );
-    } catch (_) {}
+  void _refreshRealFilterOptionsFromLoadedData() {
+    _realPlayerPositions = buildNormalizedOptions(
+      _players.map(_resolvePlayerPosition),
+      normalizePlayerPosition,
+    );
+    _realPlayerCategories = buildNormalizedOptions(
+      _players.map(_resolvePlayerCategory),
+      normalizePlayerCategory,
+    );
+    _realPlayerCities =
+        buildNormalizedOptions(_players.map(_resolveCity), normalizeCityName);
+
+    _setRealClubFilterOptions(_clubs);
+
+    _realConvocatoriaCategories = buildNormalizedOptions(
+      _convocatorias.map(_resolveConvocatoriaCategory),
+      normalizePlayerCategory,
+    );
+    _realConvocatoriaPositions = buildNormalizedOptions(
+      _convocatorias.map(_resolveConvocatoriaPosition),
+      normalizePlayerPosition,
+    );
+    _realConvocatoriaCities = buildNormalizedOptions(
+      _convocatorias.map(_resolveConvocatoriaCity),
+      normalizeCityName,
+    );
+    _realConvocatoriaLocations = buildNormalizedOptions(
+      _convocatorias.map(_resolveConvocatoriaLocationLabel),
+      titleCaseLabel,
+    );
   }
 
   Future<List<Map<String, dynamic>>> _selectExplorerRowsPaged(
@@ -721,10 +697,12 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     try {
       final response = await SupaFlow.client
           .from('videos')
-          .select()
+          .select(_explorerVideoSelect)
           .eq('is_public', true)
+          .eq('is_deleted', false)
+          .isFilter('deleted_at', null)
           .order('created_at', ascending: false)
-          .limit(200);
+          .limit(_explorerVideoLimit);
 
       _videos = List<Map<String, dynamic>>.from(response);
     } catch (_) {
@@ -776,7 +754,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     try {
       final courses = await SupaFlow.client
           .from('courses')
-          .select()
+          .select(_explorerChallengeSelect)
           .eq('is_active', true)
           .order('order_index')
           .limit(6);
@@ -790,7 +768,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     try {
       final exercises = await SupaFlow.client
           .from('exercises')
-          .select()
+          .select(_explorerChallengeSelect)
           .eq('is_active', true)
           .order('order_index')
           .limit(6);
@@ -968,23 +946,8 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         .toList();
     if (playerIds.isEmpty) return;
 
-    final progressByUserId = <String, Map<String, dynamic>>{};
-    try {
-      final progressRows = await SupaFlow.client
-          .from('user_progress')
-          .select(
-              'user_id, total_xp, current_level_id, courses_completed, exercises_completed')
-          .inFilter('user_id', playerIds);
-      for (final row in (progressRows as List)) {
-        final map = Map<String, dynamic>.from(row as Map);
-        final uid = map['user_id']?.toString() ?? '';
-        if (uid.isNotEmpty) {
-          progressByUserId[uid] = map;
-        }
-      }
-    } catch (e) {
-      debugPrint('Explorer progress load failed: $e');
-    }
+    final progressByUserId =
+        await PlayerPublicProgressService.loadByUserId(playerIds);
 
     final groups = <String, List<Map<String, dynamic>>>{};
     for (final player in _players) {
@@ -5538,9 +5501,13 @@ class _VideoPreviewSheetState extends State<_VideoPreviewSheet> {
         children: [
           PageView.builder(
             controller: _pageController,
-            itemCount: widget.videos.length,
+            itemCount: widget.videos.length + 1,
             onPageChanged: (i) => setState(() => _index = i),
             itemBuilder: (context, i) {
+              if (i == widget.videos.length) {
+                return _buildEndOfPreviewContent();
+              }
+
               final video = widget.videos[i];
               return _VideoPlayerCard(
                 videoUrl: video['video_url']?.toString() ?? '',
@@ -5558,6 +5525,81 @@ class _VideoPreviewSheetState extends State<_VideoPreviewSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEndOfPreviewContent() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 56, 24, 28),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 74,
+                height: 74,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.18),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: Colors.white,
+                  size: 38,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Llegaste al final',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Ya viste todos los videos disponibles de este jugador.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 22),
+              ElevatedButton.icon(
+                onPressed: () {
+                  _pageController.animateToPage(
+                    0,
+                    duration: const Duration(milliseconds: 450),
+                    curve: Curves.easeInOut,
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D3B66),
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.first_page_rounded, size: 18),
+                label: Text(
+                  'Volver al inicio',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

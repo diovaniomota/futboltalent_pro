@@ -1,5 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -100,49 +101,21 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
     if (uid.isEmpty) return;
     try {
       final res = await SupaFlow.client
-          .from('aplicaciones_convocatoria')
+          .from('convocatoria_scout_requests')
           .select('id')
           .eq('convocatoria_id', widget.convocatoriasID!)
-          .eq('jugador_id', uid)
+          .eq('scout_id', uid)
           .limit(1)
           .maybeSingle();
-      var hasApplied = res != null;
-      if (!hasApplied) {
-        hasApplied = await _hasLegacyPostulacion(uid);
-      }
       if (mounted) {
-        setState(() => _hasApplied = hasApplied);
+        setState(() => _hasApplied = res != null);
       }
     } catch (e) {
-      final hasApplied = await _hasLegacyPostulacion(uid);
       if (mounted) {
-        setState(() => _hasApplied = hasApplied);
+        setState(() => _hasApplied = false);
       }
-      debugPrint('Error checking application status: $e');
+      debugPrint('Error checking scout request status: $e');
     }
-  }
-
-  Future<bool> _hasLegacyPostulacion(String userId) async {
-    final convId = widget.convocatoriasID?.trim() ?? '';
-    if (convId.isEmpty || userId.isEmpty) return false;
-
-    Future<bool> existsByColumn(String column) async {
-      try {
-        final response = await SupaFlow.client
-            .from('postulaciones')
-            .select('id')
-            .eq('convocatoria_id', convId)
-            .eq(column, userId)
-            .limit(1)
-            .maybeSingle();
-        return response != null;
-      } catch (_) {
-        return false;
-      }
-    }
-
-    return await existsByColumn('player_id') ||
-        await existsByColumn('jugador_id');
   }
 
   List<Map<String, dynamic>> _parseRequiredChallenges(dynamic raw) {
@@ -592,36 +565,42 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
     }
     setState(() => _isApplying = true);
     try {
+      final convId = widget.convocatoriasID?.trim() ?? '';
+      if (convId.isEmpty) {
+        throw Exception('Convocatoria inválida');
+      }
       final now = DateTime.now().toIso8601String();
       final message = _mensajeController.text.trim().isNotEmpty
           ? _mensajeController.text.trim()
           : null;
+      final clubUserId = _resolveClubUserId();
       final existing = await SupaFlow.client
-          .from('aplicaciones_convocatoria')
+          .from('convocatoria_scout_requests')
           .select('id')
-          .eq('convocatoria_id', widget.convocatoriasID!)
-          .eq('jugador_id', uid)
+          .eq('convocatoria_id', convId)
+          .eq('scout_id', uid)
           .limit(1)
           .maybeSingle();
       final payload = {
-        'convocatoria_id': widget.convocatoriasID,
-        'jugador_id': uid,
-        'estado': 'pendiente',
-        'mensaje': message,
+        'convocatoria_id': convId,
+        'scout_id': uid,
+        'club_user_id': clubUserId,
+        'status': 'pending',
+        'message': message,
         'updated_at': now,
       };
       if (existing != null) {
         await SupaFlow.client
-            .from('aplicaciones_convocatoria')
+            .from('convocatoria_scout_requests')
             .update(payload)
             .eq('id', existing['id']);
       } else {
-        await SupaFlow.client.from('aplicaciones_convocatoria').insert({
+        await SupaFlow.client.from('convocatoria_scout_requests').insert({
           ...payload,
           'created_at': now,
         });
       }
-      await _mirrorLegacyPostulacion(userId: uid, createdAt: now);
+      await _notifyScoutRequestSubmitted(uid);
       if (mounted) {
         setState(() {
           _hasApplied = true;
@@ -635,44 +614,75 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
       if (mounted) {
         setState(() => _isApplying = false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No pudimos enviar tu solicitud. Verifica tu conexión e intenta de nuevo.'),
+            content: Text(
+                'No pudimos enviar tu solicitud. Verifica tu conexión e intenta de nuevo.'),
             backgroundColor: Colors.red));
       }
     }
   }
 
-  Future<void> _mirrorLegacyPostulacion({
-    required String userId,
-    required String createdAt,
-  }) async {
-    final convId = widget.convocatoriasID?.trim() ?? '';
-    if (convId.isEmpty || userId.isEmpty) return;
+  String _firstNonEmptyText(Iterable<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
+    }
+    return '';
+  }
+
+  String _resolveClubUserId() {
+    return _firstNonEmptyText([
+      _clubData?['owner_id'],
+      _clubData?['user_id'],
+      _convocatoria?['club_id'],
+    ]);
+  }
+
+  String _resolveConvocatoriaTitle() {
+    return _firstNonEmptyText([
+      _convocatoria?['titulo'],
+      _convocatoria?['title'],
+      _convocatoria?['nombre'],
+    ]);
+  }
+
+  String _resolveClubName() {
+    return _firstNonEmptyText([
+      _clubData?['nombre'],
+      _clubData?['club_name'],
+      _clubData?['name'],
+      _convocatoria?['club_name'],
+      _convocatoria?['nombre_club'],
+    ]);
+  }
+
+  Future<void> _notifyScoutRequestSubmitted(String scoutId) async {
+    final clubUserId = _resolveClubUserId();
+    if (clubUserId.isEmpty || clubUserId == scoutId) return;
+
+    String scoutName = '';
     try {
-      final existing = await SupaFlow.client
-          .from('postulaciones')
-          .select('id')
-          .eq('convocatoria_id', convId)
-          .eq('player_id', userId)
+      final scout = await SupaFlow.client
+          .from('users')
+          .select('name, lastname, username')
+          .eq('user_id', scoutId)
           .limit(1)
           .maybeSingle();
-      final payload = {
-        'convocatoria_id': convId,
-        'player_id': userId,
-        'estado': 'pendiente',
-        'updated_at': DateTime.now().toIso8601String(),
-      };
-      if (existing != null) {
-        await SupaFlow.client
-            .from('postulaciones')
-            .update(payload)
-            .eq('id', existing['id']);
-      } else {
-        await SupaFlow.client.from('postulaciones').insert({
-          ...payload,
-          'created_at': createdAt,
-        });
-      }
+      scoutName = _firstNonEmptyText([
+        '${scout?['name'] ?? ''} ${scout?['lastname'] ?? ''}'.trim(),
+        scout?['name'],
+        scout?['username'],
+      ]);
     } catch (_) {}
+
+    final title = _resolveConvocatoriaTitle();
+    await ActivityNotificationsService.notifyClubScoutConvocatoriaRequest(
+      clubUserId: clubUserId,
+      convocatoriaId: widget.convocatoriasID?.trim() ?? '',
+      convocatoriaTitle: title.isNotEmpty ? title : 'Convocatoria',
+      scoutId: scoutId,
+      scoutName: scoutName,
+      clubName: _resolveClubName(),
+    );
   }
 
   void _login() {

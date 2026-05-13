@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:video_player/video_player.dart';
 import 'postulaciones_model.dart';
 export 'postulaciones_model.dart';
 
@@ -591,20 +592,25 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     );
   }
 
-  Future<void> _openVideo(String rawUrl) async {
-    final url = rawUrl.trim();
-    if (url.isEmpty) return;
-    try {
-      await launchURL(url);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo abrir el video.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+  Future<void> _openVideo(Map<String, dynamic>? videoData) async {
+    if (videoData == null || playableVideoUrl(videoData).isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Este jugador no tiene video público disponible.'),
+            backgroundColor: Color(0xFF6B7280),
+          ),
+        );
+      }
+      return;
     }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black,
+      builder: (_) => _PostulacionVideoSheet(video: videoData),
+    );
   }
 
   void _showClubMenu(BuildContext ctx) {
@@ -1516,7 +1522,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                   context: context,
                   label: 'Ver postulación',
                   icon: Icons.play_circle_outline_rounded,
-                  onPressed: hasVideo ? () => _openVideo(latestVideoUrl) : null,
+                  onPressed: hasVideo ? () => _openVideo(latestVideo) : null,
                 ),
               ),
               SizedBox(width: 8 * scale),
@@ -1628,9 +1634,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
 
         if (hasVideo) ...[
           GestureDetector(
-            onTap: latestVideoUrl.isEmpty
-                ? null
-                : () => _openVideo(latestVideoUrl),
+            onTap: hasVideo ? () => _openVideo(latestVideo) : null,
             child: Container(
               padding: EdgeInsets.symmetric(
                 horizontal: 12 * scale,
@@ -1791,9 +1795,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
             ),
             if (hasVideo)
               GestureDetector(
-                onTap: latestVideoUrl.isEmpty
-                    ? null
-                    : () => _openVideo(latestVideoUrl),
+                onTap: hasVideo ? () => _openVideo(latestVideo) : null,
                 child: Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: 12 * scale,
@@ -2059,7 +2061,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: () => _openVideo(latestVideoUrl),
+                          onPressed: () => _openVideo(latestVideo),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0D3B66),
                             padding: EdgeInsets.symmetric(vertical: 14 * scale),
@@ -2134,6 +2136,172 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
                   ),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PostulacionVideoSheet extends StatefulWidget {
+  const _PostulacionVideoSheet({required this.video});
+
+  final Map<String, dynamic> video;
+
+  @override
+  State<_PostulacionVideoSheet> createState() => _PostulacionVideoSheetState();
+}
+
+class _PostulacionVideoSheetState extends State<_PostulacionVideoSheet> {
+  VideoPlayerController? _controller;
+  bool _isLoading = true;
+  bool _hasError = false;
+  bool _paused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final url = playableVideoUrl(widget.video);
+    if (url.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      _controller = controller;
+      await controller.initialize();
+      await controller.setLooping(true);
+      await controller.play();
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _togglePlayPause() {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+
+    setState(() {
+      if (controller.value.isPlaying) {
+        controller.pause();
+        _paused = true;
+      } else {
+        controller.play();
+        _paused = false;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.video['title']?.toString().trim();
+    final safeTitle = title == null || title.isEmpty ? 'Postulación' : title;
+    final controller = _controller;
+
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.82,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 10, 12, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    tooltip: 'Cerrar',
+                  ),
+                  Expanded(
+                    child: Text(
+                      safeTitle,
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    )
+                  : _hasError ||
+                          controller == null ||
+                          !controller.value.isInitialized
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              'Este video ya no está disponible.',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        )
+                      : GestureDetector(
+                          onTap: _togglePlayPause,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Center(
+                                child: AspectRatio(
+                                  aspectRatio: controller.value.aspectRatio,
+                                  child: VideoPlayer(controller),
+                                ),
+                              ),
+                              if (_paused)
+                                Container(
+                                  width: 68,
+                                  height: 68,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.35),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.play_arrow_rounded,
+                                    size: 48,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
             ),
           ],
         ),

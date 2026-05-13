@@ -58,7 +58,7 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
 
   Future<void> _registrar() async {
     if (_emailController.text.trim().isEmpty) {
-      _showError('Por favor, ingresa tu email');
+      _showError('Por favor, ingresa tu correo electrónico');
       return;
     }
     if (_senhaController.text.isEmpty) {
@@ -109,7 +109,7 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
     } catch (e) {
       debugPrint('Error al registrar: $e');
       FFAppState().registrationFlowActive = false;
-      _showError('Error: ${e.toString()}');
+      _showError('No pudimos iniciar el registro del club. Intenta de nuevo.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -175,7 +175,7 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
                   child: TextField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: _inputDecoration('Email'),
+                    decoration: _inputDecoration('Correo electrónico'),
                   ),
                 ),
               ),
@@ -259,33 +259,6 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
                           fontSize: 16,
                         ),
                       ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Link para login
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    '¿Ya tienes cuenta? ',
-                    style: GoogleFonts.inter(
-                      color: const Color(0xFF444444),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => context.pushNamed('login'),
-                    child: Text(
-                      'Inicia sesión',
-                      style: GoogleFonts.inter(
-                        color: const Color(0xFF0D3B66),
-                        fontWeight: FontWeight.bold,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ],
               ),
 
               const SizedBox(height: 40),

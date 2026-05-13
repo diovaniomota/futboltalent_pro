@@ -5,6 +5,7 @@ import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/club_identity_utils.dart' as club_utils;
 import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
 import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
+import '/fluxo_compartilhado/player_public_progress_service.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/fluxo_compartilhado/video_visibility_utils.dart';
 import '/flutter_flow/app_modals.dart';
@@ -733,20 +734,8 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
         .toList();
     if (ids.isEmpty) return;
 
-    final progressByUserId = <String, Map<String, dynamic>>{};
-    try {
-      final progressRows = await SupaFlow.client
-          .from('user_progress')
-          .select('user_id, total_xp, current_level_id')
-          .inFilter('user_id', ids);
-      for (final row in (progressRows as List)) {
-        final map = Map<String, dynamic>.from(row as Map);
-        final uid = map['user_id']?.toString() ?? '';
-        if (uid.isNotEmpty) {
-          progressByUserId[uid] = map;
-        }
-      }
-    } catch (_) {}
+    final progressByUserId =
+        await PlayerPublicProgressService.loadByUserId(ids);
 
     for (final player in players) {
       final uid = player['user_id']?.toString() ?? '';

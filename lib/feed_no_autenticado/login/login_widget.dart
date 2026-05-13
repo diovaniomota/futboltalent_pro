@@ -1,5 +1,6 @@
 import '/flutter_flow/flutter_flow_util.dart';
 import '/auth/supabase_auth/auth_util.dart';
+import '/auth/supabase_auth/social_oauth.dart';
 import '/backend/supabase/supabase.dart';
 import '/guardian/guardian_mvp_service.dart';
 import '/index.dart'; // For routes
@@ -80,11 +81,12 @@ class _LoginWidgetState extends State<LoginWidget> {
   // ============ LOGIC ============
   Future<void> _handleLogin() async {
     if (_emailController.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Por favor ingresa tu email');
+      setState(
+          () => _errorMessage = 'Por favor, ingresa tu correo electrónico');
       return;
     }
     if (_senhaController.text.isEmpty) {
-      setState(() => _errorMessage = 'Por favor ingresa tu contraseña');
+      setState(() => _errorMessage = 'Por favor, ingresa tu contraseña');
       return;
     }
 
@@ -102,7 +104,7 @@ class _LoginWidgetState extends State<LoginWidget> {
         if (mounted) {
           setState(() {
             _isLoading = false;
-            _errorMessage = 'Email o contraseña incorrectos';
+            _errorMessage = 'Correo o contraseña incorrectos';
           });
         }
         return;
@@ -158,7 +160,7 @@ class _LoginWidgetState extends State<LoginWidget> {
           final formattedDate =
               '${bannedUntil.day.toString().padLeft(2, '0')}/${bannedUntil.month.toString().padLeft(2, '0')}/${bannedUntil.year}';
           final blockMessage =
-              'Cuenta suspendida hasta $formattedDate. Contacte al administrador.';
+              'Cuenta suspendida hasta $formattedDate. Contacta al administrador.';
           FFAppState().authBlockMessage = blockMessage;
           FFAppState().authBlockMessage = blockMessage;
           if (mounted) {
@@ -175,7 +177,7 @@ class _LoginWidgetState extends State<LoginWidget> {
           userData['is_minor'] == true &&
           userData['has_guardian'] != true) {
         const blockMessage =
-            'Cuenta de menor sin adulto responsable. Registre nuevamente con un responsable.';
+            'Cuenta de menor sin adulto responsable. Vuelve a registrarte con un adulto responsable.';
         FFAppState().authBlockMessage = blockMessage;
         await authManager.signOut();
         if (mounted) {
@@ -193,7 +195,7 @@ class _LoginWidgetState extends State<LoginWidget> {
         if (guardianStatus != 'approved') {
           const blockMessage =
               'Esta cuenta aún no fue aprobada por el adulto responsable. '
-              'Usá el botón "Aprobar cuenta de menor" con el código que recibió el responsable.';
+              'Usa el botón "Aprobar cuenta de menor" con el código que recibió el responsable.';
           _pendingGuardianPlayerId =
               signedInUid.isNotEmpty ? signedInUid : currentUserUid;
           FFAppState().authBlockMessage = blockMessage;
@@ -232,31 +234,20 @@ class _LoginWidgetState extends State<LoginWidget> {
   Future<void> _signInWithProvider(OAuthProvider provider) async {
     setState(() => _isLoading = true);
     try {
-      final String redirectTo = kIsWeb
-          ? '${Uri.base.origin}/auth/callback'
-          : 'futboltalent://login-callback';
-      final queryParams = provider == OAuthProvider.google
-          ? const {'prompt': 'select_account'}
-          : null;
-
-      final success = await SupaFlow.client.auth.signInWithOAuth(
-        provider,
-        redirectTo: redirectTo,
-        queryParams: queryParams,
-      );
+      final success = await signInWithSocialProvider(provider);
       if (!success && mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage =
-              'No pudimos conectarnos con ${provider.name}. Verifica tu conexión e intenta de nuevo.';
+          _errorMessage = socialAuthLaunchErrorMessage(provider);
         });
       }
     } catch (e) {
+      debugPrint('Social auth failed for ${socialProviderLabel(provider)}: $e');
+      if (isSocialAuthCanceled(e)) return;
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage =
-              'Error al conectar con ${provider.name}. Intenta de nuevo.';
+          _errorMessage = socialAuthFriendlyErrorMessage(e, provider);
         });
       }
     } finally {
@@ -368,7 +359,7 @@ class _LoginWidgetState extends State<LoginWidget> {
             textInputAction: TextInputAction.next,
             onFieldSubmitted: (_) => _senhaFocusNode.requestFocus(),
             style: GoogleFonts.inter(fontSize: 16 * scale),
-            decoration: _inputDecoration('Email', scale),
+            decoration: _inputDecoration('Correo electrónico', scale),
           )),
       SizedBox(height: 15 * scale),
       SizedBox(
@@ -490,7 +481,7 @@ class _LoginWidgetState extends State<LoginWidget> {
     return RichText(
         text: TextSpan(children: [
       TextSpan(
-          text: '¿No tenes cuenta? ',
+          text: '¿No tienes cuenta? ',
           style: GoogleFonts.inter(
               fontSize: 14 * scale, color: const Color(0xFF444444))),
       TextSpan(
@@ -511,14 +502,16 @@ class _LoginWidgetState extends State<LoginWidget> {
     showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-                title: const Text('Recuperar Contraseña'),
+                title: const Text('Recuperar contraseña'),
                 content: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('Ingresa tu email paras restablecer contraseña'),
+                  const Text(
+                      'Ingresa tu correo electrónico para restablecer la contraseña.'),
                   const SizedBox(height: 10),
                   TextField(
                       controller: resetEmailController,
                       decoration: const InputDecoration(
-                          hintText: 'Email', border: OutlineInputBorder())),
+                          hintText: 'Correo electrónico',
+                          border: OutlineInputBorder())),
                 ]),
                 actions: [
                   TextButton(
@@ -535,7 +528,7 @@ class _LoginWidgetState extends State<LoginWidget> {
                             Navigator.pop(ctx);
                             ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                    content: Text('Email enviado'),
+                                    content: Text('Correo enviado'),
                                     backgroundColor: Colors.green));
                           } catch (e) {
                             if (!mounted) return;
@@ -553,6 +546,7 @@ class _LoginWidgetState extends State<LoginWidget> {
 
   Future<void> _showGuardianApprovalDialog() async {
     final codeController = TextEditingController();
+    final guardianEmailController = TextEditingController();
     final newEmailController = TextEditingController();
     var isSubmitting = false;
     var showChangeEmail = false;
@@ -570,7 +564,7 @@ class _LoginWidgetState extends State<LoginWidget> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Ingresá el código que recibió el adulto responsable para activar el perfil del menor.',
+                  'Ingresa el código y el correo del adulto responsable para activar el perfil del menor.',
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -578,6 +572,16 @@ class _LoginWidgetState extends State<LoginWidget> {
                   textCapitalization: TextCapitalization.characters,
                   decoration: const InputDecoration(
                     hintText: 'RESP-123456',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: guardianEmailController,
+                  keyboardType: TextInputType.emailAddress,
+                  textCapitalization: TextCapitalization.none,
+                  decoration: const InputDecoration(
+                    hintText: 'correo del responsable',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -604,7 +608,7 @@ class _LoginWidgetState extends State<LoginWidget> {
                       const SizedBox(width: 4),
                       const Expanded(
                         child: Text(
-                          '¿Email incorrecto? Cambiar email del responsable',
+                          '¿Correo incorrecto? Cambiar correo del responsable',
                           style: TextStyle(
                             color: Color(0xFF0D3B66),
                             fontWeight: FontWeight.w600,
@@ -619,7 +623,7 @@ class _LoginWidgetState extends State<LoginWidget> {
                 if (showChangeEmail) ...[
                   const SizedBox(height: 10),
                   const Text(
-                    'Ingresá el email correcto del responsable. Se generará un nuevo código.',
+                    'Ingresa el correo correcto del responsable. Se generará un nuevo código.',
                     style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                   ),
                   const SizedBox(height: 8),
@@ -642,7 +646,7 @@ class _LoginWidgetState extends State<LoginWidget> {
                               if (newEmail.isEmpty || !newEmail.contains('@')) {
                                 setDialogState(() {
                                   localError =
-                                      'Ingresá un email válido para el responsable.';
+                                      'Ingresa un correo válido para el responsable.';
                                   successMessage = null;
                                 });
                                 return;
@@ -661,20 +665,21 @@ class _LoginWidgetState extends State<LoginWidget> {
                                 setDialogState(() {
                                   isSubmitting = false;
                                   successMessage = result ??
-                                      'Email actualizado y nuevo código generado. Compartilo con $newEmail.';
+                                      'Correo actualizado y nuevo código generado. Compártelo con $newEmail.';
+                                  guardianEmailController.text = newEmail;
                                   localError = null;
                                 });
                               } catch (e) {
                                 setDialogState(() {
                                   isSubmitting = false;
                                   localError =
-                                      'No se pudo actualizar el email. Intentá nuevamente.';
+                                      'No se pudo actualizar el correo. Intenta nuevamente.';
                                   successMessage = null;
                                 });
                               }
                             },
                       icon: const Icon(Icons.send, size: 16),
-                      label: const Text('Actualizar email y reenviar código'),
+                      label: const Text('Actualizar correo y reenviar código'),
                     ),
                   ),
                 ],
@@ -692,9 +697,20 @@ class _LoginWidgetState extends State<LoginWidget> {
                   ? null
                   : () async {
                       final code = codeController.text.trim().toUpperCase();
+                      final guardianEmail =
+                          guardianEmailController.text.trim().toLowerCase();
                       if (code.isEmpty) {
                         setDialogState(() {
-                          localError = 'Ingresá el código del responsable.';
+                          localError = 'Ingresa el código del responsable.';
+                          successMessage = null;
+                        });
+                        return;
+                      }
+                      if (guardianEmail.isEmpty ||
+                          !guardianEmail.contains('@')) {
+                        setDialogState(() {
+                          localError =
+                              'Ingresa el correo del adulto responsable.';
                           successMessage = null;
                         });
                         return;
@@ -708,6 +724,7 @@ class _LoginWidgetState extends State<LoginWidget> {
                         await GuardianMvpService.approveGuardianCode(
                           code,
                           playerId: _pendingGuardianPlayerId,
+                          guardianEmail: guardianEmail,
                         );
                         if (!dialogContext.mounted) return;
                         Navigator.pop(dialogContext);
@@ -732,19 +749,21 @@ class _LoginWidgetState extends State<LoginWidget> {
                           if (message.contains('approval_code_not_found') ||
                               message.contains('approval_code_expired') ||
                               message.contains('approval_code_used')) {
-                            localError = 'Código inválido o vencido.';
+                            localError =
+                                'Código o correo inválido, usado o vencido.';
                           } else if (message.contains('approval_not_pending') ||
                               message.contains('approval_player_not_pending')) {
                             localError =
                                 'La cuenta ya no está pendiente de aprobación.';
                           } else if (message
-                              .contains('approval_context_required')) {
+                                  .contains('approval_context_required') ||
+                              message.contains('guardian_email_required')) {
                             localError =
-                                'No se pudo validar esta cuenta. Cerrá y volvé a intentar.';
+                                'No se pudo validar esta cuenta. Revisa el correo y el código.';
                           } else if (message
                               .contains('approve_guardian_by_code')) {
                             localError =
-                                'Falta ejecutar el SQL del flujo de responsable en Supabase.';
+                                'No se pudo validar la configuración del flujo de responsable.';
                           } else {
                             localError =
                                 'No se pudo aprobar la cuenta con ese código.';

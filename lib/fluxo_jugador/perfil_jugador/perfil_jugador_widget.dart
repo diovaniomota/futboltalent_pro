@@ -134,7 +134,14 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     return country.isEmpty ? 'No definido' : country;
   }
 
-  Future<void> _cleanupVideoRelations(String videoId) async {
+  Future<void> _cleanupVideoRelations(
+    String videoId, {
+    Iterable<String> videoUrls = const [],
+  }) async {
+    final normalizedVideoUrls = videoUrls
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toSet();
     final cleanupOperations = <Future<void> Function()>[
       () async {
         await SupaFlow.client.from('comments').delete().eq('video_id', videoId);
@@ -154,6 +161,14 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
             .delete()
             .eq('video_id', videoId);
       },
+      for (final videoUrl in normalizedVideoUrls)
+        () async {
+          await SupaFlow.client
+              .from('user_challenge_attempts')
+              .delete()
+              .eq('user_id', currentUserUid)
+              .eq('video_url', videoUrl);
+        },
     ];
 
     for (final operation in cleanupOperations) {
@@ -166,18 +181,56 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   }
 
   Future<List<Map<String, dynamic>>> _challengeAttemptsForVideo(
-      String videoId) async {
+    String videoId, {
+    Iterable<String> videoUrls = const [],
+  }) async {
+    final attemptsByKey = <String, Map<String, dynamic>>{};
+
+    void addAttempts(List<Map<String, dynamic>> attempts) {
+      for (final attempt in attempts) {
+        final id = attempt['id']?.toString().trim() ?? '';
+        final itemType =
+            attempt['item_type']?.toString().trim().toLowerCase() ?? '';
+        final itemId = attempt['item_id']?.toString().trim() ?? '';
+        final attemptVideoId = attempt['video_id']?.toString().trim() ?? '';
+        final attemptVideoUrl = attempt['video_url']?.toString().trim() ?? '';
+        final key = id.isNotEmpty
+            ? id
+            : '$itemType:$itemId:$attemptVideoId:$attemptVideoUrl';
+        if (key.trim().isNotEmpty) attemptsByKey[key] = attempt;
+      }
+    }
+
     try {
       final rows = await SupaFlow.client
           .from('user_challenge_attempts')
-          .select('id, item_id, item_type')
+          .select('id, item_id, item_type, video_id, video_url')
           .eq('user_id', currentUserUid)
           .eq('video_id', videoId);
-      final attempts = List<Map<String, dynamic>>.from(rows as List);
-      if (attempts.isNotEmpty) return attempts;
+      addAttempts(List<Map<String, dynamic>>.from(rows as List));
     } catch (e) {
       debugPrint('Challenge attempt lookup failed for video $videoId: $e');
     }
+
+    final normalizedVideoUrls = videoUrls
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toSet()
+        .toList();
+    if (normalizedVideoUrls.isNotEmpty) {
+      try {
+        final rows = await SupaFlow.client
+            .from('user_challenge_attempts')
+            .select('id, item_id, item_type, video_id, video_url')
+            .eq('user_id', currentUserUid)
+            .inFilter('video_url', normalizedVideoUrls);
+        addAttempts(List<Map<String, dynamic>>.from(rows as List));
+      } catch (e) {
+        debugPrint('Challenge attempt URL lookup failed for $videoId: $e');
+      }
+    }
+
+    if (attemptsByKey.isNotEmpty) return attemptsByKey.values.toList();
 
     try {
       final videoRow = await SupaFlow.client
@@ -219,26 +272,80 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
 
   Future<bool> _hasOtherChallengeAttempt({
     required String videoId,
+    required Set<String> videoUrls,
     required String itemType,
     required String itemId,
   }) async {
     try {
       final rows = await SupaFlow.client
           .from('user_challenge_attempts')
-          .select('id')
+          .select('id, video_id, video_url, status')
           .eq('user_id', currentUserUid)
           .eq('item_type', itemType)
           .eq('item_id', itemId)
-          .neq('video_id', videoId)
-          .limit(1);
-      return (rows as List).isNotEmpty;
+          .limit(20);
+      for (final row in rows as List) {
+        final attempt = Map<String, dynamic>.from(row as Map);
+        final attemptVideoId = attempt['video_id']?.toString().trim() ?? '';
+        final attemptVideoUrl = attempt['video_url']?.toString().trim() ?? '';
+        if (attemptVideoId == videoId || videoUrls.contains(attemptVideoUrl)) {
+          continue;
+        }
+        final status = attempt['status']?.toString().trim().toLowerCase() ?? '';
+        if (status != 'submitted' &&
+            status != 'completed' &&
+            status != 'in_progress') {
+          continue;
+        }
+        if (await _challengeAttemptStillHasVideo(attempt)) return true;
+      }
+      return false;
     } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _challengeAttemptStillHasVideo(
+    Map<String, dynamic> attempt,
+  ) async {
+    final attemptVideoId = attempt['video_id']?.toString().trim() ?? '';
+    final attemptVideoUrl = attempt['video_url']?.toString().trim() ?? '';
+
+    try {
+      Map<String, dynamic>? videoRow;
+      if (attemptVideoId.isNotEmpty) {
+        final row = await SupaFlow.client
+            .from('videos')
+            .select()
+            .eq('user_id', currentUserUid)
+            .eq('id', attemptVideoId)
+            .maybeSingle();
+        if (row == null) return false;
+        videoRow = Map<String, dynamic>.from(row);
+      } else if (attemptVideoUrl.isNotEmpty) {
+        final rows = await SupaFlow.client
+            .from('videos')
+            .select()
+            .eq('user_id', currentUserUid)
+            .eq('video_url', attemptVideoUrl)
+            .limit(1);
+        final list = rows as List;
+        if (list.isEmpty) return false;
+        videoRow = Map<String, dynamic>.from(list.first as Map);
+      } else {
+        return false;
+      }
+
+      return isPublicVideoCandidate(videoRow);
+    } catch (e) {
+      debugPrint('Other challenge attempt validation failed: $e');
       return false;
     }
   }
 
   Future<void> _revertChallengeCompletionForDeletedAttempts({
     required String videoId,
+    required Set<String> videoUrls,
     required List<Map<String, dynamic>> attempts,
   }) async {
     for (final attempt in attempts) {
@@ -248,6 +355,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       if (itemType.isEmpty || itemId.isEmpty) continue;
       if (await _hasOtherChallengeAttempt(
         videoId: videoId,
+        videoUrls: videoUrls,
         itemType: itemType,
         itemId: itemId,
       )) {
@@ -352,7 +460,14 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       bool removed = false;
       bool hardDeleted = false;
       setState(() => _deletingVideoId = videoId);
-      final challengeAttempts = await _challengeAttemptsForVideo(videoId);
+      final videoUrls = <String>{
+        (video['video_url'] ?? '').toString().trim(),
+        (video['url'] ?? '').toString().trim(),
+      }..removeWhere((url) => url.isEmpty);
+      final challengeAttempts = await _challengeAttemptsForVideo(
+        videoId,
+        videoUrls: videoUrls,
+      );
 
       // Try direct delete first in case the DB already cascades related rows.
       try {
@@ -369,7 +484,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       }
 
       if (!removed) {
-        await _cleanupVideoRelations(videoId);
+        await _cleanupVideoRelations(videoId, videoUrls: videoUrls);
 
         try {
           final deleteResponse = await SupaFlow.client
@@ -422,9 +537,10 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       if (removed) {
         await _revertChallengeCompletionForDeletedAttempts(
           videoId: videoId,
+          videoUrls: videoUrls,
           attempts: challengeAttempts,
         );
-        await _cleanupVideoRelations(videoId);
+        await _cleanupVideoRelations(videoId, videoUrls: videoUrls);
 
         if (hardDeleted) {
           final storageUrls = <String>{
@@ -940,13 +1056,14 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       case 'accepted':
       case 'aceptado':
       case 'aprobado':
-        return 'Aprovado';
+      case 'aprovado':
+        return 'Aprobado';
       case 'rejected':
       case 'rechazado':
       case 'recusado':
-        return 'Recusado';
+        return 'Rechazado';
       default:
-        return 'Pendente';
+        return 'Pendiente';
     }
   }
 
@@ -1305,7 +1422,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                     [
                       role,
                       if (club.isNotEmpty) club,
-                      if (createdAt.isNotEmpty) 'Enviada em $createdAt',
+                      if (createdAt.isNotEmpty) 'Enviada el $createdAt',
                     ].join(' • '),
                     style: GoogleFonts.inter(
                       fontSize: 13,
@@ -1593,7 +1710,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                       children: [
                         Expanded(
                           child: Text(
-                            'Notificações de contato',
+                            'Notificaciones de contacto',
                             style: GoogleFonts.inter(
                               fontSize: 20,
                               fontWeight: FontWeight.w700,
@@ -1714,8 +1831,8 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                                 const SizedBox(height: 2),
                                                 Text(
                                                   dateLabel.isNotEmpty
-                                                      ? 'Solicitou contato em $dateLabel'
-                                                      : 'Solicitou contato',
+                                                      ? 'Solicitó contacto el $dateLabel'
+                                                      : 'Solicitó contacto',
                                                   style: GoogleFonts.inter(
                                                     fontSize: 12,
                                                     color:
@@ -3694,9 +3811,13 @@ class _VideoFeedScreenState extends State<_VideoFeedScreen> {
           PageView.builder(
             controller: _pageController,
             scrollDirection: Axis.vertical,
-            itemCount: widget.videos.length,
+            itemCount: widget.videos.length + 1,
             onPageChanged: (index) => setState(() => _currentIndex = index),
             itemBuilder: (context, index) {
+              if (index == widget.videos.length) {
+                return _buildEndOfVideoFeedContent();
+              }
+
               return _VideoPlayerItem(
                 key: ValueKey(widget.videos[index]['id']),
                 videoData: widget.videos[index],
@@ -3721,6 +3842,81 @@ class _VideoFeedScreenState extends State<_VideoFeedScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEndOfVideoFeedContent() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 72, 24, 32),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 78,
+                height: 78,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.18),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Llegaste al final',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Ya viste todos los videos disponibles de este perfil.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () {
+                  _pageController.animateToPage(
+                    0,
+                    duration: const Duration(milliseconds: 450),
+                    curve: Curves.easeInOut,
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D3B66),
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.vertical_align_top_rounded, size: 18),
+                label: Text(
+                  'Volver al inicio',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

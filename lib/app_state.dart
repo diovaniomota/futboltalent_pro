@@ -56,20 +56,45 @@ class FFAppState extends ChangeNotifier {
   String get _currentUid =>
       SupaFlow.client.auth.currentUser?.id ?? currentUserUid;
 
+  Future<void> _waitForInitialAuthState() async {
+    if (_currentUid.isNotEmpty) return;
+    try {
+      await SupaFlow.client.auth.onAuthStateChange
+          .firstWhere(
+            (state) =>
+                state.event == AuthChangeEvent.initialSession ||
+                state.event == AuthChangeEvent.signedIn ||
+                state.event == AuthChangeEvent.signedOut ||
+                state.session != null,
+          )
+          .timeout(const Duration(milliseconds: 1500));
+    } catch (e) {
+      debugPrint('FFAppState: initial auth state timeout/error: $e');
+    }
+  }
+
   void _setupAuthListener() {
-    jwtTokenStream.listen((token) {
-      if (token != null) {
-        debugPrint(
-          'FFAppState: token atualizado, sincronizando contexto do usuario.',
-        );
-        syncUserType();
+    jwtTokenStream.listen(
+      (token) {
+        final hasSession = SupaFlow.client.auth.currentSession != null ||
+            SupaFlow.client.auth.currentUser != null;
+        if (token != null || hasSession) {
+          debugPrint(
+            'FFAppState: token atualizado, sincronizando contexto do usuario.',
+          );
+          syncUserType();
+          refreshAdminRuntimeSettings();
+        } else {
+          _resetViewerAccessState(clearCachedUserType: true);
+          notifyListeners();
+          refreshAdminRuntimeSettings();
+        }
+      },
+      onError: (error, stackTrace) {
+        debugPrint('FFAppState: auth token stream error: $error');
         refreshAdminRuntimeSettings();
-      } else {
-        _resetViewerAccessState(clearCachedUserType: true);
-        notifyListeners();
-        refreshAdminRuntimeSettings();
-      }
-    });
+      },
+    );
   }
 
   int? _readPlanId(dynamic value) {
@@ -140,10 +165,13 @@ class FFAppState extends ChangeNotifier {
         prefs.getString('ff_userType') ?? _userType,
       );
       _registrationComplete = prefs.getBool('ff_registrationComplete') ?? false;
-      _registrationFlowActive = prefs.getBool('ff_registrationFlowActive') ?? false;
-      debugPrint('FFAppState: cache carregado: "$_userType", complete: $_registrationComplete, flow: $_registrationFlowActive');
+      _registrationFlowActive =
+          prefs.getBool('ff_registrationFlowActive') ?? false;
+      debugPrint(
+          'FFAppState: cache carregado: "$_userType", complete: $_registrationComplete, flow: $_registrationFlowActive');
 
       _setupAuthListener();
+      await _waitForInitialAuthState();
 
       final uid = _currentUid;
       debugPrint('FFAppState: UID atual: "$uid"');

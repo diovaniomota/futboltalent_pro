@@ -343,9 +343,10 @@ class GamificationService {
         final status = map['status']?.toString().toLowerCase().trim() ?? '';
         final completed = status == 'completed';
         final itemId = map['course_id']?.toString() ?? '';
-        final completedWithVideo = completed &&
+        final hasValidAttempt =
             validAttemptKeys.contains(challengeKeyFor('course', itemId));
-        if (completed || status == 'in_progress') {
+        final completedWithVideo = completed && hasValidAttempt;
+        if (hasValidAttempt && (completed || status == 'in_progress')) {
           addChallengeKey(
             type: 'course',
             itemId: itemId,
@@ -366,9 +367,10 @@ class GamificationService {
         final status = map['status']?.toString().toLowerCase().trim() ?? '';
         final completed = status == 'completed';
         final itemId = map['exercise_id']?.toString() ?? '';
-        final completedWithVideo = completed &&
+        final hasValidAttempt =
             validAttemptKeys.contains(challengeKeyFor('exercise', itemId));
-        if (completed || status == 'in_progress') {
+        final completedWithVideo = completed && hasValidAttempt;
+        if (hasValidAttempt && (completed || status == 'in_progress')) {
           addChallengeKey(
             type: 'exercise',
             itemId: itemId,

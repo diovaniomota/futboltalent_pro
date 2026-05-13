@@ -4,8 +4,7 @@ import '/backend/supabase/supabase.dart';
 
 class ActivityNotificationsService {
   static const String actionNone = 'none';
-  static const String actionOpenPlayerConvocatoria =
-      'open_player_convocatoria';
+  static const String actionOpenPlayerConvocatoria = 'open_player_convocatoria';
   static const String actionOpenClubPostulaciones = 'open_club_postulaciones';
   static const String actionOpenClubConvocatorias = 'open_club_convocatorias';
   static const String actionOpenScoutPlayerProfile =
@@ -15,9 +14,10 @@ class ActivityNotificationsService {
   static const String eventApplicationStatusUpdated =
       'application_status_updated';
   static const String eventConvocatoriaInvited = 'convocatoria_invited';
-  static const String eventNewApplicationReceived =
-      'new_application_received';
+  static const String eventNewApplicationReceived = 'new_application_received';
   static const String eventContactRequestUpdated = 'contact_request_updated';
+  static const String eventScoutConvocatoriaRequest =
+      'scout_convocatoria_request';
 
   static Future<void> create({
     required String recipientUserId,
@@ -61,6 +61,7 @@ class ActivityNotificationsService {
         rawStatus?.toString().trim().toLowerCase().replaceAll(' ', '_') ?? '';
     switch (status) {
       case 'pendiente':
+      case 'pendente':
       case 'nuevo':
         return 'Pendiente';
       case 'revisado':
@@ -68,9 +69,13 @@ class ActivityNotificationsService {
         return 'Revisado';
       case 'aceptado':
       case 'aceptada':
+      case 'aprovado':
+      case 'aprovada':
         return 'Aceptado';
       case 'rechazado':
       case 'rechazada':
+      case 'recusado':
+      case 'recusada':
         return 'Rechazado';
       case 'guardado':
         return 'Guardado';
@@ -152,6 +157,34 @@ class ActivityNotificationsService {
     );
   }
 
+  static Future<void> notifyClubScoutConvocatoriaRequest({
+    required String clubUserId,
+    required String convocatoriaId,
+    required String convocatoriaTitle,
+    required String scoutId,
+    required String scoutName,
+    String? clubName,
+  }) async {
+    await create(
+      recipientUserId: clubUserId,
+      recipientUserType: 'club',
+      eventType: eventScoutConvocatoriaRequest,
+      title: 'Nueva solicitud de scout',
+      body:
+          '${scoutName.trim().isNotEmpty ? scoutName.trim() : 'Un scout'} solicitó acceso a ${_safeTitle(convocatoriaTitle)}.',
+      entityType: 'convocatoria',
+      entityId: convocatoriaId,
+      actionType: actionOpenClubConvocatorias,
+      payload: <String, dynamic>{
+        'convocatoria_id': convocatoriaId,
+        'convocatoria_title': convocatoriaTitle,
+        'scout_id': scoutId,
+        'scout_name': scoutName,
+        if (clubName?.trim().isNotEmpty == true) 'club_name': clubName!.trim(),
+      },
+    );
+  }
+
   static Future<void> notifyPlayerApplicationStatusUpdated({
     required String playerId,
     required String convocatoriaId,
@@ -164,15 +197,14 @@ class ActivityNotificationsService {
     await create(
       recipientUserId: playerId,
       recipientUserType: 'jugador',
-      eventType: invitation
-          ? eventConvocatoriaInvited
-          : eventApplicationStatusUpdated,
+      eventType:
+          invitation ? eventConvocatoriaInvited : eventApplicationStatusUpdated,
       title: invitation
           ? 'Invitación a convocatoria'
           : 'Actualización de tu postulación',
       body: invitation
           ? '${clubName.trim().isNotEmpty ? clubName.trim() : 'Un club'} te invitó a avanzar en ${_safeTitle(convocatoriaTitle)}.'
-          : 'Tu postulación a ${_safeTitle(convocatoriaTitle)} ahora está en estado ${cleanStatus}.',
+          : 'Tu postulación a ${_safeTitle(convocatoriaTitle)} ahora está en estado $cleanStatus.',
       entityType: 'convocatoria',
       entityId: convocatoriaId,
       actionType: actionOpenPlayerConvocatoria,
@@ -196,7 +228,8 @@ class ActivityNotificationsService {
         status.toString().trim().toLowerCase().replaceAll(' ', '_');
     final accepted = normalized == 'accepted' ||
         normalized == 'aceptado' ||
-        normalized == 'aprobado';
+        normalized == 'aprobado' ||
+        normalized == 'aprovado';
     await create(
       recipientUserId: scoutId,
       recipientUserType: 'profesional',

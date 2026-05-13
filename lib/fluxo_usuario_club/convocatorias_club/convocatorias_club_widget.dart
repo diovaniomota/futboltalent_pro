@@ -271,15 +271,20 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
   }
 
   void _showCreateConvocatoriaModal() {
+    final pageContext = context;
     // Modal para criar nova convocatoria
     showModalBottomSheet(
-      context: context,
+      context: pageContext,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _CreateConvocatoriaModal(
+      builder: (sheetContext) => _CreateConvocatoriaModal(
         clubId: _clubId!,
         onCreated: () {
           _loadData();
+        },
+        onExplorePlayers: () {
+          if (!mounted) return;
+          pageContext.pushNamed(ListaYNotaWidget.routeName);
         },
       ),
     );
@@ -295,15 +300,20 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
   }
 
   void _showEditConvocatoriaModal(Map<String, dynamic> conv) {
+    final pageContext = context;
     showModalBottomSheet(
-      context: context,
+      context: pageContext,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _CreateConvocatoriaModal(
+      builder: (sheetContext) => _CreateConvocatoriaModal(
         clubId: _clubId!,
         existingData: conv,
         onCreated: () {
           _loadData();
+        },
+        onExplorePlayers: () {
+          if (!mounted) return;
+          pageContext.pushNamed(ListaYNotaWidget.routeName);
         },
       ),
     );
@@ -1269,11 +1279,13 @@ class _CreateConvocatoriaModal extends StatefulWidget {
     required this.clubId,
     this.existingData,
     required this.onCreated,
+    required this.onExplorePlayers,
   }) : super(key: key);
 
   final String clubId;
   final Map<String, dynamic>? existingData;
   final VoidCallback onCreated;
+  final VoidCallback onExplorePlayers;
 
   @override
   State<_CreateConvocatoriaModal> createState() =>
@@ -1562,7 +1574,9 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
                 ElevatedButton(
                   onPressed: () {
                     Navigator.pop(ctx);
-                    context.pushNamed('Lista_y_nota');
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      widget.onExplorePlayers();
+                    });
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0D3B66),

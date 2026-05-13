@@ -609,7 +609,11 @@ class _DetallesDeLaConvocatoriaWidgetState
         });
       }
 
-      await _mirrorLegacyPostulacion(userId: userId, createdAt: now);
+      await _mirrorLegacyPostulacion(
+        userId: userId,
+        createdAt: now,
+        message: message,
+      );
 
       // 6.1/6.2 — Criar snapshot imutável com desafios válidos
       try {
@@ -637,7 +641,8 @@ class _DetallesDeLaConvocatoriaWidgetState
       if (mounted) {
         setState(() => _isApplying = false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No pudimos enviar tu postulación. Verifica tu conexión e intenta de nuevo.'),
+            content: Text(
+                'No pudimos enviar tu postulación. Verifica tu conexión e intenta de nuevo.'),
             backgroundColor: Colors.red));
       }
     }
@@ -646,6 +651,7 @@ class _DetallesDeLaConvocatoriaWidgetState
   Future<void> _mirrorLegacyPostulacion({
     required String userId,
     required String createdAt,
+    String? message,
   }) async {
     final convId = widget.convocatoriaId?.trim() ?? '';
     if (convId.isEmpty || userId.isEmpty) return;
@@ -654,13 +660,15 @@ class _DetallesDeLaConvocatoriaWidgetState
           .from('postulaciones')
           .select('id')
           .eq('convocatoria_id', convId)
-          .eq('player_id', userId)
+          .eq('jugador_id', userId)
           .limit(1)
           .maybeSingle();
       final payload = {
         'convocatoria_id': convId,
+        'jugador_id': userId,
         'player_id': userId,
         'estado': 'pendiente',
+        'mensaje': message,
         'updated_at': DateTime.now().toIso8601String(),
       };
       if (existing != null) {

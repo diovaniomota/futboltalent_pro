@@ -135,6 +135,7 @@ class GuardianMvpService {
   static Future<Map<String, dynamic>> approveGuardianCode(
     String code, {
     String? playerId,
+    String? guardianEmail,
   }) async {
     final normalized = code.trim().toUpperCase();
     if (normalized.isEmpty) {
@@ -142,16 +143,21 @@ class GuardianMvpService {
     }
 
     final currentUid = SupaFlow.client.auth.currentUser?.id ?? '';
-    final uid = (playerId ?? currentUid).trim();
-    if (uid.isEmpty || currentUid.isEmpty || currentUid != uid) {
-      throw Exception('approval_context_required');
+    var uid = (playerId ?? '').trim();
+    if (uid.isEmpty && currentUid.isNotEmpty) {
+      uid = currentUid.trim();
+    }
+    var guardianEmailNormalized = (guardianEmail ?? '').trim().toLowerCase();
+    Map<String, dynamic>? guardianInfo;
+
+    if (guardianEmailNormalized.isEmpty && uid.isNotEmpty) {
+      guardianInfo = await fetchGuardianInfo(uid);
+      guardianEmailNormalized =
+          guardianInfo?['email']?.toString().trim().toLowerCase() ?? '';
     }
 
-    final guardianInfo = await fetchGuardianInfo(uid);
-    final guardianEmail =
-        guardianInfo?['email']?.toString().trim().toLowerCase() ?? '';
-    if (guardianInfo == null || guardianEmail.isEmpty) {
-      throw Exception('approval_context_required');
+    if (guardianEmailNormalized.isEmpty) {
+      throw Exception('guardian_email_required');
     }
 
     // Try RPC first
@@ -161,7 +167,7 @@ class GuardianMvpService {
         params: <String, dynamic>{
           'p_approval_code': normalized,
           'p_player_id': uid,
-          'p_guardian_email': guardianEmail,
+          'p_guardian_email': guardianEmailNormalized,
         },
       );
 
@@ -178,6 +184,7 @@ class GuardianMvpService {
           rpcMessage.contains('approval_context_required') ||
           rpcMessage.contains('approval_code_expired') ||
           rpcMessage.contains('approval_code_used') ||
+          rpcMessage.contains('guardian_email_required') ||
           rpcMessage.contains('approval_not_pending') ||
           rpcMessage.contains('approval_player_not_pending')) {
         rethrow;
@@ -188,6 +195,19 @@ class GuardianMvpService {
           !rpcMessage.contains('does not exist')) {
         rethrow;
       }
+    }
+
+    if (guardianInfo == null && uid.isNotEmpty) {
+      guardianInfo = await fetchGuardianInfo(uid);
+    }
+    if (guardianInfo == null) {
+      throw Exception('approval_context_required');
+    }
+
+    final storedGuardianEmail =
+        guardianInfo['email']?.toString().trim().toLowerCase() ?? '';
+    if (storedGuardianEmail != guardianEmailNormalized) {
+      throw Exception('approval_code_not_found');
     }
 
     final status = guardianInfo['status']?.toString().trim().toLowerCase() ??

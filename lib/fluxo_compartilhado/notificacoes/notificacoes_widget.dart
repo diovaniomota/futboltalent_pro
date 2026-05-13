@@ -97,20 +97,28 @@ class _NotificacionesWidgetState extends State<NotificacionesWidget> {
   Future<void> _markNotificationAsRead(String notificationId) async {
     if (notificationId.isEmpty || currentUserUid.isEmpty) return;
     try {
-      await SupaFlow.client.from('activity_notifications').update({
-        'is_read': true,
-        'read_at': DateTime.now().toIso8601String(),
-      }).eq('id', notificationId).eq('user_id', currentUserUid);
+      await SupaFlow.client
+          .from('activity_notifications')
+          .update({
+            'is_read': true,
+            'read_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', notificationId)
+          .eq('user_id', currentUserUid);
     } catch (_) {}
   }
 
   Future<void> _markAllAsRead() async {
     if (currentUserUid.isEmpty || _unreadCount == 0) return;
     try {
-      await SupaFlow.client.from('activity_notifications').update({
-        'is_read': true,
-        'read_at': DateTime.now().toIso8601String(),
-      }).eq('user_id', currentUserUid).eq('is_read', false);
+      await SupaFlow.client
+          .from('activity_notifications')
+          .update({
+            'is_read': true,
+            'read_at': DateTime.now().toIso8601String(),
+          })
+          .eq('user_id', currentUserUid)
+          .eq('is_read', false);
 
       if (!mounted) return;
       setState(() {
@@ -159,9 +167,8 @@ class _NotificacionesWidgetState extends State<NotificacionesWidget> {
       }
     }
 
-    final actionType =
-        notification['action_type']?.toString().trim() ??
-            ActivityNotificationsService.actionNone;
+    final actionType = notification['action_type']?.toString().trim() ??
+        ActivityNotificationsService.actionNone;
     final entityId = notification['entity_id']?.toString() ?? '';
     final payload = _notificationPayload(notification);
 
@@ -191,8 +198,7 @@ class _NotificacionesWidgetState extends State<NotificacionesWidget> {
         );
         return;
       case ActivityNotificationsService.actionOpenScoutPlayerProfile:
-        final playerId =
-            payload['player_id']?.toString() ??
+        final playerId = payload['player_id']?.toString() ??
             payload['jugador_id']?.toString() ??
             payload['user_id']?.toString() ??
             entityId;
@@ -220,6 +226,8 @@ class _NotificacionesWidgetState extends State<NotificacionesWidget> {
         return Icons.sync_alt_rounded;
       case ActivityNotificationsService.eventNewApplicationReceived:
         return Icons.person_add_alt_1_rounded;
+      case ActivityNotificationsService.eventScoutConvocatoriaRequest:
+        return Icons.manage_search_rounded;
       case ActivityNotificationsService.eventContactRequestUpdated:
         return Icons.notifications_active_outlined;
       default:
@@ -238,6 +246,8 @@ class _NotificacionesWidgetState extends State<NotificacionesWidget> {
         return const Color(0xFF2563EB);
       case ActivityNotificationsService.eventNewApplicationReceived:
         return const Color(0xFF0D3B66);
+      case ActivityNotificationsService.eventScoutConvocatoriaRequest:
+        return const Color(0xFF7C3AED);
       case ActivityNotificationsService.eventContactRequestUpdated:
         return const Color(0xFFD97706);
       default:
@@ -250,6 +260,55 @@ class _NotificacionesWidgetState extends State<NotificacionesWidget> {
         rawDate == null ? null : DateTime.tryParse(rawDate.toString());
     if (parsed == null) return '';
     return dateTimeFormat('relative', parsed, locale: 'es');
+  }
+
+  String _localizedNotificationText(
+    dynamic rawValue, {
+    required String fallback,
+  }) {
+    var text = rawValue?.toString().trim() ?? '';
+    if (text.isEmpty) text = fallback;
+    if (text.isEmpty) return '';
+
+    const replacements = <String, String>{
+      'Notificações': 'Notificaciones',
+      'notificações': 'notificaciones',
+      'Notificação': 'Notificación',
+      'notificação': 'notificación',
+      'Solicitação': 'Solicitud',
+      'solicitação': 'solicitud',
+      'Solicitações': 'Solicitudes',
+      'solicitações': 'solicitudes',
+      'Solicitou contato em': 'Solicitó contacto el',
+      'Solicitou contato': 'Solicitó contacto',
+      'solicitou contato em': 'solicitó contacto el',
+      'solicitou contato': 'solicitó contacto',
+      'Contato': 'Contacto',
+      'contato': 'contacto',
+      'Aprovado': 'Aprobado',
+      'aprovado': 'aprobado',
+      'Aprovada': 'Aprobada',
+      'aprovada': 'aprobada',
+      'Recusado': 'Rechazado',
+      'recusado': 'rechazado',
+      'Recusada': 'Rechazada',
+      'recusada': 'rechazada',
+      'Pendente': 'Pendiente',
+      'pendente': 'pendiente',
+      'Enviada em': 'Enviada el',
+      'enviada em': 'enviada el',
+      'Enviado em': 'Enviado el',
+      'enviado em': 'enviado el',
+      'Vídeo': 'Video',
+      'vídeo': 'video',
+      'Usuário': 'Usuario',
+      'usuário': 'usuario',
+    };
+
+    for (final entry in replacements.entries) {
+      text = text.replaceAll(entry.key, entry.value);
+    }
+    return text;
   }
 
   String _emptyTitle() {
@@ -412,8 +471,8 @@ class _NotificacionesWidgetState extends State<NotificacionesWidget> {
                         const SizedBox(height: 12),
                         InkWell(
                           borderRadius: BorderRadius.circular(18),
-                          onTap: () =>
-                              Navigator.of(context).pop('open_contact_requests'),
+                          onTap: () => Navigator.of(context)
+                              .pop('open_contact_requests'),
                           child: Container(
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
@@ -477,8 +536,7 @@ class _NotificacionesWidgetState extends State<NotificacionesWidget> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(20),
-                            border:
-                                Border.all(color: const Color(0xFFE2E8F0)),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
                           ),
                           child: Column(
                             children: [
@@ -516,11 +574,14 @@ class _NotificacionesWidgetState extends State<NotificacionesWidget> {
                           final icon = _notificationIcon(notification);
                           final createdLabel =
                               _formatRelativeDate(notification['created_at']);
-                          final title =
-                              notification['title']?.toString().trim() ??
-                                  'Notificación';
-                          final body =
-                              notification['body']?.toString().trim() ?? '';
+                          final title = _localizedNotificationText(
+                            notification['title'],
+                            fallback: 'Notificación',
+                          );
+                          final body = _localizedNotificationText(
+                            notification['body'],
+                            fallback: '',
+                          );
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),

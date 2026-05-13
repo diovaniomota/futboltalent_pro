@@ -208,8 +208,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
         _loadUserProgress(),
         _loadCourses(),
         _loadExercises(),
-        _loadSavedAttempts(),
       ]);
+      await _loadSavedAttempts();
 
       _combineAndFilterItems();
       _openInitialChallengeIfNeeded();
@@ -389,6 +389,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     } catch (e) {
       debugPrint('Challenge-tagged videos fallback unavailable: $e');
     }
+
+    await _pruneUnavailableAttempts();
   }
 
   Future<void> _persistAttempts() async {
@@ -401,6 +403,213 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       await prefs.setString(_attemptsStorageKey, encoded);
     } catch (e) {
       debugPrint('Error saving attempts local cache: $e');
+    }
+  }
+
+  Future<void> _pruneUnavailableAttempts() async {
+    if (currentUserUid.isEmpty || _attemptByItemKey.isEmpty) return;
+
+    final staleEntries = <MapEntry<String, _ChallengeAttempt>>[];
+    for (final entry in List<MapEntry<String, _ChallengeAttempt>>.from(
+        _attemptByItemKey.entries)) {
+      final hasVideo = await _attemptReferencesPlayableVideo(entry.value);
+      if (!hasVideo) {
+        staleEntries.add(entry);
+      }
+    }
+
+    if (staleEntries.isEmpty) return;
+
+    for (final entry in staleEntries) {
+      _attemptByItemKey.remove(entry.key);
+      await _deleteUnavailableServerAttempt(entry.value);
+      await _revertCompletedChallengeForMissingAttempt(entry.value);
+    }
+
+    await _persistAttempts();
+    try {
+      await GamificationService.recalculateUserProgress(
+        userId: currentUserUid,
+      );
+    } catch (e) {
+      debugPrint('Challenge progress recalculation unavailable: $e');
+    }
+  }
+
+  String _cleanChallengeReference(String? value) {
+    final text = (value ?? '').trim();
+    return text.toLowerCase() == 'null' ? '' : text;
+  }
+
+  Future<bool> _attemptReferencesPlayableVideo(
+    _ChallengeAttempt attempt,
+  ) async {
+    final videoId = _cleanChallengeReference(attempt.profileVideoId);
+    final videoUrl = attempt.videoUrl.trim();
+
+    try {
+      Map<String, dynamic>? videoRow;
+      if (videoId.isNotEmpty) {
+        final row = await SupaFlow.client
+            .from('videos')
+            .select()
+            .eq('user_id', currentUserUid)
+            .eq('id', videoId)
+            .maybeSingle();
+        if (row == null) return false;
+        videoRow = Map<String, dynamic>.from(row);
+      } else if (videoUrl.isNotEmpty) {
+        final rows = await SupaFlow.client
+            .from('videos')
+            .select()
+            .eq('user_id', currentUserUid)
+            .eq('video_url', videoUrl)
+            .limit(1);
+        final list = rows as List;
+        if (list.isEmpty) return false;
+        videoRow = Map<String, dynamic>.from(list.first as Map);
+      } else {
+        return _localAttemptFileExists(attempt);
+      }
+
+      return isPublicVideoCandidate(videoRow);
+    } catch (e) {
+      debugPrint('Challenge attempt video validation failed: $e');
+      if (await _localAttemptFileExists(attempt)) return true;
+      return videoUrl.isNotEmpty;
+    }
+  }
+
+  Future<bool> _localAttemptFileExists(_ChallengeAttempt attempt) async {
+    if (kIsWeb) return false;
+    final localPath = (attempt.localPath ?? '').trim();
+    if (localPath.isEmpty) return false;
+    try {
+      return await File(localPath).exists();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _deleteUnavailableServerAttempt(
+    _ChallengeAttempt attempt,
+  ) async {
+    final itemId = attempt.itemId.trim();
+    final itemType = attempt.itemType.trim();
+    final videoId = _cleanChallengeReference(attempt.profileVideoId);
+    final videoUrl = attempt.videoUrl.trim();
+    if (itemId.isEmpty || itemType.isEmpty) return;
+    if (videoId.isEmpty && videoUrl.isEmpty) return;
+
+    try {
+      var query = SupaFlow.client
+          .from('user_challenge_attempts')
+          .delete()
+          .eq('user_id', currentUserUid)
+          .eq('item_id', itemId)
+          .eq('item_type', itemType);
+      if (videoId.isNotEmpty) {
+        query = query.eq('video_id', videoId);
+      } else {
+        query = query.eq('video_url', videoUrl);
+      }
+      await query;
+    } catch (e) {
+      debugPrint('Unavailable challenge attempt cleanup failed: $e');
+    }
+  }
+
+  Future<bool> _hasSubmittedAttemptForItem({
+    required String itemType,
+    required String itemId,
+  }) async {
+    try {
+      final rows = await SupaFlow.client
+          .from('user_challenge_attempts')
+          .select('video_id, video_url, submitted_at')
+          .eq('user_id', currentUserUid)
+          .eq('item_type', itemType)
+          .eq('item_id', itemId)
+          .eq('status', 'submitted')
+          .limit(10);
+      for (final row in rows as List) {
+        final attempt = _ChallengeAttempt(
+          itemId: itemId,
+          itemType: itemType,
+          profileVideoId: (row as Map)['video_id']?.toString(),
+          videoUrl: row['video_url']?.toString() ?? '',
+          localPath: null,
+          submittedAt:
+              DateTime.tryParse((row['submitted_at'] ?? '').toString()) ??
+                  DateTime.now(),
+        );
+        if (await _attemptReferencesPlayableVideo(attempt)) return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Challenge attempt availability check failed: $e');
+      return false;
+    }
+  }
+
+  Future<void> _revertCompletedChallengeForMissingAttempt(
+    _ChallengeAttempt attempt,
+  ) async {
+    final itemId = attempt.itemId.trim();
+    final itemType = attempt.itemType.trim().toLowerCase();
+    if (itemId.isEmpty || itemType.isEmpty) return;
+    if (await _hasSubmittedAttemptForItem(
+      itemType: itemType,
+      itemId: itemId,
+    )) {
+      return;
+    }
+
+    try {
+      if (itemType == 'course') {
+        try {
+          await SupaFlow.client
+              .from('user_courses')
+              .update({
+                'status': 'not_started',
+                'progress_percent': 0,
+                'xp_earned': 0,
+              })
+              .eq('user_id', currentUserUid)
+              .eq('course_id', itemId)
+              .eq('status', 'completed');
+        } catch (_) {
+          await SupaFlow.client
+              .from('user_courses')
+              .update({'status': 'not_started'})
+              .eq('user_id', currentUserUid)
+              .eq('course_id', itemId)
+              .eq('status', 'completed');
+        }
+        _userCourseStatus[itemId] = 'not_started';
+      } else if (itemType == 'exercise') {
+        try {
+          await SupaFlow.client
+              .from('user_exercises')
+              .update({
+                'status': 'not_started',
+                'total_xp_earned': 0,
+              })
+              .eq('user_id', currentUserUid)
+              .eq('exercise_id', itemId)
+              .eq('status', 'completed');
+        } catch (_) {
+          await SupaFlow.client
+              .from('user_exercises')
+              .update({'status': 'not_started'})
+              .eq('user_id', currentUserUid)
+              .eq('exercise_id', itemId)
+              .eq('status', 'completed');
+        }
+        _userExerciseStatus[itemId] = 'not_started';
+      }
+    } catch (e) {
+      debugPrint('Challenge completion revert failed: $e');
     }
   }
 
@@ -440,7 +649,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
           .eq('status', 'submitted')
           .maybeSingle();
       if (row != null) {
-        _attemptByItemKey[key] = _ChallengeAttempt(
+        final attempt = _ChallengeAttempt(
           itemId: itemId,
           itemType: itemType,
           profileVideoId: row['video_id']?.toString(),
@@ -450,12 +659,24 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
               DateTime.tryParse((row['submitted_at'] ?? '').toString()) ??
                   DateTime.now(),
         );
+        if (await _attemptReferencesPlayableVideo(attempt)) {
+          _attemptByItemKey[key] = attempt;
+          await _persistAttempts();
+          return;
+        }
+        _attemptByItemKey.remove(key);
+        await _deleteUnavailableServerAttempt(attempt);
+        await _revertCompletedChallengeForMissingAttempt(attempt);
+        if ((item['status'] ?? '').toString().toLowerCase() == 'completed') {
+          item['status'] = 'not_started';
+        }
         await _persistAttempts();
         return;
       }
     } catch (_) {}
 
     // Fallback by scanning tagged videos for this challenge key.
+    var foundValidAttempt = false;
     try {
       final videos = await SupaFlow.client
           .from('videos')
@@ -480,10 +701,25 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
               DateTime.tryParse((videoRow['created_at'] ?? '').toString()) ??
                   DateTime.now(),
         );
+        foundValidAttempt = true;
         await _persistAttempts();
         break;
       }
     } catch (_) {}
+
+    if (foundValidAttempt) return;
+
+    final cachedAttempt = _attemptByItemKey[key];
+    if (cachedAttempt != null &&
+        !await _attemptReferencesPlayableVideo(cachedAttempt)) {
+      _attemptByItemKey.remove(key);
+      await _deleteUnavailableServerAttempt(cachedAttempt);
+      await _revertCompletedChallengeForMissingAttempt(cachedAttempt);
+      if ((item['status'] ?? '').toString().toLowerCase() == 'completed') {
+        item['status'] = 'not_started';
+      }
+      await _persistAttempts();
+    }
   }
 
   Future<void> _insertVideoWithSchemaFallback(
@@ -1073,9 +1309,9 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
       await GamificationService.recalculateUserProgress(userId: currentUserUid);
       if (mounted) {
         _showSnack(
-          '🔥 +${GamificationService.challengeParticipatedPoints} XP por activar este desafío.',
+          'Subí tu video para registrar el intento y ganar XP.',
           background: const Color(0xFF0D3B66),
-          icon: Icons.local_fire_department_rounded,
+          icon: Icons.videocam_rounded,
           title: 'Desafío activado',
         );
       }
@@ -2575,7 +2811,10 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
           if (initialized) break;
         }
         if (!initialized && candidates.isNotEmpty) {
-          _fallbackUrl = candidates.first;
+          final fallback = candidates.first;
+          if (!_isSupabaseStorageUrl(fallback)) {
+            _fallbackUrl = fallback;
+          }
         }
       }
 
@@ -2583,7 +2822,7 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
         if (mounted) {
           setState(() {
             _loading = false;
-            _error = 'No se pudo reproducir este video.';
+            _error = 'Este video ya no está disponible.';
           });
         }
         return;
@@ -2595,7 +2834,7 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = 'No se pudo reproducir este video.';
+          _error = 'Este video ya no está disponible.';
         });
       }
     }
@@ -2685,6 +2924,13 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
     return result;
   }
 
+  bool _isSupabaseStorageUrl(String raw) {
+    final uri = Uri.tryParse(raw.trim());
+    if (uri == null) return false;
+    return uri.host.contains('supabase.co') &&
+        uri.path.contains('/storage/v1/object/');
+  }
+
   Future<void> _openInAppWebView() async {
     final url = (_fallbackUrl ?? widget.videoUrl ?? '').trim();
     if (url.isEmpty) return;
@@ -2725,6 +2971,66 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
     });
   }
 
+  Widget _buildUnavailableState(double scale) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.video_library_outlined,
+              color: Colors.white.withValues(alpha: 0.7),
+              size: 30 * scale,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Video no disponible',
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 13.5 * scale,
+                fontWeight: FontWeight.w700,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Este video fue eliminado o ya no existe.',
+              style: GoogleFonts.inter(
+                color: Colors.white.withValues(alpha: 0.72),
+                fontSize: 12 * scale,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if ((_fallbackUrl ?? '').isNotEmpty) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _openInAppWebView,
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.white54),
+                ),
+                icon: const Icon(
+                  Icons.open_in_new,
+                  color: Colors.white,
+                  size: 16,
+                ),
+                label: Text(
+                  'Abrir video',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scale = MediaQuery.of(context).size.width < 360 ? 0.9 : 1.0;
@@ -2744,46 +3050,7 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
                   ),
                 )
               : (_error != null || _controller == null)
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              _error ?? 'No disponible.',
-                              style: GoogleFonts.inter(
-                                color: Colors.white70,
-                                fontSize: 13 * scale,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            if ((_fallbackUrl ?? '').isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              OutlinedButton.icon(
-                                onPressed: _openInAppWebView,
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Colors.white54),
-                                ),
-                                icon: const Icon(
-                                  Icons.open_in_new,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                                label: Text(
-                                  'Abrir reproductor interno',
-                                  style: GoogleFonts.inter(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    )
+                  ? _buildUnavailableState(scale)
                   : Stack(
                       fit: StackFit.expand,
                       children: [

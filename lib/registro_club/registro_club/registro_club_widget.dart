@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
+import '/fluxo_compartilhado/geo_selection_bottom_sheet.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
@@ -3946,50 +3947,55 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
   }
 
   Widget _buildCountryDropdown() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
+    if (_countries.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
           border: Border.all(color: Colors.grey),
-          borderRadius: BorderRadius.circular(8)),
-      child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-        value: _selectedCountryId,
-        hint: const Text('Selecciona país'),
-        isExpanded: true,
-        items: (_countries.toList()
-              ..sort((a, b) {
-                final nameA =
-                    (a['name']?.toString() ?? '').trim().toLowerCase();
-                final nameB =
-                    (b['name']?.toString() ?? '').trim().toLowerCase();
-                return nameA.compareTo(nameB);
-              }))
-            .map((c) => DropdownMenuItem(
-                value: c['id'].toString(),
-                child: Text((c['name'] ?? '').toString().trim())))
-            .toList(),
-        onChanged: (v) {
-          if (v == null) return;
-          final selected =
-              _countries.firstWhere((c) => c['id'].toString() == v);
-          final countryName = (selected['name'] ?? '').toString();
-          setState(() {
-            _selectedCountryId = v;
-            _countryController.text = countryName;
-            _selectedState = null;
-            _stateController.text = '';
-            _states = [];
-            _stateFreeText = false;
-            _isStatesLoading = true;
-            _selectedCity = null;
-            _cityController.text = '';
-            _cities = [];
-            _cityFreeText = false;
-            _isCitiesLoading = false;
-          });
-          _loadStates(countryName);
-        },
-      )),
+          borderRadius: BorderRadius.circular(8),
+          color: Colors.white,
+        ),
+        child: const Text(
+          'Cargando países...',
+          style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 16),
+        ),
+      );
+    }
+
+    final selectedCountryName = _countryController.text.trim();
+    return _buildSearchableSelector(
+      value: selectedCountryName.isNotEmpty ? selectedCountryName : null,
+      hint: 'Selecciona país',
+      items: _countries
+          .map((country) => (country['name'] ?? '').toString().trim())
+          .where((country) => country.isNotEmpty)
+          .toList(),
+      onSelected: (countryName) {
+        final selected = _countries.firstWhere(
+          (country) =>
+              (country['name'] ?? '').toString().trim() == countryName.trim(),
+          orElse: () => <String, dynamic>{},
+        );
+        final countryId = selected['id']?.toString();
+        if (countryId == null || countryId.isEmpty) return;
+
+        setState(() {
+          _selectedCountryId = countryId;
+          _countryController.text = countryName;
+          _selectedState = null;
+          _stateController.text = '';
+          _states = [];
+          _stateFreeText = false;
+          _isStatesLoading = true;
+          _selectedCity = null;
+          _cityController.text = '';
+          _cities = [];
+          _cityFreeText = false;
+          _isCitiesLoading = false;
+        });
+        _loadStates(countryName);
+      },
     );
   }
 
@@ -4101,6 +4107,7 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
         title: hint,
         items: items,
         onSelected: onSelected,
+        selectedValue: value,
       ),
       child: Container(
         width: double.infinity,
@@ -4130,28 +4137,20 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
     );
   }
 
-  void _showSearchableBottomSheet({
+  Future<void> _showSearchableBottomSheet({
     required String title,
     required List<String> items,
     required ValueChanged<String> onSelected,
-  }) {
-    showModalBottomSheet(
+    String? selectedValue,
+  }) async {
+    final selected = await showGeoSelectionBottomSheet(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return _SearchableListSheet(
-          title: title,
-          items: items,
-          onSelected: (v) {
-            onSelected(v);
-            Navigator.pop(ctx);
-          },
-        );
-      },
+      title: title,
+      options: items,
+      selectedValue: selectedValue,
     );
+    if (!mounted || selected == null) return;
+    onSelected(selected);
   }
 
   Widget _buildNavigationButtons() {
@@ -4189,101 +4188,6 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
                           style: const TextStyle(color: Colors.white)),
                 ))),
       ]),
-    );
-  }
-}
-
-// ===== SEARCHABLE LIST BOTTOM SHEET =====
-class _SearchableListSheet extends StatefulWidget {
-  final String title;
-  final List<String> items;
-  final ValueChanged<String> onSelected;
-
-  const _SearchableListSheet({
-    required this.title,
-    required this.items,
-    required this.onSelected,
-  });
-
-  @override
-  State<_SearchableListSheet> createState() => _SearchableListSheetState();
-}
-
-class _SearchableListSheetState extends State<_SearchableListSheet> {
-  String _query = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = _query.isEmpty
-        ? widget.items
-        : widget.items
-            .where((i) => i.toLowerCase().contains(_query.toLowerCase()))
-            .toList();
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      maxChildSize: 0.9,
-      minChildSize: 0.3,
-      expand: false,
-      builder: (_, scrollController) => Column(
-        children: [
-          const SizedBox(height: 8),
-          Container(
-            width: 40,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              widget.title,
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF0D3B66),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Buscar...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-              onChanged: (v) => setState(() => _query = v),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (filtered.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(32),
-              child: Text(
-                'Sin resultados para "$_query"',
-                style: TextStyle(color: Colors.grey[500]),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                controller: scrollController,
-                itemCount: filtered.length,
-                itemBuilder: (_, i) => ListTile(
-                  title: Text(filtered[i]),
-                  onTap: () => widget.onSelected(filtered[i]),
-                ),
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

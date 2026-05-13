@@ -1,4 +1,5 @@
 import 'package:rxdart/rxdart.dart';
+import 'package:flutter/foundation.dart';
 
 import '/backend/supabase/supabase.dart';
 import '../base_auth_user_provider.dart';
@@ -8,6 +9,7 @@ export '../base_auth_user_provider.dart';
 class FutboltalentProSupabaseUser extends BaseAuthUser {
   FutboltalentProSupabaseUser(this.user);
   User? user;
+  @override
   bool get loggedIn => user != null;
 
   @override
@@ -63,21 +65,25 @@ class FutboltalentProSupabaseUser extends BaseAuthUser {
 }
 
 /// Generates a stream of the authenticated user.
-/// [SupaFlow.client.auth.onAuthStateChange] does not yield any values until the
-/// user is already authenticated. So we add a default null user to the stream,
-/// if we need to interact with the [currentUser] before logging in.
+/// Seeds the stream with Supabase's current user so an already restored session
+/// is available before the next auth event arrives.
 Stream<BaseAuthUser> futboltalentProSupabaseUserStream() {
+  final restoredUser =
+      FutboltalentProSupabaseUser(SupaFlow.client.auth.currentUser);
+  currentUser = restoredUser;
+
   final supabaseAuthStream = SupaFlow.client.auth.onAuthStateChange.debounce(
       (authState) => authState.event == AuthChangeEvent.tokenRefreshed
-          ? TimerStream(authState, Duration(seconds: 1))
+          ? TimerStream(authState, const Duration(seconds: 1))
           : Stream.value(authState));
-  return (!loggedIn
-          ? Stream<AuthState?>.value(null).concatWith([supabaseAuthStream])
-          : supabaseAuthStream)
-      .map<BaseAuthUser>(
-    (authState) {
-      currentUser = FutboltalentProSupabaseUser(authState?.session?.user);
-      return currentUser!;
-    },
-  );
+  return Stream<BaseAuthUser>.value(restoredUser).concatWith([
+    supabaseAuthStream.map<BaseAuthUser>(
+      (authState) {
+        currentUser = FutboltalentProSupabaseUser(authState.session?.user);
+        return currentUser!;
+      },
+    ).handleError((error, stackTrace) {
+      debugPrint('Supabase auth stream error: $error');
+    }),
+  ]);
 }

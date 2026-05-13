@@ -1,6 +1,7 @@
 import 'dart:async';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/geo_selection_bottom_sheet.dart';
 import '/fluxo_compartilhado/location_data.dart' as location_data;
 import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
@@ -80,6 +81,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   // Opção selecionada (club ou sin club)
   String? _selectedPlayerStatus;
   DateTime? _selectedBirthday;
+  DateTime? _registeredBirthday;
   final List<TextEditingController> _historyClubControllers = [];
   final List<TextEditingController> _historyPositionControllers = [];
   final List<TextEditingController> _historyNoteControllers = [];
@@ -93,6 +95,13 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     'En prueba',
     'En inferiores',
   ];
+
+  static const double _minPlayerHeightCm = 110;
+  static const double _maxPlayerHeightCm = 230;
+  static const double _minPlayerWeightKg = 25;
+  static const double _maxPlayerWeightKg = 180;
+  static const int _minPlayerExperienceYears = 0;
+  static const int _maxPlayerExperienceYears = 40;
 
   static const List<String> _organizationTypeOptions = [
     'Organización / club',
@@ -432,11 +441,12 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
           ? 'Independiente'
           : _organizationTypeOptions.first;
       _selectedPlayerStatus = _normalizePlayerStatus(merged['player_status']);
-      _selectedBirthday = _parseDate(
+      _registeredBirthday = _parseDate(
         merged['birthday'] ??
             merged['birth_date'] ??
             merged['fecha_nacimiento'],
       );
+      _selectedBirthday = _registeredBirthday;
       _photoUrl = merged['photo_url']?.toString();
       _coverUrl = merged['cover_url']?.toString();
       _setHistoryControllers(normalizedHistory);
@@ -3183,45 +3193,72 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     try {
       setState(() => _isSaving = true);
       final uid = currentUserUid;
+      final registeredBirthday = _registeredBirthday;
+      final effectiveBirthday = registeredBirthday ?? _selectedBirthday;
+      double? parsedHeightCm;
+      double? parsedWeightKg;
+      int? parsedExperienceYears;
 
       // 2.1 — Validação de inputs numéricos
-      final heightText = _heightController?.text.trim() ?? '';
-      if (heightText.isNotEmpty) {
-        final height = double.tryParse(heightText);
-        if (height == null || height < 100 || height > 250) {
+      if (_currentUserType == 'jugador') {
+        final heightText = _heightController?.text.trim() ?? '';
+        parsedHeightCm = _parseHeightInCentimeters(heightText);
+        if (heightText.isNotEmpty &&
+            (parsedHeightCm == null ||
+                parsedHeightCm < _minPlayerHeightCm ||
+                parsedHeightCm > _maxPlayerHeightCm)) {
           throw Exception(
-            'La altura debe estar entre 100 y 250 cm.',
+            'La altura debe estar entre 110 y 230 cm.',
+          );
+        }
+
+        final weightText = _weightController?.text.trim() ?? '';
+        parsedWeightKg = _tryParseFiniteDouble(weightText);
+        if (weightText.isNotEmpty &&
+            (parsedWeightKg == null ||
+                parsedWeightKg < _minPlayerWeightKg ||
+                parsedWeightKg > _maxPlayerWeightKg)) {
+          throw Exception(
+            'El peso debe estar entre 25 y 180 kg.',
+          );
+        }
+
+        final experienceText = _experienceController?.text.trim() ?? '';
+        parsedExperienceYears = _tryParseInt(experienceText);
+        if (experienceText.isNotEmpty &&
+            (parsedExperienceYears == null ||
+                parsedExperienceYears < _minPlayerExperienceYears ||
+                parsedExperienceYears > _maxPlayerExperienceYears)) {
+          throw Exception(
+            'La experiencia debe estar entre 0 y 40 años.',
+          );
+        }
+
+        final age = _ageInYears(effectiveBirthday);
+        if (age != null &&
+            parsedExperienceYears != null &&
+            parsedExperienceYears > age) {
+          throw Exception(
+            'La experiencia no puede superar la edad del jugador.',
           );
         }
       }
 
-      final weightText = _weightController?.text.trim() ?? '';
-      if (weightText.isNotEmpty) {
-        final weight = double.tryParse(weightText);
-        if (weight == null || weight < 30 || weight > 200) {
-          throw Exception(
-            'El peso debe estar entre 30 y 200 kg.',
-          );
-        }
+      if (registeredBirthday != null) {
+        _selectedBirthday = registeredBirthday;
+        _birthdayController?.text =
+            _formatDateForInput(registeredBirthday.toIso8601String());
       }
 
-      final experienceText = _experienceController?.text.trim() ?? '';
-      if (experienceText.isNotEmpty) {
-        final experience = int.tryParse(experienceText);
-        if (experience == null || experience < 0 || experience > 60) {
-          throw Exception(
-            'La experiencia debe estar entre 0 y 60 años.',
-          );
-        }
-      }
-
-      // 1.5 — Verificar se a mudança de idade cria situação de menor sem guardian
-      if (_selectedBirthday != null && _currentUserType == 'jugador') {
+      // 1.5 — Verificar se a primeira data cadastrada exige responsável
+      if (effectiveBirthday != null &&
+          registeredBirthday == null &&
+          _currentUserType == 'jugador') {
         final now = DateTime.now();
-        int age = now.year - _selectedBirthday!.year;
-        if (now.month < _selectedBirthday!.month ||
-            (now.month == _selectedBirthday!.month &&
-                now.day < _selectedBirthday!.day)) {
+        int age = now.year - effectiveBirthday.year;
+        if (now.month < effectiveBirthday.month ||
+            (now.month == effectiveBirthday.month &&
+                now.day < effectiveBirthday.day)) {
           age--;
         }
 
@@ -3296,7 +3333,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         normalizedCategory = normalizePlayerCategory(
           '',
           birthday:
-              _selectedBirthday?.toIso8601String() ?? _birthdayController?.text,
+              effectiveBirthday?.toIso8601String() ?? _birthdayController?.text,
         );
       }
       final normalizedFoot =
@@ -3318,10 +3355,13 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         'country_id': _selectedCountryId != null
             ? int.tryParse(_selectedCountryId!)
             : null,
-        'birthday': _selectedBirthday?.toIso8601String(),
-        'birth_date': _selectedBirthday?.toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
       };
+      if (registeredBirthday == null && effectiveBirthday != null) {
+        final birthdayIso = effectiveBirthday.toIso8601String();
+        userPayload['birthday'] = birthdayIso;
+        userPayload['birth_date'] = birthdayIso;
+      }
 
       if (state.isNotEmpty) {
         userPayload['state'] = state;
@@ -3440,9 +3480,9 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         final playerPayload = <String, dynamic>{
           'dominant_foot': normalizedFoot,
           'club': currentClubName,
-          'experience': _tryParseInt(_experienceController?.text),
-          'altura': _tryParseDouble(_heightController?.text),
-          'peso': _tryParseDouble(_weightController?.text),
+          'experience': parsedExperienceYears,
+          'altura': parsedHeightCm,
+          'peso': parsedWeightKg,
         };
 
         if (_hasPlayerRecord) {
@@ -3478,10 +3518,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     } catch (e) {
       debugPrint('Error al guardar: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'Hubo un problema al guardar tus cambios. Por favor, verifica tu conexión e intenta nuevamente.'),
-            backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(_saveErrorMessage(e)), backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) {
@@ -3595,8 +3633,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
         }
       }
       dialCode ??= _dialCodeFromCountrySelection();
-      if (dialCode != null && digits.startsWith(dialCode!)) {
-        localDigits = digits.substring(dialCode!.length);
+      if (dialCode != null && digits.startsWith(dialCode)) {
+        localDigits = digits.substring(dialCode.length);
       }
     } else {
       dialCode = _dialCodeFromCountrySelection();
@@ -3771,10 +3809,40 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     return int.tryParse(cleaned);
   }
 
-  double? _tryParseDouble(String? rawValue) {
+  double? _tryParseFiniteDouble(String? rawValue) {
     final cleaned = (rawValue ?? '').trim().replaceAll(',', '.');
     if (cleaned.isEmpty) return null;
-    return double.tryParse(cleaned);
+    final parsed = double.tryParse(cleaned);
+    if (parsed == null || !parsed.isFinite) return null;
+    return parsed;
+  }
+
+  double? _parseHeightInCentimeters(String? rawValue) {
+    final parsed = _tryParseFiniteDouble(rawValue);
+    if (parsed == null) return null;
+    if (parsed >= 1 && parsed < 3) {
+      return double.parse((parsed * 100).toStringAsFixed(1));
+    }
+    return parsed;
+  }
+
+  int? _ageInYears(DateTime? birthday) {
+    if (birthday == null) return null;
+    final today = DateTime.now();
+    var years = today.year - birthday.year;
+    final hasHadBirthdayThisYear = today.month > birthday.month ||
+        (today.month == birthday.month && today.day >= birthday.day);
+    if (!hasHadBirthdayThisYear) years -= 1;
+    return years < 0 ? null : years;
+  }
+
+  String _saveErrorMessage(Object error) {
+    final text = error.toString();
+    const exceptionPrefix = 'Exception: ';
+    if (text.startsWith(exceptionPrefix)) {
+      return text.substring(exceptionPrefix.length);
+    }
+    return 'Hubo un problema al guardar tus cambios. Por favor, verifica tu conexión e intenta nuevamente.';
   }
 
   List<String> _parseCollaborations(dynamic rawValue) {
@@ -3876,6 +3944,11 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
   }
 
   Future<void> _pickBirthday() async {
+    if (_registeredBirthday != null) {
+      _showBirthdayLockedMessage();
+      return;
+    }
+
     final initialDate = _selectedBirthday ?? DateTime(2008, 1, 1);
     final picked = await showDatePicker(
       context: context,
@@ -3892,6 +3965,18 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       _birthdayController?.text = _formatDateForInput(picked.toIso8601String());
       _refreshDerivedPlayerCategory();
     });
+  }
+
+  void _showBirthdayLockedMessage() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'La fecha de nacimiento no se puede modificar después del registro.',
+        ),
+        backgroundColor: Color(0xFF0D3B66),
+      ),
+    );
   }
 
   void _addHistoryItem() {
@@ -4062,6 +4147,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                       title: hintText,
                       items: items,
                       onSelected: onSelected,
+                      selectedValue: value,
                     )
                 : null,
             child: Container(
@@ -4098,28 +4184,20 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
     );
   }
 
-  void _showSearchableBottomSheet({
+  Future<void> _showSearchableBottomSheet({
     required String title,
     required List<String> items,
     required ValueChanged<String> onSelected,
-  }) {
-    showModalBottomSheet(
+    String? selectedValue,
+  }) async {
+    final selected = await showGeoSelectionBottomSheet(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return _SearchableListSheet(
-          title: title,
-          items: items,
-          onSelected: (v) {
-            onSelected(v);
-            Navigator.pop(ctx);
-          },
-        );
-      },
+      title: title,
+      options: items,
+      selectedValue: selectedValue,
     );
+    if (!mounted || selected == null) return;
+    onSelected(selected);
   }
 
   Widget _buildSectionTitle(String title, {String? subtitle}) {
@@ -4381,21 +4459,28 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             focusNode: null,
             hintText: 'YYYY-MM-DD',
             readOnly: true,
-            onTap: _pickBirthday,
-            suffixIcon: const Icon(Icons.calendar_today_outlined,
-                size: 18, color: Color(0xFF718096))),
-        _buildDropdownField(
+            onTap: _registeredBirthday == null
+                ? _pickBirthday
+                : _showBirthdayLockedMessage,
+            suffixIcon: Icon(
+                _registeredBirthday == null
+                    ? Icons.calendar_today_outlined
+                    : Icons.lock_outline,
+                size: 18,
+                color: const Color(0xFF718096))),
+        _buildSearchableField(
             label: 'País / nacionalidad',
             hintText: 'Selecciona tu país',
             value: _countryOptions.contains(_countryController?.text.trim())
                 ? _countryController?.text.trim()
                 : null,
-            onChanged: (value) {
+            enabled: _countryOptions.isNotEmpty,
+            onSelected: (value) {
               final country = normalizeCountryName(value);
               setState(() => _applySelectedCountryByName(country));
               _loadStates(country);
             },
-            options: _countryOptions),
+            items: _countryOptions),
         _buildSearchableField(
             label: 'Estado / provincia',
             hintText: _isStatesLoading
@@ -4481,19 +4566,31 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             controller: _heightController,
             focusNode: null,
             hintText: '181',
-            keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9,.]')),
+              LengthLimitingTextInputFormatter(6),
+            ]),
         _buildTextField(
             label: 'Peso (kg)',
             controller: _weightController,
             focusNode: null,
             hintText: '75',
-            keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9,.]')),
+              LengthLimitingTextInputFormatter(6),
+            ]),
         _buildTextField(
             label: 'Años de experiencia',
             controller: _experienceController,
             focusNode: null,
             hintText: '6',
-            keyboardType: TextInputType.number),
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(2),
+            ]),
         _buildSectionTitle(
           'Historial deportivo',
           subtitle:
@@ -4524,18 +4621,19 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             focusNode: _usernameFocusNode,
             hintText: 'usuario',
             textCapitalization: TextCapitalization.none),
-        _buildDropdownField(
+        _buildSearchableField(
             label: 'País',
             hintText: 'Selecciona tu país',
             value: _countryOptions.contains(_countryController?.text.trim())
                 ? _countryController?.text.trim()
                 : null,
-            onChanged: (value) {
+            enabled: _countryOptions.isNotEmpty,
+            onSelected: (value) {
               final country = normalizeCountryName(value);
               setState(() => _applySelectedCountryByName(country));
               _loadStates(country);
             },
-            options: _countryOptions),
+            items: _countryOptions),
         _buildSearchableField(
             label: 'Estado / provincia',
             hintText: _isStatesLoading
@@ -4576,9 +4674,15 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             focusNode: null,
             hintText: 'YYYY-MM-DD',
             readOnly: true,
-            onTap: _pickBirthday,
-            suffixIcon: const Icon(Icons.calendar_today_outlined,
-                size: 18, color: Color(0xFF718096))),
+            onTap: _registeredBirthday == null
+                ? _pickBirthday
+                : _showBirthdayLockedMessage,
+            suffixIcon: Icon(
+                _registeredBirthday == null
+                    ? Icons.calendar_today_outlined
+                    : Icons.lock_outline,
+                size: 18,
+                color: const Color(0xFF718096))),
         _buildSectionTitle(
           'Perfil profesional',
           subtitle: 'Completá tus datos de contacto y tu enfoque de scouting.',
@@ -4985,102 +5089,6 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-// ===== SEARCHABLE LIST BOTTOM SHEET =====
-class _SearchableListSheet extends StatefulWidget {
-  final String title;
-  final List<String> items;
-  final ValueChanged<String> onSelected;
-
-  const _SearchableListSheet({
-    required this.title,
-    required this.items,
-    required this.onSelected,
-  });
-
-  @override
-  State<_SearchableListSheet> createState() => _SearchableListSheetState();
-}
-
-class _SearchableListSheetState extends State<_SearchableListSheet> {
-  String _query = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = _query.isEmpty
-        ? widget.items
-        : widget.items
-            .where((i) => i.toLowerCase().contains(_query.toLowerCase()))
-            .toList();
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      maxChildSize: 0.9,
-      minChildSize: 0.3,
-      expand: false,
-      builder: (_, scrollController) => Column(
-        children: [
-          const SizedBox(height: 8),
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              widget.title,
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF0D3B66),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Buscar...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-              onChanged: (v) => setState(() => _query = v),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (filtered.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(32),
-              child: Text(
-                'Sin resultados para "$_query"',
-                style: TextStyle(color: Colors.grey[500]),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                controller: scrollController,
-                itemCount: filtered.length,
-                itemBuilder: (_, i) => ListTile(
-                  title: Text(filtered[i]),
-                  onTap: () => widget.onSelected(filtered[i]),
-                ),
-              ),
-            ),
         ],
       ),
     );

@@ -74,7 +74,7 @@ if (checkGrants.status === 200) {
 // 2. Compare with anon
 
 // Check anon access pattern
-console.log('\n─── Anon access detailed error ───');
+console.log('\n─── Anon access check ───');
 const anonResp = await fetch(`${SUPABASE_URL}/rest/v1/videos?select=id&limit=1`, {
   headers: {
     'apikey': SUPABASE_ANON_KEY,
@@ -86,32 +86,35 @@ console.log(`Status: ${anonResp.status}`);
 const anonBody = await anonResp.text();
 console.log(`Body: ${anonBody}`);
 
-// The error tells us:
-// "permission denied for function viewer_has_player_profile_access"
-// This means the CURRENT policy on videos calls viewer_has_player_profile_access
-// which anon can't execute. So the migration WAS applied partially.
-
-// The fix is to split the policy:
-// - anon policy: only calls is_player_guardian_approved (which anon CAN execute)
-// - authenticated policy: calls both functions
+let anonData;
+try {
+  anonData = JSON.parse(anonBody);
+} catch {
+  anonData = anonBody;
+}
+const anonAccessOk = anonResp.status === 200 && Array.isArray(anonData);
+const anonPermissionDenied = anonResp.status >= 400 &&
+  /viewer_has_player_profile_access|permission denied/i.test(anonBody);
 
 console.log('\n─── Summary of current state ───');
 console.log('1. videos table has RLS enabled ✅');
-console.log('2. videos policy calls viewer_has_player_profile_access ');
-console.log('   which anon cannot execute → 401 error for anon');
-console.log('3. authenticated user correctly sees only public+approved videos ✅');
-console.log('4. user_progress correctly blocks random users ✅');
-console.log('5. PROBLEM: anon gets 401 instead of seeing public+approved videos');
-console.log('   This is SECURE but BROKEN for legitimate anon access.');
-console.log('6. PROBLEM: Password policy not enforced (BUG-ONB-010) ⚠️');
+if (anonAccessOk) {
+  console.log('2. anon can read public videos without function permission errors ✅');
+} else if (anonPermissionDenied) {
+  console.log('2. PROBLEM: anon still hits viewer_has_player_profile_access permission errors ❌');
+} else {
+  console.log(`2. PROBLEM: anon videos check returned unexpected status ${anonResp.status} ❌`);
+}
+console.log('3. authenticated user creation works ✅');
+console.log('4. user_progress access is covered by scripts/security_audit_v3.mjs ✅');
+console.log('5. password policy still needs dashboard/API verification if required by QA.');
 
-console.log('\n─── Required fixes ───');
-console.log('FIX 1: Split videos SELECT policy into separate anon + authenticated policies');
-console.log('FIX 2: Apply password policy in Supabase Dashboard');
-console.log('\nThe SQL to fix this needs to be applied via:');
-console.log('- Supabase Dashboard SQL Editor');
-console.log('- OR Supabase CLI with service_role key');
-console.log('- OR direct psql connection');
+if (!anonAccessOk) {
+  console.log('\n─── Required fixes ───');
+  console.log('FIX 1: Split videos SELECT policy into separate anon + authenticated policies');
+  console.log('FIX 2: Ensure anon only calls functions granted to anon');
+  process.exitCode = 1;
+}
 
 // Let's check the Supabase Management API
 console.log('\n─── Checking Management API ───');
