@@ -1,8 +1,9 @@
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/account_deletion_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-enum _ProfileSupportAction { editProfile, feedback }
+enum _ProfileSupportAction { editProfile, feedback, deleteAccount }
 
 Future<void> showProfileSupportSheet({
   required BuildContext context,
@@ -68,6 +69,15 @@ Future<void> showProfileSupportSheet({
                 onTap: () => Navigator.of(sheetContext)
                     .pop(_ProfileSupportAction.feedback),
               ),
+              const SizedBox(height: 10),
+              _SupportActionTile(
+                icon: Icons.delete_forever_outlined,
+                title: 'Eliminar mi cuenta',
+                subtitle: 'Borrá tu cuenta y todos tus datos de la app.',
+                onTap: () => Navigator.of(sheetContext)
+                    .pop(_ProfileSupportAction.deleteAccount),
+                isDestructive: true,
+              ),
             ],
           ),
         ),
@@ -86,6 +96,10 @@ Future<void> showProfileSupportSheet({
       userId: userId,
       screenName: screenName,
     );
+  }
+
+  if (action == _ProfileSupportAction.deleteAccount) {
+    await AccountDeletionService.showDeleteAccountDialog(context: context);
   }
 }
 
@@ -274,12 +288,14 @@ class _SupportActionTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.isDestructive = false,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final bool isDestructive;
 
   @override
   Widget build(BuildContext context) {
@@ -289,9 +305,9 @@ class _SupportActionTile extends StatelessWidget {
       child: Ink(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: isDestructive ? const Color(0xFFFEF2F2) : const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: isDestructive ? const Color(0xFFFCA5A5) : const Color(0xFFE2E8F0)),
         ),
         child: Row(
           children: [
@@ -299,10 +315,10 @@ class _SupportActionTile extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: const Color(0xFFE8F0FE),
+                color: isDestructive ? const Color(0xFFFEE2E2) : const Color(0xFFE8F0FE),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, color: const Color(0xFF0D3B66)),
+              child: Icon(icon, color: isDestructive ? const Color(0xFFDC2626) : const Color(0xFF0D3B66)),
             ),
             const SizedBox(width: 12),
             Expanded(

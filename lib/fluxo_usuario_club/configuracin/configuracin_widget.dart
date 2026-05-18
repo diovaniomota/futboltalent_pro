@@ -1,4 +1,5 @@
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/account_deletion_service.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/fluxo_compartilhado/club_identity_utils.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
@@ -1196,6 +1197,14 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
                                 ctx.goNamed('login');
                               }
                             }
+                          }),
+                          _buildDrawerItem(
+                              context,
+                              Icons.delete_forever_outlined,
+                              'Eliminar mi cuenta',
+                              false, () async {
+                            await AccountDeletionService
+                                .showDeleteAccountDialog(context: ctx);
                           })
                         ]))
                   ]),

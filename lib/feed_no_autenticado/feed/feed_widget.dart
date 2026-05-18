@@ -3,6 +3,7 @@ import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/fluxo_compartilhado/video_like_utils.dart';
 import '/fluxo_compartilhado/video_visibility_utils.dart';
+import '/fluxo_compartilhado/content_moderation_service.dart';
 import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -845,6 +846,9 @@ class _FeedWidgetState extends State<FeedWidget>
     setState(() => _isLoading = true);
     try {
       final userId = _currentUserId;
+      if (userId != null) {
+        await ContentModerationService.loadBlockedUsers();
+      }
       List<dynamic> response;
 
       if (_selectedTab == 'todos') {
@@ -1009,10 +1013,17 @@ class _FeedWidgetState extends State<FeedWidget>
         final ownerData = video['user_data'] is Map<String, dynamic>
             ? Map<String, dynamic>.from(video['user_data'] as Map)
             : null;
-        return GuardianMvpService.isVideoVisibleToPublic(
+        if (!GuardianMvpService.isVideoVisibleToPublic(
           video,
           ownerData: ownerData,
-        );
+        )) return false;
+        
+        final videoUserId = video['user_id']?.toString() ?? '';
+        if (videoUserId.isNotEmpty && ContentModerationService.isBlocked(videoUserId)) {
+          return false;
+        }
+        
+        return true;
       }).toList();
 
       final visibleUserIds = visibleVideos
@@ -1352,6 +1363,7 @@ class _FeedWidgetState extends State<FeedWidget>
                 if (v['id'] == vid) v['is_saved'] = val;
               }
             }),
+            onUserBlocked: _loadVideos,
           );
         });
   }
@@ -1920,6 +1932,7 @@ class _VideoPlayerItem extends StatefulWidget {
   final VoidCallback onRequireLogin;
   final Function(String, bool) onFollowChanged;
   final Function(String, bool) onSaveChanged;
+  final VoidCallback? onUserBlocked;
 
   const _VideoPlayerItem(
       {super.key,
@@ -1932,7 +1945,8 @@ class _VideoPlayerItem extends StatefulWidget {
       required this.onRefresh,
       required this.onRequireLogin,
       required this.onFollowChanged,
-      required this.onSaveChanged});
+      required this.onSaveChanged,
+      this.onUserBlocked});
 
   @override
   State<_VideoPlayerItem> createState() => _VideoPlayerItemState();
@@ -2964,6 +2978,25 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                           ? 'Guardar'
                           : (_isSaved ? 'Guardado' : 'Guardar'),
                       _toggleSave),
+                  if (widget.currentUserId != null &&
+                      widget.currentUserId != (widget.videoData['user_id']?.toString() ?? ''))
+                    _buildSideBtn(
+                        Icons.more_horiz,
+                        false,
+                        '',
+                        () async {
+                          final blocked = await ContentModerationService
+                              .showVideoModerationSheet(
+                            context: context,
+                            videoId: widget.videoData['id']?.toString() ?? '',
+                            videoOwnerId:
+                                widget.videoData['user_id']?.toString(),
+                            videoOwnerName: widget.videoData['user_data']?['name']?.toString(),
+                          );
+                          if (blocked) {
+                            widget.onUserBlocked?.call();
+                          }
+                        }),
                 ])),
             if (_isPaused)
               Center(

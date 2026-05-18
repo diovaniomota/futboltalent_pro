@@ -51,3 +51,12 @@ app.*.map.json
 # Large model files
 .codex_tools/
 *.bin
+
+# Private keys and certificates – NEVER commit these
+*.key
+*.p8
+*.p12
+*.pem
+*.certSigningRequest
+ios_private_key.key
+CertificateSigningRequest.certSigningRequest

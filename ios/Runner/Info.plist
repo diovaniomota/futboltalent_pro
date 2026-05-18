@@ -37,16 +37,17 @@
     <key>FlutterDeepLinkingEnabled</key>
     <true/>
 
-
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 
-
-
-
-
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>FutbolTalent necesita acceder a tu galería para que puedas seleccionar fotos de perfil y videos de tus jugadas.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>FutbolTalent necesita acceder a tu cámara para que puedas grabar videos de tus ejercicios y jugadas.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>FutbolTalent necesita acceder a tu micrófono para grabar audio junto con tus videos.</string>
 
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
