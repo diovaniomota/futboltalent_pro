@@ -46,11 +46,11 @@ String socialAuthFriendlyErrorMessage(Object error, OAuthProvider provider) {
   final label = socialProviderLabel(provider);
   final text = error.toString().toLowerCase();
 
-  if (_looksLikeProviderConfigurationError(text)) {
+  if (looksLikeSocialProviderConfigurationError(text)) {
     return 'El acceso con $label no está disponible en este momento. Intenta de nuevo más tarde.';
   }
 
-  return 'No pudimos conectarnos con $label. Verifica tu conexión e intenta de nuevo.';
+  return 'No pudimos conectarnos con $label. Verifica tu conexión. Detalles: $text';
 }
 
 bool isSocialAuthCanceled(Object error) {
@@ -76,7 +76,7 @@ Map<String, String>? _queryParamsForProvider(OAuthProvider provider) {
   return null;
 }
 
-bool _looksLikeProviderConfigurationError(String text) {
+bool looksLikeSocialProviderConfigurationError(String text) {
   return text.contains('not enabled') ||
       text.contains('not configured') ||
       text.contains('provider is disabled') ||
@@ -87,5 +87,9 @@ bool _looksLikeProviderConfigurationError(String text) {
       text.contains('invalid redirect') ||
       text.contains('redirect_uri') ||
       text.contains('client_id') ||
+      text.contains('bundle id') ||
+      text.contains('unacceptable audience') ||
+      text.contains('token audience') ||
+      text.contains('audience') ||
       text.contains('missing') && text.contains('provider');
 }
