@@ -2,6 +2,7 @@ import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/profile_support_sheet.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
 import '/fluxo_compartilhado/notificacoes/notificacoes_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
@@ -40,6 +41,7 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
   bool _isLoadingSavedVideos = false;
   String? _removingSavedVideoId;
   int _followers = 0;
+  int _unreadNotifications = 0;
 
   String _firstNonEmptyText(Iterable<dynamic> values) {
     for (final value in values) {
@@ -213,8 +215,19 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
       }
       await _loadHistory(uid);
       await _loadSaved(uid);
+      _unreadNotifications =
+          await ActivityNotificationsService.unreadCount(userId: uid);
     } catch (e) {}
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _refreshUnreadNotifications() async {
+    if (currentUserUid.isEmpty) return;
+    final count = await ActivityNotificationsService.unreadCount(
+      userId: currentUserUid,
+    );
+    if (!mounted) return;
+    setState(() => _unreadNotifications = count);
   }
 
   Future<void> _loadHistory(String uid) async {
@@ -495,8 +508,8 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                                           );
                                         }),
                                         Row(children: [
-                                          _iconBtn(Icons.notifications, () {
-                                            Navigator.push(
+                                          _notificationIconBtn(() async {
+                                            await Navigator.push(
                                               context,
                                               MaterialPageRoute(
                                                 builder: (_) =>
@@ -505,6 +518,7 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
                                                 ),
                                               ),
                                             );
+                                            await _refreshUnreadNotifications();
                                           }),
                                           const SizedBox(width: 12),
                                           _iconBtn(Icons.logout, () async {
@@ -689,6 +703,36 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
           decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.9), shape: BoxShape.circle),
           child: Icon(i, color: Colors.black87, size: 22)));
+
+  Widget _notificationIconBtn(VoidCallback onTap) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          _iconBtn(Icons.notifications, onTap),
+          if (_unreadNotifications > 0)
+            Positioned(
+              right: -4,
+              top: -4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDC2626),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white, width: 1.2),
+                ),
+                child: Text(
+                  _unreadNotifications > 9
+                      ? '9+'
+                      : _unreadNotifications.toString(),
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
 
   Widget _profileChip(IconData icon, String text) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

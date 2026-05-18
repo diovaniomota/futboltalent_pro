@@ -3,6 +3,7 @@ import '/auth/supabase_auth/auth_util.dart';
 import '/auth/supabase_auth/social_oauth.dart';
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/geo_selection_bottom_sheet.dart';
+import '/fluxo_compartilhado/password_policy.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
@@ -2649,30 +2650,9 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       _showSnackBar('Por favor ingresa tu correo electrónico');
       return;
     }
-    if (_senhaController.text.isEmpty) {
-      _showSnackBar('Por favor ingresa una contraseña');
-      return;
-    }
-    if (_senhaController.text.length < 8) {
-      _showSnackBar('La contraseña debe tener al menos 8 caracteres');
-      return;
-    }
-    if (!RegExp(r'[A-Z]').hasMatch(_senhaController.text)) {
-      _showSnackBar('La contraseña debe contener al menos una letra mayúscula');
-      return;
-    }
-    if (!RegExp(r'[a-z]').hasMatch(_senhaController.text)) {
-      _showSnackBar('La contraseña debe contener al menos una letra minúscula');
-      return;
-    }
-    if (!RegExp(r'[0-9]').hasMatch(_senhaController.text)) {
-      _showSnackBar('La contraseña debe contener al menos un número');
-      return;
-    }
-    if (!RegExp(r'[!@#\$%\^&\*\(\)_\+\-=\[\]\{\};:,\.<>\?/\\|`~]')
-        .hasMatch(_senhaController.text)) {
-      _showSnackBar(
-          'La contraseña debe contener al menos un carácter especial (!@#\$%...)');
+    final passwordError = PasswordPolicy.firstError(_senhaController.text);
+    if (passwordError != null) {
+      _showSnackBar(passwordError);
       return;
     }
     if (_senhaController.text != _confirmarSenhaController.text) {
@@ -3682,15 +3662,22 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             hint: 'Crea una contraseña segura',
             controller: _senhaController,
             focusNode: _senhaFocusNode,
+            keyboardType: TextInputType.visiblePassword,
             obscureText: !_senhaVisibility,
             width: double.infinity,
+            textCapitalization: TextCapitalization.none,
+            autocorrect: false,
+            enableSuggestions: false,
             suffixIcon: IconButton(
               icon: Icon(
                   _senhaVisibility ? Icons.visibility : Icons.visibility_off),
               onPressed: () =>
                   setState(() => _senhaVisibility = !_senhaVisibility),
             ),
+            onChanged: (_) => setState(() {}),
           ),
+          SizedBox(height: 10 * scale),
+          _buildPasswordRequirements(context, width: double.infinity),
           SizedBox(height: 15 * scale),
           _buildTextField(
             context: context,
@@ -3698,8 +3685,12 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             hint: 'Confirma tu contraseña',
             controller: _confirmarSenhaController,
             focusNode: _confirmarSenhaFocusNode,
+            keyboardType: TextInputType.visiblePassword,
             obscureText: !_confirmarSenhaVisibility,
             width: double.infinity,
+            textCapitalization: TextCapitalization.none,
+            autocorrect: false,
+            enableSuggestions: false,
             suffixIcon: IconButton(
               icon: Icon(_confirmarSenhaVisibility
                   ? Icons.visibility
@@ -4887,6 +4878,61 @@ Para cualquier consulta sobre privacidad: info@futboltalent.pro
     onSelected(selected);
   }
 
+  Widget _buildPasswordRequirements(
+    BuildContext context, {
+    required double width,
+  }) {
+    final scale = _scaleFactor(context);
+    final rules = PasswordPolicy.rules(_senhaController.text);
+
+    return SizedBox(
+      width: width,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Tu contraseña debe tener:',
+            style: GoogleFonts.inter(
+              fontSize: 12 * scale,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF111827),
+            ),
+          ),
+          SizedBox(height: 8 * scale),
+          ...rules.map((rule) {
+            final color =
+                rule.isMet ? const Color(0xFF168A3A) : const Color(0xFF6B7280);
+            return Padding(
+              padding: EdgeInsets.only(bottom: 6 * scale),
+              child: Row(
+                children: [
+                  Icon(
+                    rule.isMet
+                        ? Icons.check_circle
+                        : Icons.radio_button_unchecked,
+                    size: 16 * scale,
+                    color: color,
+                  ),
+                  SizedBox(width: 8 * scale),
+                  Expanded(
+                    child: Text(
+                      rule.label,
+                      style: GoogleFonts.inter(
+                        fontSize: 12 * scale,
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTextField({
     required BuildContext context,
     required String label,
@@ -4899,6 +4945,9 @@ Para cualquier consulta sobre privacidad: info@futboltalent.pro
     TextInputType? keyboardType,
     List<TextInputFormatter>? inputFormatters,
     TextCapitalization textCapitalization = TextCapitalization.sentences,
+    bool autocorrect = true,
+    bool enableSuggestions = true,
+    ValueChanged<String>? onChanged,
   }) {
     final scale = _scaleFactor(context);
     final fontSize = 13 * scale;
@@ -4923,6 +4972,9 @@ Para cualquier consulta sobre privacidad: info@futboltalent.pro
             keyboardType: keyboardType,
             inputFormatters: inputFormatters,
             textCapitalization: textCapitalization,
+            autocorrect: autocorrect,
+            enableSuggestions: enableSuggestions,
+            onChanged: onChanged,
             style: GoogleFonts.inter(fontSize: fontSize),
             decoration: InputDecoration(
               hintText: hint,

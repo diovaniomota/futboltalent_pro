@@ -2,6 +2,7 @@ import 'package:uuid/uuid.dart';
 
 import '/app_state.dart';
 import '/backend/supabase/supabase.dart';
+import '/fluxo_compartilhado/password_policy.dart';
 
 class AdminUserManagementCapabilities {
   const AdminUserManagementCapabilities({
@@ -526,8 +527,9 @@ class AdminUserManagementService {
     if (email.isEmpty) {
       throw Exception('Informá un email para crear acceso.');
     }
-    if (password.length < 8) {
-      throw Exception('La contraseña debe tener al menos 8 caracteres.');
+    final passwordError = PasswordPolicy.firstError(password);
+    if (passwordError != null) {
+      throw Exception('$passwordError.');
     }
 
     try {
@@ -769,8 +771,9 @@ class AdminUserManagementService {
         normalized.contains('duplicate')) {
       return 'Ya existe una cuenta con ese email.';
     }
-    if (normalized.contains('password_too_short')) {
-      return 'La contraseña debe tener al menos 8 caracteres.';
+    if (normalized.contains('password_too_short') ||
+        normalized.contains('weak_password')) {
+      return 'La contraseña debe tener entre 8 y 16 caracteres e incluir mayúscula, minúscula, número y carácter especial.';
     }
     if (normalized.contains('admin_only')) {
       return 'Tu usuario no tiene permisos de administrador para esta accion.';

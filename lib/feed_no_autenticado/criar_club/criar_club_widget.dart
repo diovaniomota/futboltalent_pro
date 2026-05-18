@@ -1,4 +1,5 @@
 import '/flutter_flow/flutter_flow_util.dart';
+import '/fluxo_compartilhado/password_policy.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'criar_club_model.dart';
@@ -61,30 +62,9 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
       _showError('Por favor, ingresa tu correo electrónico');
       return;
     }
-    if (_senhaController.text.isEmpty) {
-      _showError('Por favor, ingresa una contraseña');
-      return;
-    }
-    if (_senhaController.text.length < 8) {
-      _showError('La contraseña debe tener al menos 8 caracteres');
-      return;
-    }
-    if (!RegExp(r'[A-Z]').hasMatch(_senhaController.text)) {
-      _showError('La contraseña debe contener al menos una letra mayúscula');
-      return;
-    }
-    if (!RegExp(r'[a-z]').hasMatch(_senhaController.text)) {
-      _showError('La contraseña debe contener al menos una letra minúscula');
-      return;
-    }
-    if (!RegExp(r'[0-9]').hasMatch(_senhaController.text)) {
-      _showError('La contraseña debe contener al menos un número');
-      return;
-    }
-    if (!RegExp(r'[!@#\$%\^&\*\(\)_\+\-=\[\]\{\};:,\.<>\?/\\|`~]')
-        .hasMatch(_senhaController.text)) {
-      _showError(
-          'La contraseña debe contener al menos un carácter especial (!@#\$%...)');
+    final passwordError = PasswordPolicy.firstError(_senhaController.text);
+    if (passwordError != null) {
+      _showError(passwordError);
       return;
     }
     if (_senhaController.text != _confirmarSenhaController.text) {
@@ -189,7 +169,12 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
                   width: 337,
                   child: TextField(
                     controller: _senhaController,
+                    keyboardType: TextInputType.visiblePassword,
+                    textCapitalization: TextCapitalization.none,
+                    autocorrect: false,
+                    enableSuggestions: false,
                     obscureText: !_senhaVisibility,
+                    onChanged: (_) => setState(() {}),
                     decoration: _inputDecoration('Contraseña').copyWith(
                       suffixIcon: IconButton(
                         icon: Icon(
@@ -205,6 +190,10 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
                 ),
               ),
 
+              const SizedBox(height: 10),
+
+              _buildPasswordRequirements(),
+
               const SizedBox(height: 15),
 
               // Confirmar Senha
@@ -214,6 +203,10 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
                   width: 337,
                   child: TextField(
                     controller: _confirmarSenhaController,
+                    keyboardType: TextInputType.visiblePassword,
+                    textCapitalization: TextCapitalization.none,
+                    autocorrect: false,
+                    enableSuggestions: false,
                     obscureText: !_confirmarSenhaVisibility,
                     decoration:
                         _inputDecoration('Confirma tu contraseña').copyWith(
@@ -291,6 +284,61 @@ class _CriarClubWidgetState extends State<CriarClubWidget> {
       ),
       filled: true,
       fillColor: Colors.white,
+    );
+  }
+
+  Widget _buildPasswordRequirements() {
+    final rules = PasswordPolicy.rules(_senhaController.text);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: SizedBox(
+        width: 337,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Tu contraseña debe tener:',
+              style: GoogleFonts.inter(
+                color: const Color(0xFF111827),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...rules.map((rule) {
+              final color = rule.isMet
+                  ? const Color(0xFF168A3A)
+                  : const Color(0xFF6B7280);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      rule.isMet
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      color: color,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        rule.label,
+                        style: GoogleFonts.inter(
+                          color: color,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
     );
   }
 }

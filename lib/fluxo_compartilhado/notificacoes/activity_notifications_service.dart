@@ -19,6 +19,23 @@ class ActivityNotificationsService {
   static const String eventScoutConvocatoriaRequest =
       'scout_convocatoria_request';
 
+  static Future<int> unreadCount({String? userId}) async {
+    final targetUserId = userId?.trim() ?? '';
+    if (targetUserId.isEmpty) return 0;
+
+    try {
+      final response = await SupaFlow.client
+          .from('activity_notifications')
+          .select('id')
+          .eq('user_id', targetUserId)
+          .eq('is_read', false)
+          .limit(100);
+      return (response as List).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   static Future<void> create({
     required String recipientUserId,
     required String eventType,

@@ -715,9 +715,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           _videos = videos;
           _savedVideos = savedVideos;
           _contactRequests = requests;
-          _pendingContactRequests = requests
-              .where((r) => _normalizeContactRequestStatus(r) == 'pending')
-              .length;
+          _pendingContactRequests = _countUnreadContactRequests(requests);
           _userRanking = ranking;
           _profileViewsCount = profileViewsCount;
           _isLoading = false;
@@ -1050,6 +1048,20 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     return request['status']?.toString().toLowerCase().trim() ?? 'pending';
   }
 
+  bool _isPendingContactRequest(Map<String, dynamic> request) {
+    final status = _normalizeContactRequestStatus(request);
+    return status == 'pending' || status == 'pendiente' || status.isEmpty;
+  }
+
+  bool _isUnreadContactRequest(Map<String, dynamic> request) {
+    final readAt = request['receiver_read_at']?.toString().trim() ?? '';
+    return _isPendingContactRequest(request) && readAt.isEmpty;
+  }
+
+  int _countUnreadContactRequests(List<Map<String, dynamic>> requests) {
+    return requests.where(_isUnreadContactRequest).length;
+  }
+
   String _contactRequestStatusLabel(Map<String, dynamic> request) {
     final status = _normalizeContactRequestStatus(request);
     switch (status) {
@@ -1328,9 +1340,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       if (mounted) {
         setState(() {
           _contactRequests = refreshed;
-          _pendingContactRequests = refreshed
-              .where((r) => _normalizeContactRequestStatus(r) == 'pending')
-              .length;
+          _pendingContactRequests = _countUnreadContactRequests(refreshed);
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1356,6 +1366,51 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       }
       return false;
     }
+  }
+
+  Future<void> _markContactRequestAsRead(
+    Map<String, dynamic> request, {
+    StateSetter? setSheetState,
+    List<Map<String, dynamic>>? localRequests,
+  }) async {
+    if (!_isUnreadContactRequest(request) || currentUserUid.isEmpty) return;
+
+    final requestId = request['id']?.toString() ?? '';
+    if (requestId.isEmpty) return;
+
+    final readAt = DateTime.now().toIso8601String();
+    try {
+      await SupaFlow.client
+          .from('contact_requests')
+          .update({'receiver_read_at': readAt})
+          .eq('id', requestId)
+          .eq('to_user_id', currentUserUid);
+    } catch (_) {
+      // The local state is still updated so the badge reacts immediately.
+      // The migration adds receiver_read_at for persistent read state.
+    }
+
+    void markRow(Map<String, dynamic> item) {
+      if (item['id']?.toString() == requestId) {
+        item['receiver_read_at'] = readAt;
+      }
+    }
+
+    request['receiver_read_at'] = readAt;
+    if (localRequests != null) {
+      for (final item in localRequests) {
+        markRow(item);
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      for (final item in _contactRequests) {
+        markRow(item);
+      }
+      _pendingContactRequests = _countUnreadContactRequests(_contactRequests);
+    });
+    setSheetState?.call(() {});
   }
 
   Future<String?> _showRequestDetail(Map<String, dynamic> request) async {
@@ -1653,9 +1708,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     if (mounted) {
       setState(() {
         _contactRequests = refreshed;
-        _pendingContactRequests = refreshed
-            .where((r) => _normalizeContactRequestStatus(r) == 'pending')
-            .length;
+        _pendingContactRequests = _countUnreadContactRequests(refreshed);
       });
     }
 
@@ -1675,9 +1728,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           if (!mounted) return;
           setState(() {
             _contactRequests = latest;
-            _pendingContactRequests = latest
-                .where((r) => _normalizeContactRequestStatus(r) == 'pending')
-                .length;
+            _pendingContactRequests = _countUnreadContactRequests(latest);
           });
           setSheetState(() {
             localRequests = latest;
@@ -1766,9 +1817,16 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                       _contactRequestStatusColor(request);
                                   final dateLabel =
                                       _formatRequestDate(request['created_at']);
+                                  final isUnread =
+                                      _isUnreadContactRequest(request);
 
                                   return InkWell(
                                     onTap: () async {
+                                      await _markContactRequestAsRead(
+                                        request,
+                                        setSheetState: setSheetState,
+                                        localRequests: localRequests,
+                                      );
                                       final updatedStatus =
                                           await _showRequestDetail(request);
                                       if (updatedStatus != null) {
@@ -1823,7 +1881,9 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                                       : 'Scout',
                                                   style: GoogleFonts.inter(
                                                     fontSize: 14,
-                                                    fontWeight: FontWeight.w600,
+                                                    fontWeight: isUnread
+                                                        ? FontWeight.w800
+                                                        : FontWeight.w600,
                                                     color:
                                                         const Color(0xFF111827),
                                                   ),
@@ -1843,6 +1903,17 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                             ),
                                           ),
                                           const SizedBox(width: 8),
+                                          if (isUnread) ...[
+                                            Container(
+                                              width: 9,
+                                              height: 9,
+                                              decoration: const BoxDecoration(
+                                                color: Color(0xFFDC2626),
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                          ],
                                           Container(
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 10,
