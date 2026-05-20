@@ -821,13 +821,47 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     }
   }
 
+  Future<XFile?> _pickChallengeAttemptVideo() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.videocam_rounded),
+              title: const Text('Grabar ahora'),
+              onTap: () => Navigator.of(sheetContext).pop(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.video_library_rounded),
+              title: const Text('Elegir desde galería'),
+              onTap: () => Navigator.of(sheetContext).pop(ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return null;
+
+    final picker = ImagePicker();
+    return picker.pickVideo(
+      source: source,
+      maxDuration: const Duration(minutes: 3),
+    );
+  }
+
   Future<_ChallengeAttempt?> _recordAttemptVideo(
     Map<String, dynamic> item,
   ) async {
     _showSnack(
       FFAppState().uiText(
         'challenge_upload_message',
-        fallback: 'Se abrirá la cámara para grabar tu intento.',
+        fallback: 'Grabá tu intento o elegí un video desde tu galería.',
       ),
       background: const Color(0xFF0D3B66),
       icon: Icons.videocam_rounded,
@@ -835,15 +869,11 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     );
 
     try {
-      final picker = ImagePicker();
-      final video = await picker.pickVideo(
-        source: ImageSource.camera,
-        maxDuration: const Duration(minutes: 3),
-      );
+      final video = await _pickChallengeAttemptVideo();
 
       if (video == null) {
         _showSnack(
-          'No se grabó ningún video. El desafío sigue pendiente.',
+          'No se seleccionó ningún video. El desafío sigue pendiente.',
           background: Colors.orange,
           icon: Icons.pause_circle_outline_rounded,
           title: 'Video no enviado',
@@ -2971,6 +3001,18 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
     });
   }
 
+  Future<void> _seekBy(Duration offset) async {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+    final duration = c.value.duration;
+    final current = c.value.position;
+    var target = current + offset;
+    if (target < Duration.zero) target = Duration.zero;
+    if (duration > Duration.zero && target > duration) target = duration;
+    await c.seekTo(target);
+    if (mounted) setState(() {});
+  }
+
   Widget _buildUnavailableState(double scale) {
     return Center(
       child: Padding(
@@ -3055,6 +3097,46 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
                       fit: StackFit.expand,
                       children: [
                         VideoPlayer(_controller!),
+                        Positioned(
+                          left: 10,
+                          right: 10,
+                          bottom: 54,
+                          child: Row(
+                            children: [
+                              GestureDetector(
+                                onTap: () =>
+                                    _seekBy(const Duration(seconds: -10)),
+                                child: const Icon(
+                                  Icons.replay_10_rounded,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: VideoProgressIndicator(
+                                  _controller!,
+                                  allowScrubbing: true,
+                                  colors: const VideoProgressColors(
+                                    playedColor: Color(0xFF0D3B66),
+                                    bufferedColor: Colors.white38,
+                                    backgroundColor: Colors.white24,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: () =>
+                                    _seekBy(const Duration(seconds: 10)),
+                                child: const Icon(
+                                  Icons.forward_10_rounded,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         Positioned(
                           right: 10,
                           bottom: 10,

@@ -34,6 +34,7 @@ class _LoginWidgetState extends State<LoginWidget> {
   bool _isLoading = false;
   String? _errorMessage;
   String? _pendingGuardianPlayerId;
+  bool _guardianApprovalRequested = false;
 
   @override
   void initState() {
@@ -41,9 +42,20 @@ class _LoginWidgetState extends State<LoginWidget> {
     _model = createModel(context, () => LoginModel());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      final query = GoRouterState.of(context).uri.queryParameters;
+      _guardianApprovalRequested = query['guardianApproval'] == '1' ||
+          query['guardianApproval'] == 'true';
       final blockMessage = FFAppState().authBlockMessage.trim();
       if (blockMessage.isNotEmpty) {
-        setState(() => _errorMessage = blockMessage);
+        final guardianContext = _isGuardianApprovalContext(blockMessage);
+        setState(() {
+          _errorMessage = blockMessage;
+          if (guardianContext) {
+            _pendingGuardianPlayerId =
+                currentUserUid.isNotEmpty ? currentUserUid : null;
+            _guardianApprovalRequested = true;
+          }
+        });
         FFAppState().authBlockMessage = '';
       } else {
         safeSetState(() {});
@@ -62,6 +74,19 @@ class _LoginWidgetState extends State<LoginWidget> {
   }
 
   // ============ HELPERS ============
+  bool _isGuardianApprovalContext(String? message) {
+    final text = (message ?? '').toLowerCase();
+    return text.contains('menor') ||
+        text.contains('responsable') ||
+        text.contains('guardian') ||
+        text.contains('aprob');
+  }
+
+  bool get _shouldShowGuardianApprovalButton =>
+      _guardianApprovalRequested ||
+      (_pendingGuardianPlayerId?.trim().isNotEmpty ?? false) ||
+      _isGuardianApprovalContext(_errorMessage);
+
   double _responsive(BuildContext context,
       {required double mobile, double? tablet, double? desktop}) {
     final width = MediaQuery.of(context).size.width;
@@ -199,6 +224,7 @@ class _LoginWidgetState extends State<LoginWidget> {
           _pendingGuardianPlayerId =
               signedInUid.isNotEmpty ? signedInUid : currentUserUid;
           FFAppState().authBlockMessage = blockMessage;
+          _guardianApprovalRequested = true;
           if (mounted) {
             setState(() {
               _isLoading = false;
@@ -392,22 +418,24 @@ class _LoginWidgetState extends State<LoginWidget> {
                 fontWeight: FontWeight.bold,
                 color: const Color(0xFF0D3B66))),
       ),
-      SizedBox(height: 14 * scale),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton.icon(
-          onPressed: _showGuardianApprovalDialog,
-          icon: const Icon(Icons.verified_user_outlined),
-          label: Text(
-            'Aprobar cuenta de menor',
-            style: GoogleFonts.inter(
-              fontSize: 14 * scale,
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF0D3B66),
+      if (_shouldShowGuardianApprovalButton) ...[
+        SizedBox(height: 14 * scale),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _showGuardianApprovalDialog,
+            icon: const Icon(Icons.verified_user_outlined),
+            label: Text(
+              'Aprobar cuenta de menor',
+              style: GoogleFonts.inter(
+                fontSize: 14 * scale,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF0D3B66),
+              ),
             ),
           ),
         ),
-      ),
+      ],
       if (_errorMessage != null)
         Padding(
             padding: EdgeInsets.only(top: 16 * scale),

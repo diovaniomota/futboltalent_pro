@@ -115,24 +115,31 @@ class _Onboardign1WidgetState extends State<Onboardign1Widget> {
                       ),
                     ),
                   ),
-                  Align(
-                    alignment: AlignmentDirectional(-0.03, 0.83),
-                    child: FFButtonWidget(
-                      onPressed: () async {
-                        context.pushNamed(
-                            SeleccionDelTipoDePerfilWidget.routeName);
-                      },
-                      text: 'Crear perfil',
-                      options: FFButtonOptions(
-                        width: 357.0,
-                        height: 43.0,
-                        padding: EdgeInsetsDirectional.fromSTEB(
-                            16.0, 0.0, 16.0, 0.0),
-                        iconPadding:
-                            EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 0.0, 0.0),
-                        color: Color(0xFF0D3B66),
-                        textStyle:
-                            FlutterFlowTheme.of(context).titleSmall.override(
+                  Positioned(
+                    left: 24.0,
+                    right: 24.0,
+                    bottom: MediaQuery.viewPaddingOf(context).bottom + 28.0,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        FFButtonWidget(
+                          onPressed: () async {
+                            context.pushNamed(
+                                SeleccionDelTipoDePerfilWidget.routeName);
+                          },
+                          text: 'Crear perfil',
+                          options: FFButtonOptions(
+                            width: double.infinity,
+                            height: 43.0,
+                            padding: EdgeInsetsDirectional.fromSTEB(
+                                16.0, 0.0, 16.0, 0.0),
+                            iconPadding: EdgeInsetsDirectional.fromSTEB(
+                                0.0, 0.0, 0.0, 0.0),
+                            color: Color(0xFF0D3B66),
+                            textStyle: FlutterFlowTheme.of(context)
+                                .titleSmall
+                                .override(
                                   font: GoogleFonts.inter(
                                     fontWeight: FontWeight.bold,
                                     fontStyle: FlutterFlowTheme.of(context)
@@ -146,30 +153,36 @@ class _Onboardign1WidgetState extends State<Onboardign1Widget> {
                                       .titleSmall
                                       .fontStyle,
                                 ),
-                        elevation: 0.0,
-                        borderRadius: BorderRadius.circular(8.0),
-                      ),
-                    ),
-                  ),
-                  Align(
-                    alignment: AlignmentDirectional(0.01, 0.89),
-                    child: Text(
-                      'Saltar',
-                      style: FlutterFlowTheme.of(context).bodyMedium.override(
-                            font: GoogleFonts.inter(
-                              fontWeight: FontWeight.w500,
-                              fontStyle: FlutterFlowTheme.of(context)
-                                  .bodyMedium
-                                  .fontStyle,
-                            ),
-                            color: Colors.white,
-                            letterSpacing: 0.0,
-                            fontWeight: FontWeight.w500,
-                            fontStyle: FlutterFlowTheme.of(context)
-                                .bodyMedium
-                                .fontStyle,
-                            decoration: TextDecoration.underline,
+                            elevation: 0.0,
+                            borderRadius: BorderRadius.circular(8.0),
                           ),
+                        ),
+                        const SizedBox(height: 14.0),
+                        InkWell(
+                          onTap: () => context.goNamed(LoginWidget.routeName),
+                          child: Text(
+                            'Saltar',
+                            textAlign: TextAlign.center,
+                            style: FlutterFlowTheme.of(context)
+                                .bodyMedium
+                                .override(
+                                  font: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w500,
+                                    fontStyle: FlutterFlowTheme.of(context)
+                                        .bodyMedium
+                                        .fontStyle,
+                                  ),
+                                  color: Colors.white,
+                                  letterSpacing: 0.0,
+                                  fontWeight: FontWeight.w500,
+                                  fontStyle: FlutterFlowTheme.of(context)
+                                      .bodyMedium
+                                      .fontStyle,
+                                  decoration: TextDecoration.underline,
+                                ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

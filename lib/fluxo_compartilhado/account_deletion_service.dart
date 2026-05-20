@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:go_router/go_router.dart';
-import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/app_state.dart';
+import '/auth/supabase_auth/auth_util.dart';
 
 /// Centralised account-deletion flow used by all user profiles (jugador,
-/// profesional, club).  Shows a confirmation dialog with password verification,
-/// deletes server-side data, signs out and navigates to login.
+/// profesional, club). Shows a confirmation dialog, deletes server-side data,
+/// signs out and navigates to login.
 class AccountDeletionService {
   AccountDeletionService._();
 
@@ -55,9 +55,16 @@ class _DeleteAccountDialog extends StatefulWidget {
 }
 
 class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final TextEditingController _confirmationController = TextEditingController();
   bool _isDeleting = false;
   bool _confirmedOnce = false;
   String? _errorMessage;
+
+  @override
+  void dispose() {
+    _confirmationController.dispose();
+    super.dispose();
+  }
 
   Future<void> _deleteAccount() async {
     setState(() {
@@ -66,15 +73,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
     });
 
     try {
-      // 1. Delete related data first (videos, progress, etc.)
-      await _deleteUserData(widget.userId);
-
-      // 2. Delete auth account via the manager
-      if (context.mounted) {
-        await authManager.deleteUser(context);
-      }
-
-      // 3. Signal success
+      await SupaFlow.client.rpc('delete_own_account');
       if (mounted) {
         Navigator.of(context).pop(true);
       }
@@ -88,80 +87,6 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
         });
       }
     }
-  }
-
-  Future<void> _deleteUserData(String uid) async {
-    // Delete user videos
-    try {
-      await SupaFlow.client.from('videos').delete().eq('user_id', uid);
-    } catch (_) {}
-
-    // Delete saved videos
-    try {
-      await SupaFlow.client.from('saved_videos').delete().eq('user_id', uid);
-    } catch (_) {}
-
-    // Delete user progress
-    try {
-      await SupaFlow.client.from('user_progress').delete().eq('user_id', uid);
-    } catch (_) {}
-
-    // Delete user courses
-    try {
-      await SupaFlow.client.from('user_courses').delete().eq('user_id', uid);
-    } catch (_) {}
-
-    // Delete user exercises
-    try {
-      await SupaFlow.client.from('user_exercises').delete().eq('user_id', uid);
-    } catch (_) {}
-
-    // Delete challenge attempts
-    try {
-      await SupaFlow.client
-          .from('user_challenge_attempts')
-          .delete()
-          .eq('user_id', uid);
-    } catch (_) {}
-
-    // Delete guardians (if minor)
-    try {
-      await SupaFlow.client.from('guardians').delete().eq('player_id', uid);
-    } catch (_) {}
-
-    // Delete player profile
-    try {
-      await SupaFlow.client.from('players').delete().eq('id', uid);
-    } catch (_) {}
-
-    // Delete scout profile
-    try {
-      await SupaFlow.client.from('scouts').delete().eq('id', uid);
-    } catch (_) {}
-
-    // Delete feedback
-    try {
-      await SupaFlow.client.from('feedback').delete().eq('user_id', uid);
-    } catch (_) {}
-
-    // Delete contact requests
-    try {
-      await SupaFlow.client
-          .from('contact_requests')
-          .delete()
-          .eq('requester_id', uid);
-    } catch (_) {}
-    try {
-      await SupaFlow.client
-          .from('contact_requests')
-          .delete()
-          .eq('target_id', uid);
-    } catch (_) {}
-
-    // Delete user row last
-    try {
-      await SupaFlow.client.from('users').delete().eq('user_id', uid);
-    } catch (_) {}
   }
 
   @override
@@ -237,6 +162,35 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
                   ),
                 ),
               ),
+              const SizedBox(height: 14),
+              Text(
+                'Escribí ELIMINAR para confirmar.',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF334155),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _confirmationController,
+                enabled: !_isDeleting,
+                textCapitalization: TextCapitalization.characters,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'ELIMINAR',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFDC2626),
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
             ],
             if (_errorMessage != null) ...[
               const SizedBox(height: 12),
@@ -299,7 +253,11 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
                 )
               else
                 ElevatedButton(
-                  onPressed: _deleteAccount,
+                  onPressed:
+                      _confirmationController.text.trim().toUpperCase() ==
+                              'ELIMINAR'
+                          ? _deleteAccount
+                          : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFDC2626),
                     foregroundColor: Colors.white,

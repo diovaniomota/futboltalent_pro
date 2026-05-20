@@ -976,16 +976,6 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     }
   }
 
-  Map<String, String>? _parseChallengeRef(String description) {
-    final match = RegExp(r'\[challenge_ref:(course|exercise):([^\]]+)\]')
-        .firstMatch(description);
-    if (match == null) return null;
-    return {
-      'type': (match.group(1) ?? '').trim(),
-      'id': (match.group(2) ?? '').trim(),
-    };
-  }
-
   Future<int> _loadCategoryRanking(
     String uid,
     Map<String, dynamic>? currentUserData,
@@ -2003,38 +1993,60 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
         'unlocked': (coursesCompleted is int ? coursesCompleted : 0) >= 1,
         'icon': Icons.school,
         'color': const Color(0xFF4CAF50),
+        'title': 'Primer curso',
+        'description': 'Completá al menos 1 curso de entrenamiento.',
       },
       {
         'unlocked': (exercisesCompleted is int ? exercisesCompleted : 0) >= 5,
         'icon': Icons.fitness_center,
         'color': const Color(0xFF2196F3),
+        'title': 'Constancia',
+        'description': 'Completá 5 ejercicios/desafíos.',
       },
       {
         'unlocked': xpInt >= 300,
         'icon': Icons.star,
         'color': const Color(0xFFFF9800),
+        'title': '300 XP',
+        'description': 'Acumulá 300 puntos de experiencia.',
       },
       {
         'unlocked': _videos.length >= 3,
         'icon': Icons.videocam,
         'color': const Color(0xFF9C27B0),
+        'title': 'Videoteca',
+        'description': 'Publicá al menos 3 videos en tu perfil.',
       },
     ];
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: medals.map((medal) {
-        return Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            color: const Color(0xFFEAF6FC),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Center(
-            child: medal['unlocked']
-                ? Icon(medal['icon'], color: medal['color'], size: 30)
-                : const Icon(Icons.lock, color: Colors.grey, size: 30),
+        final unlocked = medal['unlocked'] == true;
+        final title = medal['title']?.toString() ?? 'Logro';
+        final description = medal['description']?.toString() ?? '';
+        return Tooltip(
+          message:
+              unlocked ? '$title\n$description' : 'Bloqueado\n$description',
+          triggerMode: TooltipTriggerMode.longPress,
+          child: Semantics(
+            label: unlocked
+                ? '$title. $description'
+                : 'Logro bloqueado. $description',
+            button: false,
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF6FC),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: unlocked
+                    ? Icon(medal['icon'], color: medal['color'], size: 30)
+                    : const Icon(Icons.lock, color: Colors.grey, size: 30),
+              ),
+            ),
           ),
         );
       }).toList(),
@@ -2959,7 +2971,11 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
     }
 
     final name = _userData?['name'] ?? 'Usuario';
-    final username = _userData?['username'] ?? 'username';
+    final username = displayUsername(
+      username: _userData?['username'],
+      realName: name,
+      userId: _userData?['user_id']?.toString() ?? currentUserUid,
+    );
     final photoUrl = _userData?['photo_url'] ?? _userData?['avatar_url'] ?? '';
     final coverUrl =
         _userData?['cover_url'] ?? _userData?['cover_photo_url'] ?? '';
@@ -3383,7 +3399,7 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '@$username',
+                                    username,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: GoogleFonts.inter(

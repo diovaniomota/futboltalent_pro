@@ -2952,9 +2952,10 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             ? _cidadeController.text
             : _selectedCity,
       );
+      final normalizedName = normalizePersonNameInput(_nameController.text);
 
       final userPayload = <String, dynamic>{
-        'name': _nameController.text.trim(),
+        'name': normalizedName,
         'birthday': birthday?.toIso8601String(),
         'country_id': _selectedCountryId != null
             ? int.tryParse(_selectedCountryId!) ?? 1
@@ -2965,7 +2966,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         'ciudad': normalizedCity,
         'userType': userType,
         'user_id': uid,
-        'username': _nameController.text.trim(),
+        'username': usernameSlugFromName(normalizedName, userId: uid),
         'lastname': '',
         'role_id': 1,
         'created_at': nowIso,
@@ -3700,6 +3701,13 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             ),
           ),
           SizedBox(height: 30 * scale),
+          _buildPrimaryButton(
+            context: context,
+            text: _isRegistering ? 'Registrando...' : 'Registrarse',
+            onPressed: _isRegistering ? null : _registerWithEmail,
+            width: buttonWidth,
+          ),
+          SizedBox(height: 30 * scale),
           const Divider(thickness: 2, color: Colors.black),
           SizedBox(height: 30 * scale),
           _buildSocialButton(context, 'Registrarse con Google',
@@ -3711,13 +3719,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
                 context, 'Registrarse con Apple', Icons.apple, buttonWidth,
                 onPressed: () => _signInWithProvider(OAuthProvider.apple)),
           ],
-          SizedBox(height: 40 * scale),
-          _buildPrimaryButton(
-            context: context,
-            text: _isRegistering ? 'Registrando...' : 'Registrarse',
-            onPressed: _isRegistering ? null : _registerWithEmail,
-            width: buttonWidth,
-          ),
+          SizedBox(height: 20 * scale),
           Padding(
             padding: EdgeInsets.symmetric(vertical: 20 * scale),
             child: Row(
@@ -3825,6 +3827,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             hint: 'Nombre',
             controller: _nameController,
             focusNode: _nameFocusNode,
+            textCapitalization: TextCapitalization.words,
             width: double.infinity,
           ),
           SizedBox(height: 15 * scale),

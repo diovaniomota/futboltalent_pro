@@ -88,6 +88,42 @@ String titleCaseLabel(dynamic value) {
   }).join(' ');
 }
 
+String normalizePersonNameInput(dynamic value) => titleCaseLabel(value);
+
+String usernameSlugFromName(dynamic value, {String? userId}) {
+  final base = _stripDiacritics(collapseLabelSpaces(value).toLowerCase())
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '.')
+      .replaceAll(RegExp(r'\.+'), '.')
+      .replaceAll(RegExp(r'^\.|\.$'), '');
+  final suffix = (userId ?? '')
+      .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
+      .toLowerCase()
+      .take(6);
+  final slug = base.isEmpty ? 'jugador' : base;
+  return suffix.isEmpty ? slug : '$slug.$suffix';
+}
+
+String displayUsername({
+  required dynamic username,
+  required dynamic realName,
+  String? userId,
+}) {
+  var text = collapseLabelSpaces(username).replaceFirst(RegExp(r'^@+'), '');
+  final realNameKey = normalizeLookupKey(realName).replaceAll(' ', '');
+  final usernameKey =
+      normalizeLookupKey(text).replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+  if (text.isEmpty || text.contains(' ') || usernameKey == realNameKey) {
+    text = usernameSlugFromName(realName, userId: userId);
+  }
+
+  return '@$text';
+}
+
+extension _StringTakeExtension on String {
+  String take(int count) => length <= count ? this : substring(0, count);
+}
+
 String normalizeCountryName(dynamic value) => titleCaseLabel(value);
 
 String normalizeCityName(dynamic value) => titleCaseLabel(value);

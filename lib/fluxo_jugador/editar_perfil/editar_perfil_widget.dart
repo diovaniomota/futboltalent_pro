@@ -3344,10 +3344,15 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
       final normalizedProfessionalUrl = _validateAndNormalizeProfessionalUrl(
         _professionalUrlController?.text ?? '',
       );
+      final normalizedName = normalizePersonNameInput(_nomeController?.text);
+      final normalizedUsername = (_usernameController?.text.trim() ?? '')
+          .replaceFirst(RegExp(r'^@+'), '');
 
       final userPayload = <String, dynamic>{
-        'name': _nomeController?.text.trim() ?? '',
-        'username': _usernameController?.text.trim() ?? '',
+        'name': normalizedName,
+        'username': normalizedUsername.isNotEmpty
+            ? normalizedUsername
+            : usernameSlugFromName(normalizedName, userId: currentUserUid),
         'city': city,
         'ciudad': city,
         'country': country,
@@ -4446,7 +4451,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             label: 'Nombre',
             controller: _nomeController,
             focusNode: _nomeFocusNode,
-            hintText: 'Nombre'),
+            hintText: 'Nombre',
+            textCapitalization: TextCapitalization.words),
         _buildTextField(
             label: 'Nombre de usuario',
             controller: _usernameController,
@@ -4614,7 +4620,8 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
             label: 'Nombre',
             controller: _nomeController,
             focusNode: _nomeFocusNode,
-            hintText: 'Nombre'),
+            hintText: 'Nombre',
+            textCapitalization: TextCapitalization.words),
         _buildTextField(
             label: 'Nombre de usuario',
             controller: _usernameController,

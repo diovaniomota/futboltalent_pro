@@ -48,5 +48,29 @@ void main() {
       expect(isValidExperience('-1'), isFalse);
       expect(isValidExperience('120'), isFalse);
     });
+
+    test('person names and generated usernames stay distinct', () {
+      expect(normalizePersonNameInput('  juan   perez  '), 'Juan Perez');
+      expect(
+        usernameSlugFromName('Juan Perez', userId: 'ABC-123-XYZ'),
+        'juan.perez.abc123',
+      );
+      expect(
+        displayUsername(
+          username: 'Juan Perez',
+          realName: 'Juan Perez',
+          userId: 'ABC-123-XYZ',
+        ),
+        '@juan.perez.abc123',
+      );
+      expect(
+        displayUsername(
+          username: '@pibe10',
+          realName: 'Juan Perez',
+          userId: 'ABC-123-XYZ',
+        ),
+        '@pibe10',
+      );
+    });
   });
 }

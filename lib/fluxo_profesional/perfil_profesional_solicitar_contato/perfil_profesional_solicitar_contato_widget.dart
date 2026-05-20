@@ -1,6 +1,7 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
 import '/fluxo_compartilhado/player_public_progress_service.dart';
 import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
@@ -54,6 +55,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   String? _guardianId;
   String _guardianStatus = GuardianMvpService.approvedStatus;
   String _selectedProfileTabKey = 'perfil';
+  String _targetUserType = '';
 
   @override
   void initState() {
@@ -117,7 +119,11 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         if (const ['jugador', 'jogador', 'player', 'athlete', 'atleta']
             .contains(targetType)) {
           targetType = 'jugador';
+        } else if (const ['club', 'clubes', 'equipo', 'team']
+            .contains(targetType)) {
+          targetType = 'club';
         }
+        _targetUserType = targetType;
         if (targetType == 'jugador') {
           try {
             final player = await SupaFlow.client
@@ -173,6 +179,10 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         }
         if (_isTargetPlayer) {
           await _registerProfileView();
+        }
+        if (targetType == 'club') {
+          if (mounted) setState(() => _isLoading = false);
+          return;
         }
       }
       // Check if minor and load guardian before loading videos to ensure proper visibility
@@ -363,34 +373,6 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     return null;
   }
 
-  Map<String, String>? _parseChallengeRef(String description) {
-    final match = RegExp(r'\[challenge_ref:(course|exercise):([^\]]+)\]')
-        .firstMatch(description);
-    if (match == null) return null;
-    return {
-      'type': (match.group(1) ?? '').trim(),
-      'id': (match.group(2) ?? '').trim(),
-    };
-  }
-
-  bool _isChallengeVideo(Map<String, dynamic> video) {
-    final persistedType =
-        (video['videoType'] ?? video['video_type'] ?? video['type'])
-            ?.toString()
-            .trim()
-            .toLowerCase();
-    if (persistedType == 'challenge') return true;
-    if (persistedType == 'ugc') return false;
-
-    final description = video['description']?.toString() ?? '';
-    if (_parseChallengeRef(description) != null) return true;
-
-    final title = video['title']?.toString().trim().toLowerCase() ?? '';
-    return title.startsWith('desafío:') ||
-        title.startsWith('desafio:') ||
-        title.startsWith('challenge:');
-  }
-
   bool _isFeaturedVideo(Map<String, dynamic> video) {
     final raw = video['featured_in_explorer'] ??
         video['is_featured'] ??
@@ -430,6 +412,13 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         role == 'player' ||
         role == 'athlete' ||
         role == 'atleta';
+  }
+
+  bool get _isTargetClub {
+    final role = _targetUserType.isNotEmpty
+        ? _targetUserType
+        : _userData?['userType']?.toString().toLowerCase().trim() ?? '';
+    return role == 'club' || role == 'clubes' || role == 'equipo';
   }
 
   Future<void> _checkStatus() async {
@@ -933,8 +922,19 @@ class _PerfilProfesionalSolicitarContatoWidgetState
       );
     }
 
+    if (_isTargetClub) {
+      return PerfilPublicoClubWidget(
+        clubRef: widget.userId ?? '',
+        initialClubData: _userData,
+      );
+    }
+
     final name = _userData?['name'] ?? _userData?['nombre'] ?? 'Usuario';
-    final user = _userData?['username'] ?? '@usuario';
+    final user = displayUsername(
+      username: _userData?['username'],
+      realName: name,
+      userId: widget.userId,
+    );
     final bio = _userData?['bio'] ?? _userData?['descripcion'] ?? '';
     final photo = _userData?['photo_url'] ?? '';
     final cover = _userData?['cover_url'] ?? _userData?['banner_url'] ?? '';
@@ -1188,7 +1188,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                         Padding(
                             padding: EdgeInsets.fromLTRB(
                                 horizontalPadding, 5, horizontalPadding, 0),
-                            child: Text(user.startsWith('@') ? user : '@$user',
+                            child: Text(user,
                                 style: GoogleFonts.inter(
                                     fontSize: 15, color: Color(0xFF444444)))),
                         if (_isMinor)
@@ -2530,6 +2530,18 @@ class _PublicPlayerVideoFeedItemState
     }
   }
 
+  Future<void> _seekBy(Duration offset) async {
+    final controller = _controller;
+    if (controller == null || !_isInitialized) return;
+    final duration = controller.value.duration;
+    final current = controller.value.position;
+    var target = current + offset;
+    if (target < Duration.zero) target = Duration.zero;
+    if (duration > Duration.zero && target > duration) target = duration;
+    await controller.seekTo(target);
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     _controller?.dispose();
@@ -2565,21 +2577,50 @@ class _PublicPlayerVideoFeedItemState
             ),
           ),
         ),
-        if ((title ?? '').isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                title!,
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () => _seekBy(const Duration(seconds: -10)),
+                    icon: const Icon(Icons.replay_10_rounded),
+                    color: Colors.white,
+                  ),
+                  Expanded(
+                    child: VideoProgressIndicator(
+                      _controller!,
+                      allowScrubbing: true,
+                      colors: const VideoProgressColors(
+                        playedColor: Color(0xFF0D3B66),
+                        bufferedColor: Colors.white38,
+                        backgroundColor: Colors.white24,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => _seekBy(const Duration(seconds: 10)),
+                    icon: const Icon(Icons.forward_10_rounded),
+                    color: Colors.white,
+                  ),
+                ],
               ),
-            ),
+              if ((title ?? '').isNotEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    title!,
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+            ],
           ),
+        ),
       ],
     );
   }

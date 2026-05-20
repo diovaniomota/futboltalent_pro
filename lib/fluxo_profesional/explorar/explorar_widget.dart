@@ -2105,12 +2105,14 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
               ? 'Jugador agregado a mi Scouting'
               : 'Jugador eliminado de mi Scouting',
         ),
+        duration: const Duration(seconds: 3),
         backgroundColor: added ? Colors.green : const Color(0xFF475569),
         action: added
             ? SnackBarAction(
                 label: 'Ver mi scouting',
                 textColor: Colors.white,
                 onPressed: () {
+                  messenger.hideCurrentSnackBar();
                   context.pushNamed(ListaYNotasWidget.routeName);
                 },
               )
@@ -5665,6 +5667,18 @@ class _VideoPlayerCardState extends State<_VideoPlayerCard> {
     }
   }
 
+  Future<void> _seekBy(Duration offset) async {
+    final controller = _controller;
+    if (controller == null || !_initialized) return;
+    final duration = controller.value.duration;
+    final current = controller.value.position;
+    var target = current + offset;
+    if (target < Duration.zero) target = Duration.zero;
+    if (duration > Duration.zero && target > duration) target = duration;
+    await controller.seekTo(target);
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     _controller?.dispose();
@@ -5700,15 +5714,44 @@ class _VideoPlayerCardState extends State<_VideoPlayerCard> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              widget.title,
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () => _seekBy(const Duration(seconds: -10)),
+                    icon: const Icon(Icons.replay_10_rounded),
+                    color: Colors.white,
+                  ),
+                  Expanded(
+                    child: VideoProgressIndicator(
+                      _controller!,
+                      allowScrubbing: true,
+                      colors: const VideoProgressColors(
+                        playedColor: Color(0xFF1473E6),
+                        bufferedColor: Colors.white38,
+                        backgroundColor: Colors.white24,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => _seekBy(const Duration(seconds: 10)),
+                    icon: const Icon(Icons.forward_10_rounded),
+                    color: Colors.white,
+                  ),
+                ],
               ),
-            ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  widget.title,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],

@@ -1017,12 +1017,13 @@ class _FeedWidgetState extends State<FeedWidget>
           video,
           ownerData: ownerData,
         )) return false;
-        
+
         final videoUserId = video['user_id']?.toString() ?? '';
-        if (videoUserId.isNotEmpty && ContentModerationService.isBlocked(videoUserId)) {
+        if (videoUserId.isNotEmpty &&
+            ContentModerationService.isBlocked(videoUserId)) {
           return false;
         }
-        
+
         return true;
       }).toList();
 
@@ -1624,32 +1625,6 @@ class _ChallengeFeedItem extends StatelessWidget {
     return challengeData['type'] == 'course' ? 'Curso' : 'Ejercicio';
   }
 
-  String get _statusLabel {
-    switch (_status) {
-      case 'completed':
-        return 'Completado';
-      case 'submitted':
-        return 'Video enviado';
-      case 'in_progress':
-        return 'En curso';
-      default:
-        return 'Desafío activo';
-    }
-  }
-
-  Color get _statusColor {
-    switch (_status) {
-      case 'completed':
-        return const Color(0xFF15803D);
-      case 'submitted':
-        return const Color(0xFFD97706);
-      case 'in_progress':
-        return const Color(0xFF0D3B66);
-      default:
-        return Colors.white.withOpacity(0.18);
-    }
-  }
-
   String get _headline {
     final reward = GamificationService.challengeCompletedPoints;
     if (!hasAccess) {
@@ -2021,6 +1996,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                 label: 'Ver mi scouting',
                 textColor: Colors.white,
                 onPressed: () {
+                  messenger.hideCurrentSnackBar();
                   context.pushNamed('Lista_y_notas');
                 },
               )
@@ -2698,6 +2674,18 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
     });
   }
 
+  Future<void> _seekBy(Duration offset) async {
+    final controller = _controller;
+    if (controller == null || !_isInitialized) return;
+    final duration = controller.value.duration;
+    final current = controller.value.position;
+    var target = current + offset;
+    if (target < Duration.zero) target = Duration.zero;
+    if (duration > Duration.zero && target > duration) target = duration;
+    await controller.seekTo(target);
+    if (mounted) setState(() {});
+  }
+
   void _toggleMute() {
     if (_controller == null) return;
     setState(() {
@@ -2972,32 +2960,63 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                   _buildSideBtn(Icons.chat_bubble_outline, false,
                       _formatCount(_commentsCount), _openComments),
                   _buildSideBtn(
-                      _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                      _isSaveLoading
+                          ? Icons.hourglass_empty_rounded
+                          : (_isSaved ? Icons.bookmark : Icons.bookmark_border),
                       _isSaved,
-                      _canAddAuthorToScouting
-                          ? 'Guardar'
-                          : (_isSaved ? 'Guardado' : 'Guardar'),
-                      _toggleSave),
+                      _isSaveLoading
+                          ? '...'
+                          : (_canAddAuthorToScouting
+                              ? 'Guardar'
+                              : (_isSaved ? 'Guardado' : 'Guardar')),
+                      _isSaveLoading ? () {} : _toggleSave),
                   if (widget.currentUserId != null &&
-                      widget.currentUserId != (widget.videoData['user_id']?.toString() ?? ''))
-                    _buildSideBtn(
-                        Icons.more_horiz,
-                        false,
-                        '',
-                        () async {
-                          final blocked = await ContentModerationService
-                              .showVideoModerationSheet(
-                            context: context,
-                            videoId: widget.videoData['id']?.toString() ?? '',
-                            videoOwnerId:
-                                widget.videoData['user_id']?.toString(),
-                            videoOwnerName: widget.videoData['user_data']?['name']?.toString(),
-                          );
-                          if (blocked) {
-                            widget.onUserBlocked?.call();
-                          }
-                        }),
+                      widget.currentUserId !=
+                          (widget.videoData['user_id']?.toString() ?? ''))
+                    _buildSideBtn(Icons.more_horiz, false, '', () async {
+                      final blocked = await ContentModerationService
+                          .showVideoModerationSheet(
+                        context: context,
+                        videoId: widget.videoData['id']?.toString() ?? '',
+                        videoOwnerId: widget.videoData['user_id']?.toString(),
+                        videoOwnerName:
+                            widget.videoData['user_data']?['name']?.toString(),
+                      );
+                      if (blocked) {
+                        widget.onUserBlocked?.call();
+                      }
+                    }),
                 ])),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: safeBottom + (hasBottomNav ? 72 : 36),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildSeekButton(Icons.replay_10_rounded,
+                          () => _seekBy(const Duration(seconds: -10))),
+                      const SizedBox(width: 14),
+                      _buildSeekButton(Icons.forward_10_rounded,
+                          () => _seekBy(const Duration(seconds: 10))),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  VideoProgressIndicator(
+                    _controller!,
+                    allowScrubbing: true,
+                    colors: const VideoProgressColors(
+                      playedColor: Color(0xFF0D3B66),
+                      bufferedColor: Colors.white38,
+                      backgroundColor: Colors.white24,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             if (_isPaused)
               Center(
                 child: Column(
@@ -3061,5 +3080,21 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
               Text(label,
                   style: const TextStyle(color: Colors.white, fontSize: 12)),
             ])));
+  }
+
+  Widget _buildSeekButton(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.45),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Icon(icon, color: Colors.white, size: 20),
+      ),
+    );
   }
 }

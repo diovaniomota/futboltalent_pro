@@ -32,11 +32,25 @@ class SupabaseAuthManager extends AuthManager with EmailSignInManager {
         debugPrint('Error: delete user attempted with no logged in user!');
         return;
       }
-      await currentUser?.delete();
-    } on AuthException catch (e) {
+      await SupaFlow.client.rpc('delete_own_account');
+      FFAppState().clearAuthenticatedSessionState();
+      currentUser = FutboltalentProSupabaseUser(null);
+      AppStateNotifier.instance.update(currentUser!);
+    } on AuthException {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No pudimos eliminar tu cuenta. Verifica tu conexión e intenta de nuevo.'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'No pudimos eliminar tu cuenta. Verifica tu conexión e intenta de nuevo.'),
+          backgroundColor: Colors.red));
+    } catch (e) {
+      debugPrint('SupabaseAuthManager delete user error: $e');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'No pudimos eliminar tu cuenta. Verifica tu conexión e intenta de nuevo.'),
+          backgroundColor: Colors.red));
     }
   }
 
@@ -51,10 +65,13 @@ class SupabaseAuthManager extends AuthManager with EmailSignInManager {
         return;
       }
       await currentUser?.updateEmail(email);
-    } on AuthException catch (e) {
+    } on AuthException {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No pudimos actualizar tu correo. Verifica los datos e intenta de nuevo.'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'No pudimos actualizar tu correo. Verifica los datos e intenta de nuevo.'),
+          backgroundColor: Colors.red));
       return;
     }
     if (!context.mounted) return;
@@ -73,10 +90,13 @@ class SupabaseAuthManager extends AuthManager with EmailSignInManager {
         return;
       }
       await currentUser?.updatePassword(newPassword);
-    } on AuthException catch (e) {
+    } on AuthException {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No pudimos actualizar tu contraseña. Verifica los datos e intenta de nuevo.'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'No pudimos actualizar tu contraseña. Verifica los datos e intenta de nuevo.'),
+          backgroundColor: Colors.red));
       return;
     }
     if (!context.mounted) return;
@@ -94,10 +114,13 @@ class SupabaseAuthManager extends AuthManager with EmailSignInManager {
     try {
       await SupaFlow.client.auth
           .resetPasswordForEmail(email, redirectTo: redirectTo);
-    } on AuthException catch (e) {
+    } on AuthException {
       if (!context.mounted) return null;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No pudimos enviar el correo de recuperación. Verifica el correo e intenta de nuevo.'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'No pudimos enviar el correo de recuperación. Verifica el correo e intenta de nuevo.'),
+          backgroundColor: Colors.red));
       return null;
     }
     if (!context.mounted) return;
