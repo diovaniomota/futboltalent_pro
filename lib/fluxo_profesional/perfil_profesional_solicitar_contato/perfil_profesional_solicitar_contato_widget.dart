@@ -681,18 +681,27 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         if (mounted) setState(() => _isGuardado = true);
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(SnackBar(
           content: Text(_isGuardado
               ? 'Jugador agregado a mi Scouting'
               : 'Jugador eliminado de mi Scouting'),
+          duration: const Duration(seconds: 3),
           backgroundColor: _isGuardado ? Colors.green : const Color(0xFF475569),
           action: _isGuardado
               ? SnackBarAction(
                   label: 'Ver mi scouting',
                   textColor: Colors.white,
                   onPressed: () {
-                    context.pushNamed('Lista_y_notas');
+                    messenger.hideCurrentSnackBar();
+                    if (!mounted) return;
+                    final uType = FFAppState.normalizeUserType(FFAppState().userType);
+                    if (uType == 'club_staff') {
+                      context.pushNamed('Lista_y_nota');
+                    } else {
+                      context.pushNamed('Lista_y_notas');
+                    }
                   },
                 )
               : null,

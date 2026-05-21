@@ -7,6 +7,7 @@ import '/fluxo_compartilhado/password_policy.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
+import '/fluxo_compartilhado/email_service.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
@@ -2903,6 +2904,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       FFAppState().registrationFlowActive = false;
       throw Exception('No se pudo crear la cuenta. Intenta de nuevo.');
     }
+    TextInput.finishAutofillContext();
     return uid;
   }
 
@@ -3184,15 +3186,18 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       }
 
       // Se menor, salvar guardian
+      var guardianEmailSent = false;
       if (isMinor) {
         final approvalCodeExpiresAt = DateTime.now()
             .toUtc()
             .add(const Duration(days: 7))
             .toIso8601String();
+        final guardianEmail =
+            _guardianEmailController.text.trim().toLowerCase();
         final guardianPayload = {
           'name': 'Responsable legal',
           'relationship': _guardianRelationship,
-          'email': _guardianEmailController.text.trim(),
+          'email': guardianEmail,
           'player_id': uid,
           'status': GuardianMvpService.pendingStatus,
           'approval_code': approvalCode,
@@ -3268,6 +3273,15 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             }
           }
         }
+
+        if (approvalCode != null && approvalCode.isNotEmpty) {
+          guardianEmailSent = await EmailService.sendGuardianValidationEmail(
+            playerId: uid,
+            guardianEmail: guardianEmail,
+            playerName: normalizedName.isNotEmpty ? normalizedName : 'Jugador',
+            approvalCode: approvalCode,
+          );
+        }
       }
 
       FFAppState().userType = userType;
@@ -3281,6 +3295,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         await _showGuardianApprovalCodeDialog(
           approvalCode: approvalCode,
           guardianEmail: _guardianEmailController.text.trim(),
+          emailSent: guardianEmailSent,
         );
 
         // The minor must NOT access the app until the guardian approves.
@@ -3335,6 +3350,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   Future<void> _showGuardianApprovalCodeDialog({
     required String approvalCode,
     required String guardianEmail,
+    required bool emailSent,
   }) async {
     await showDialog<void>(
       context: context,
@@ -3346,33 +3362,41 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              guardianEmail.isNotEmpty
-                  ? 'La cuenta quedó en modo limitado hasta que el adulto responsable apruebe el acceso. Comparte este código con $guardianEmail.'
-                  : 'La cuenta quedó en modo limitado hasta que el adulto responsable apruebe el acceso. Comparte este código con tu responsable.',
+              emailSent && guardianEmail.isNotEmpty
+                  ? 'La cuenta quedó en modo limitado hasta que el adulto responsable apruebe el acceso. Enviamos el código de aprobación a $guardianEmail.'
+                  : 'La cuenta quedó en modo limitado hasta que el adulto responsable apruebe el acceso. No pudimos enviar el e-mail automáticamente; inicia sesión y usa la opción de reenviar el código.',
             ),
             const SizedBox(height: 14),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFD1D5DB)),
-              ),
-              child: SelectableText(
-                approvalCode,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF0D3B66),
-                  letterSpacing: 1.1,
+            if (emailSent)
+              const Text(
+                'Pídele que revise la bandeja de entrada y spam. El código vence en 7 días.',
+              )
+            else
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFD1D5DB)),
+                ),
+                child: SelectableText(
+                  approvalCode,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF0D3B66),
+                    letterSpacing: 1.1,
+                  ),
                 ),
               ),
-            ),
             const SizedBox(height: 12),
-            const Text(
-              'El responsable puede aprobarlo desde la pantalla de login usando este código.',
+            Text(
+              emailSent
+                  ? 'El responsable puede aprobarlo desde la pantalla de login usando el código recibido.'
+                  : 'El responsable puede aprobarlo desde la pantalla de login cuando el reenvío funcione.',
             ),
           ],
         ),
@@ -3631,8 +3655,10 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       padding: EdgeInsets.symmetric(
           horizontal:
               _responsive(context, mobile: 20, tablet: 40, desktop: 60)),
-      child: Column(
-        children: [
+      child: AutofillGroup(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
           Padding(
             padding: EdgeInsets.only(top: 20 * scale),
             child: Text(
@@ -3654,6 +3680,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             controller: _emailController,
             focusNode: _emailFocusNode,
             keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
             width: double.infinity,
           ),
           SizedBox(height: 15 * scale),
@@ -3665,6 +3692,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
             focusNode: _senhaFocusNode,
             keyboardType: TextInputType.visiblePassword,
             obscureText: !_senhaVisibility,
+            autofillHints: const [AutofillHints.newPassword],
             width: double.infinity,
             textCapitalization: TextCapitalization.none,
             autocorrect: false,
@@ -3744,11 +3772,11 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildSocialButton(
-      BuildContext context, String text, IconData icon, double width,
+      BuildContext context, String text, dynamic icon, double width,
       {VoidCallback? onPressed}) {
     final scale = _scaleFactor(context);
     return SizedBox(
@@ -3756,9 +3784,11 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       height: 50 * scale,
       child: ElevatedButton.icon(
         onPressed: onPressed,
-        icon: Icon(icon,
-            size: icon == Icons.apple ? 28 * scale : 15 * scale,
-            color: const Color(0xFF444444)),
+        icon: icon is IconData 
+            ? Icon(icon,
+                size: icon == Icons.apple ? 28 * scale : 15 * scale,
+                color: const Color(0xFF444444))
+            : FaIcon(icon, size: 15 * scale, color: const Color(0xFF444444)),
         label: Text(text,
             style: GoogleFonts.inter(
                 fontSize: 13 * scale,
@@ -4951,6 +4981,7 @@ Para cualquier consulta sobre privacidad: info@futboltalent.pro
     bool autocorrect = true,
     bool enableSuggestions = true,
     ValueChanged<String>? onChanged,
+    Iterable<String>? autofillHints,
   }) {
     final scale = _scaleFactor(context);
     final fontSize = 13 * scale;
@@ -4978,6 +5009,7 @@ Para cualquier consulta sobre privacidad: info@futboltalent.pro
             autocorrect: autocorrect,
             enableSuggestions: enableSuggestions,
             onChanged: onChanged,
+            autofillHints: autofillHints,
             style: GoogleFonts.inter(fontSize: fontSize),
             decoration: InputDecoration(
               hintText: hint,

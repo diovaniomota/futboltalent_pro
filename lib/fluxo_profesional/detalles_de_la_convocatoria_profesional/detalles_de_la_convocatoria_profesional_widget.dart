@@ -935,7 +935,7 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(children: [
-                        const FaIcon(FontAwesomeIcons.solidClock,
+                        FaIcon(FontAwesomeIcons.solidClock,
                             color: Color(0xFF0D3B66), size: 20),
                         const SizedBox(width: 12),
                         Text('Proceso de Aprobación',

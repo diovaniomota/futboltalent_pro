@@ -103,6 +103,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           .toList();
   late Stream<BaseAuthUser> userStream;
   StreamSubscription<BaseAuthUser>? _userStreamSubscription;
+  StreamSubscription<AuthState>? _authStateSubscription;
   Timer? _accountGuardTimer;
   bool _isCheckingAccountGuard = false;
   bool _isForcingLogout = false;
@@ -125,6 +126,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _appStateNotifier.update(user);
       _onAuthUserChanged(user);
     });
+
+    _authStateSubscription = SupaFlow.client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _showPasswordRecoveryDialog();
+        });
+      }
+    });
+
     _enforceAccountAccessRules();
     jwtTokenStream.listen(
       (_) {},
@@ -143,7 +153,90 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _accountGuardTimer?.cancel();
     _userStreamSubscription?.cancel();
+    _authStateSubscription?.cancel();
     super.dispose();
+  }
+
+  void _showPasswordRecoveryDialog() {
+    final context = _router.routerDelegate.navigatorKey.currentContext;
+    if (context == null) return;
+
+    final passwordController = TextEditingController();
+    bool isLoading = false;
+    String? errorMessage;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Actualizar Contraseña'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Ingresa tu nueva contraseña para continuar.'),
+              const SizedBox(height: 15),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  hintText: 'Nueva contraseña',
+                  errorText: errorMessage,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            if (isLoading)
+              const Padding(
+                padding: EdgeInsets.only(right: 16.0),
+                child: CircularProgressIndicator(),
+              )
+            else ...[
+              TextButton(
+                onPressed: () {
+                  SupaFlow.client.auth.signOut();
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (passwordController.text.trim().length < 6) {
+                    setState(() => errorMessage = 'La contraseña debe tener al menos 6 caracteres.');
+                    return;
+                  }
+                  setState(() {
+                    isLoading = true;
+                    errorMessage = null;
+                  });
+                  try {
+                    await SupaFlow.client.auth.updateUser(
+                      UserAttributes(password: passwordController.text.trim()),
+                    );
+                    if (!ctx.mounted) return;
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Contraseña actualizada correctamente.'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  } catch (e) {
+                    setState(() {
+                      isLoading = false;
+                      errorMessage = 'Error al actualizar la contraseña.';
+                    });
+                  }
+                },
+                child: const Text('Guardar'),
+              ),
+            ]
+          ],
+        ),
+      ),
+    );
   }
 
   @override

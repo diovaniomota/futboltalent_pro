@@ -2,9 +2,11 @@ import '/admin/admin_runtime_service.dart';
 import '/admin/admin_user_management_service.dart';
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
+import '/fluxo_compartilhado/account_deletion_service.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'admin_settings_model.dart';
 export 'admin_settings_model.dart';
 
@@ -857,6 +859,54 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
     }
   }
 
+  Future<void> _signOut() async {
+    try {
+      await authManager.signOut();
+    } catch (e) {
+      debugPrint('Admin settings logout error: $e');
+    }
+    if (mounted) {
+      context.goNamed('login');
+    }
+  }
+
+  Widget _buildAccountActionsCard() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: FlutterFlowTheme.of(context).secondaryBackground,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.logout_rounded),
+            title: const Text('Cerrar sesión'),
+            subtitle: const Text('Salí de tu cuenta en este dispositivo.'),
+            onTap: _signOut,
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(
+              Icons.delete_forever_outlined,
+              color: Color(0xFFDC2626),
+            ),
+            title: const Text(
+              'Eliminar mi cuenta',
+              style: TextStyle(color: Color(0xFFDC2626)),
+            ),
+            subtitle: const Text('Borrá tu cuenta y datos asociados.'),
+            onTap: () async {
+              await AccountDeletionService.showDeleteAccountDialog(
+                context: context,
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -885,6 +935,11 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text('Cuenta',
+                        style: FlutterFlowTheme.of(context).headlineSmall),
+                    const SizedBox(height: 8),
+                    _buildAccountActionsCard(),
+                    const SizedBox(height: 16),
                     Text('Modo piloto global',
                         style: FlutterFlowTheme.of(context).headlineSmall),
                     const SizedBox(height: 8),

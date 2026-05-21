@@ -4,6 +4,8 @@ import '/fluxo_compartilhado/profile_support_sheet.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
 import '/fluxo_compartilhado/notificacoes/notificacoes_widget.dart';
+import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
+import '/fluxo_compartilhado/account_deletion_service.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/index.dart'; // For EditarPerfilWidget and PerfilProfesionalSolicitarContatoWidget
@@ -695,14 +697,14 @@ class _PerfilProfesioanlWidgetState extends State<PerfilProfesioanlWidget>
     );
   }
 
-  Widget _iconBtn(IconData i, VoidCallback t) => GestureDetector(
+  Widget _iconBtn(IconData i, VoidCallback t, {Color color = Colors.black87}) => GestureDetector(
       onTap: t,
       child: Container(
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.9), shape: BoxShape.circle),
-          child: Icon(i, color: Colors.black87, size: 22)));
+              color: color == Colors.black87 ? Colors.white.withOpacity(0.9) : color.withOpacity(0.1), shape: BoxShape.circle),
+          child: Icon(i, color: color, size: 22)));
 
   Widget _notificationIconBtn(VoidCallback onTap) => Stack(
         clipBehavior: Clip.none,

@@ -6,6 +6,7 @@ import '/fluxo_compartilhado/profile_support_sheet.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/fluxo_compartilhado/video_like_utils.dart';
 import '/fluxo_compartilhado/video_visibility_utils.dart';
+import '/fluxo_compartilhado/account_deletion_service.dart';
 import '/gamification/gamification_service.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/guardian/guardian_mvp_service.dart';
@@ -3168,6 +3169,27 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                         child: const Icon(
                                           Icons.logout,
                                           size: 24,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    // Eliminar cuenta
+                                    GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () async {
+                                        await AccountDeletionService.showDeleteAccountDialog(context: context);
+                                      },
+                                      child: Container(
+                                        width: 35,
+                                        height: 35,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFDC2626),
+                                          borderRadius: BorderRadius.circular(18),
+                                        ),
+                                        child: const Icon(
+                                          Icons.delete_forever,
+                                          size: 20,
+                                          color: Colors.white,
                                         ),
                                       ),
                                     ),

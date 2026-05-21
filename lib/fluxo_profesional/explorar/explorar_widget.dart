@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'explorar_model.dart';
 export 'explorar_model.dart';
 
@@ -2113,7 +2114,13 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                 textColor: Colors.white,
                 onPressed: () {
                   messenger.hideCurrentSnackBar();
-                  context.pushNamed(ListaYNotasWidget.routeName);
+                  if (!mounted) return;
+                  final uType = FFAppState.normalizeUserType(FFAppState().userType);
+                  if (uType == 'club_staff') {
+                    context.pushNamed('Lista_y_nota');
+                  } else {
+                    context.pushNamed('Lista_y_notas');
+                  }
                 },
               )
             : null,
@@ -5539,43 +5546,97 @@ class _VideoPreviewSheetState extends State<_VideoPreviewSheet> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 74,
-                height: 74,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.18),
-                  ),
-                ),
-                child: const Icon(
-                  Icons.check_circle_outline_rounded,
-                  color: Colors.white,
-                  size: 38,
+              SizedBox(
+                width: 140,
+                height: 140,
+                child: Stack(
+                  alignment: Alignment.center,
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    FaIcon(
+                      FontAwesomeIcons.binoculars,
+                      size: 64,
+                      color: Color(0xFF64748B),
+                    ),
+                    Positioned(
+                      top: 4,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF0F172A),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF22C55E),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.check,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 15,
+                      left: 0,
+                      child: Icon(Icons.star, color: const Color(0xFF22C55E).withValues(alpha: 0.6), size: 12),
+                    ),
+                    Positioned(
+                      top: 45,
+                      right: 0,
+                      child: Icon(Icons.star, color: const Color(0xFF22C55E).withValues(alpha: 0.8), size: 16),
+                    ),
+                    Positioned(
+                      bottom: 15,
+                      left: 15,
+                      child: Icon(Icons.star, color: Colors.blueAccent.withValues(alpha: 0.5), size: 10),
+                    ),
+                    Positioned(
+                      bottom: 35,
+                      right: 25,
+                      child: Icon(Icons.star, color: Colors.blueAccent.withValues(alpha: 0.4), size: 8),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 32),
               Text(
                 'Llegaste al final',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   color: Colors.white,
-                  fontSize: 20,
+                  fontSize: 24,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               Text(
                 'Ya viste todos los videos disponibles de este jugador.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   color: Colors.white70,
-                  fontSize: 14,
-                  height: 1.35,
+                  fontSize: 15,
+                  height: 1.4,
                 ),
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 48),
+              Container(
+                width: 220,
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.1),
+              ),
+              const SizedBox(height: 32),
               ElevatedButton.icon(
                 onPressed: () {
                   _pageController.animateToPage(

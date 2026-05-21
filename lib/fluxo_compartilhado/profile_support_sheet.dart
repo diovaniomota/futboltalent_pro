@@ -1,9 +1,11 @@
 import '/backend/supabase/supabase.dart';
+import '/auth/supabase_auth/auth_util.dart';
 import '/fluxo_compartilhado/account_deletion_service.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-enum _ProfileSupportAction { editProfile, feedback, deleteAccount }
+enum _ProfileSupportAction { editProfile, feedback, signOut, deleteAccount }
 
 Future<void> showProfileSupportSheet({
   required BuildContext context,
@@ -46,7 +48,7 @@ Future<void> showProfileSupportSheet({
               ),
               const SizedBox(height: 6),
               Text(
-                'Elegí si querés editar tu perfil o enviar un reporte.',
+                'Administrá tu perfil, sesión y datos de la cuenta.',
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   color: const Color(0xFF64748B),
@@ -68,6 +70,14 @@ Future<void> showProfileSupportSheet({
                 subtitle: 'Mandanos feedback desde esta pantalla.',
                 onTap: () => Navigator.of(sheetContext)
                     .pop(_ProfileSupportAction.feedback),
+              ),
+              const SizedBox(height: 10),
+              _SupportActionTile(
+                icon: Icons.logout_rounded,
+                title: 'Cerrar sesión',
+                subtitle: 'Salí de tu cuenta en este dispositivo.',
+                onTap: () => Navigator.of(sheetContext)
+                    .pop(_ProfileSupportAction.signOut),
               ),
               const SizedBox(height: 10),
               _SupportActionTile(
@@ -96,6 +106,17 @@ Future<void> showProfileSupportSheet({
       userId: userId,
       screenName: screenName,
     );
+    return;
+  }
+
+  if (action == _ProfileSupportAction.signOut) {
+    try {
+      await authManager.signOut();
+    } catch (_) {}
+    if (context.mounted) {
+      context.goNamed('login');
+    }
+    return;
   }
 
   if (action == _ProfileSupportAction.deleteAccount) {

@@ -18,6 +18,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '/flutter_flow/nav/nav.dart';
 import 'feed_model.dart';
 export 'feed_model.dart';
@@ -1372,9 +1373,6 @@ class _FeedWidgetState extends State<FeedWidget>
   Widget _buildEndOfFeedContent() {
     final hasBottomNav = FFAppState().userType == 'jugador' ||
         FFAppState().userType == 'profesional';
-    final message = _isScoutViewer
-        ? 'No hay más jugadores para evaluar con los filtros actuales. Actualiza el feed para comprobar si hay nuevos perfiles.'
-        : 'No hay más contenido disponible actualmente. Actualiza el feed para comprobar si hay nuevas publicaciones.';
 
     return SafeArea(
       child: Padding(
@@ -1383,114 +1381,140 @@ class _FeedWidgetState extends State<FeedWidget>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 82,
-                height: 82,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.18),
-                  ),
-                ),
-                child: const Icon(
-                  Icons.check_circle_outline_rounded,
-                  color: Colors.white,
-                  size: 42,
+              SizedBox(
+                width: 140,
+                height: 140,
+                child: Stack(
+                  alignment: Alignment.center,
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const FaIcon(
+                      FontAwesomeIcons.binoculars,
+                      size: 64,
+                      color: Color(0xFF64748B),
+                    ),
+                    Positioned(
+                      top: 4,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF0F172A),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF22C55E),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.check,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 15,
+                      left: 0,
+                      child: Icon(Icons.star, color: const Color(0xFF22C55E).withValues(alpha: 0.6), size: 12),
+                    ),
+                    Positioned(
+                      top: 45,
+                      right: 0,
+                      child: Icon(Icons.star, color: const Color(0xFF22C55E).withValues(alpha: 0.8), size: 16),
+                    ),
+                    Positioned(
+                      bottom: 15,
+                      left: 15,
+                      child: Icon(Icons.star, color: Colors.blueAccent.withValues(alpha: 0.5), size: 10),
+                    ),
+                    Positioned(
+                      bottom: 35,
+                      right: 25,
+                      child: Icon(Icons.star, color: Colors.blueAccent.withValues(alpha: 0.4), size: 8),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 22),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.16),
-                  ),
-                ),
-                child: Text(
-                  'Contenido al día',
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 32),
               Text(
-                'Estás al día',
+                '¡Estás al día!',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   color: Colors.white,
-                  fontSize: 22,
+                  fontSize: 24,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               Text(
-                message,
+                'Ya viste todo el contenido disponible por ahora.\n\nVuelve más tarde para seguir\ndescubriendo talentos.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   color: Colors.white70,
-                  fontSize: 14,
-                  height: 1.35,
+                  fontSize: 15,
+                  height: 1.4,
                 ),
               ),
-              const SizedBox(height: 24),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: _loadVideos,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF0D3B66),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 18, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+              const SizedBox(height: 48),
+              Container(
+                width: 220,
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.1),
+              ),
+              const SizedBox(height: 32),
+              GestureDetector(
+                onTap: _loadVideos,
+                behavior: HitTestBehavior.opaque,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_downward_rounded,
+                        color: Color(0xFF22C55E),
+                        size: 20,
                       ),
                     ),
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                    label: Text(
-                      'Actualizar feed',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                    const SizedBox(width: 16),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Desliza hacia abajo',
+                          style: GoogleFonts.inter(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'para buscar nuevo contenido',
+                          style: GoogleFonts.inter(
+                            color: const Color(0xFF22C55E),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      if (_pageController?.hasClients ?? false) {
-                        _pageController?.animateToPage(
-                          0,
-                          duration: const Duration(milliseconds: 450),
-                          curve: Curves.easeInOut,
-                        );
-                      }
-                    },
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.42),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 18, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    icon:
-                        const Icon(Icons.vertical_align_top_rounded, size: 18),
-                    label: Text(
-                      'Volver al inicio',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -1997,7 +2021,13 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
                 textColor: Colors.white,
                 onPressed: () {
                   messenger.hideCurrentSnackBar();
-                  context.pushNamed('Lista_y_notas');
+                  if (!mounted) return;
+                  final uType = FFAppState.normalizeUserType(FFAppState().userType);
+                  if (uType == 'club_staff') {
+                    context.pushNamed('Lista_y_nota');
+                  } else {
+                    context.pushNamed('Lista_y_notas');
+                  }
                 },
               )
             : null,
@@ -2994,17 +3024,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildSeekButton(Icons.replay_10_rounded,
-                          () => _seekBy(const Duration(seconds: -10))),
-                      const SizedBox(width: 14),
-                      _buildSeekButton(Icons.forward_10_rounded,
-                          () => _seekBy(const Duration(seconds: 10))),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
+
                   VideoProgressIndicator(
                     _controller!,
                     allowScrubbing: true,

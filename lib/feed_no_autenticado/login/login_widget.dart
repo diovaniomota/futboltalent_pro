@@ -5,6 +5,7 @@ import '/backend/supabase/supabase.dart';
 import '/guardian/guardian_mvp_service.dart';
 import '/index.dart'; // For routes
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -84,8 +85,7 @@ class _LoginWidgetState extends State<LoginWidget> {
 
   bool get _shouldShowGuardianApprovalButton =>
       _guardianApprovalRequested ||
-      (_pendingGuardianPlayerId?.trim().isNotEmpty ?? false) ||
-      _isGuardianApprovalContext(_errorMessage);
+      (_pendingGuardianPlayerId?.trim().isNotEmpty ?? false);
 
   double _responsive(BuildContext context,
       {required double mobile, double? tablet, double? desktop}) {
@@ -137,6 +137,7 @@ class _LoginWidgetState extends State<LoginWidget> {
 
       // Sincroniza o userType do banco e aguarda conclusão
       final signedInUid = user.uid?.trim() ?? '';
+      TextInput.finishAutofillContext();
       FFAppState().clearAuthenticatedSessionState();
       await FFAppState().syncUserType(expectedUid: signedInUid);
 
@@ -375,13 +376,15 @@ class _LoginWidgetState extends State<LoginWidget> {
     final fieldWidth =
         _responsive(context, mobile: 337, tablet: 380, desktop: 400);
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+    return AutofillGroup(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
       SizedBox(
           width: fieldWidth * scale,
           child: TextFormField(
             controller: _emailController,
             focusNode: _emailFocusNode,
             keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
             textInputAction: TextInputAction.next,
             onFieldSubmitted: (_) => _senhaFocusNode.requestFocus(),
             style: GoogleFonts.inter(fontSize: 16 * scale),
@@ -394,6 +397,7 @@ class _LoginWidgetState extends State<LoginWidget> {
             controller: _senhaController,
             focusNode: _senhaFocusNode,
             obscureText: !_senhaVisibility,
+            autofillHints: const [AutofillHints.password],
             textInputAction: TextInputAction.done,
             onFieldSubmitted: (_) => _handleLogin(),
             style: GoogleFonts.inter(fontSize: 16 * scale),
@@ -440,7 +444,7 @@ class _LoginWidgetState extends State<LoginWidget> {
         Padding(
             padding: EdgeInsets.only(top: 16 * scale),
             child: _buildErrorMessage(context, _errorMessage!)),
-    ]);
+    ]));
   }
 
   InputDecoration _inputDecoration(String hint, double scale) {
@@ -551,7 +555,8 @@ class _LoginWidgetState extends State<LoginWidget> {
                           try {
                             await authManager.resetPassword(
                                 email: resetEmailController.text.trim(),
-                                context: context);
+                                context: context,
+                                redirectTo: 'futboltalent://login-callback');
                             if (!ctx.mounted || !mounted) return;
                             Navigator.pop(ctx);
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -698,10 +703,13 @@ class _LoginWidgetState extends State<LoginWidget> {
                                   localError = null;
                                 });
                               } catch (e) {
+                                final message = e.toString().toLowerCase();
                                 setDialogState(() {
                                   isSubmitting = false;
-                                  localError =
-                                      'No se pudo actualizar el correo. Intenta nuevamente.';
+                                  localError = message.contains(
+                                          'guardian_email_send_failed')
+                                      ? 'El correo fue actualizado, pero no pudimos enviar el código. Intenta reenviar en unos minutos.'
+                                      : 'No se pudo actualizar el correo. Intenta nuevamente.';
                                   successMessage = null;
                                 });
                               }
@@ -817,7 +825,7 @@ class _LoginWidgetState extends State<LoginWidget> {
   Widget _buildSocialButton(
     BuildContext context,
     String label,
-    IconData icon,
+    dynamic icon,
     double width, {
     required VoidCallback onPressed,
   }) {
@@ -830,9 +838,11 @@ class _LoginWidgetState extends State<LoginWidget> {
       height: 50 * scale,
       child: OutlinedButton.icon(
         onPressed: _isLoading ? null : onPressed,
-        icon: Icon(icon,
-            size: icon == Icons.apple ? 24 * scale : 18 * scale,
-            color: const Color(0xFF0D3B66)),
+        icon: icon is IconData 
+            ? Icon(icon,
+                size: icon == Icons.apple ? 24 * scale : 18 * scale,
+                color: const Color(0xFF0D3B66))
+            : FaIcon(icon, size: 18 * scale, color: const Color(0xFF0D3B66)),
         label: Text(
           label,
           style: GoogleFonts.inter(

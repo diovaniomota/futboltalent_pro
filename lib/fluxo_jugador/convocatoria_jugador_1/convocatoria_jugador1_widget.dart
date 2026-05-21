@@ -605,7 +605,7 @@ class _ConvocatoriaJugador1WidgetState
           hintText: 'Buscar convocatorias',
           hintStyle:
               GoogleFonts.inter(color: const Color(0xFF444444), fontSize: 14),
-          prefixIcon: const Icon(FontAwesomeIcons.magnifyingGlass,
+          prefixIcon: FaIcon(FontAwesomeIcons.magnifyingGlass,
               size: 18, color: Color(0xFF444444)),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(

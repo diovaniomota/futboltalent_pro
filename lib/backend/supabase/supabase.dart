@@ -11,6 +11,8 @@ class SupaFlow {
 
   static SupaFlow? _instance;
   static SupaFlow get instance => _instance ??= SupaFlow._();
+  static String get supabaseUrl => _kSupabaseUrl;
+  static String get supabaseAnonKey => _kSupabaseAnonKey;
 
   static SupabaseClient? _testClient;
   static set testClient(SupabaseClient? client) => _testClient = client;
@@ -20,9 +22,7 @@ class SupaFlow {
 
   static Future initialize() => Supabase.initialize(
         url: _kSupabaseUrl,
-        headers: {
-          'X-Client-Info': 'flutterflow',
-        },
+        // Removed legacy flutterflow headers
         anonKey: _kSupabaseAnonKey,
         debug: false,
         authOptions: FlutterAuthClientOptions(

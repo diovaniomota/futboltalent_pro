@@ -1,5 +1,6 @@
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
+import '/fluxo_compartilhado/account_deletion_service.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
@@ -154,6 +155,19 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
         ),
         actions: [
           IconButton(
+            tooltip: 'Eliminar mi cuenta',
+            icon: const Icon(
+              Icons.delete_forever_outlined,
+              color: Colors.white,
+            ),
+            onPressed: () async {
+              await AccountDeletionService.showDeleteAccountDialog(
+                context: context,
+              );
+            },
+          ),
+          IconButton(
+            tooltip: 'Cerrar sesión',
             icon: const Icon(Icons.logout, color: Colors.white),
             onPressed: () async {
               GoRouter.of(context).prepareAuthEvent();

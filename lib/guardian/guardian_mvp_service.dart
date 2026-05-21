@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '/backend/supabase/supabase.dart';
 import '/fluxo_compartilhado/video_visibility_utils.dart';
+import '/fluxo_compartilhado/email_service.dart';
 
 class GuardianMvpService {
   static const String pendingStatus = 'pending';
@@ -317,6 +318,39 @@ class GuardianMvpService {
         'approval_code': newCode,
       }).eq('player_id', uid);
     }
+
+    String guardianEmail = '';
+    try {
+      final gRow = await SupaFlow.client
+          .from('guardians')
+          .select('email')
+          .eq('player_id', uid)
+          .maybeSingle();
+      if (gRow != null) guardianEmail = gRow['email']?.toString() ?? '';
+    } catch (_) {}
+
+    if (guardianEmail.isNotEmpty) {
+      String playerName = 'Jugador';
+      try {
+        final uRow = await SupaFlow.client
+            .from('users')
+            .select('display_name, name')
+            .eq('user_id', uid)
+            .maybeSingle();
+        if (uRow != null) {
+          playerName = (uRow['display_name'] ?? uRow['name'])?.toString() ??
+              playerName;
+        }
+      } catch (_) {}
+
+      await EmailService.sendGuardianValidationEmail(
+        playerId: uid,
+        guardianEmail: guardianEmail,
+        playerName: playerName,
+        approvalCode: newCode,
+      );
+    }
+
     return newCode;
   }
 
@@ -327,7 +361,7 @@ class GuardianMvpService {
     String? playerId,
     required String newEmail,
   }) async {
-    final email = newEmail.trim();
+    final email = newEmail.trim().toLowerCase();
     if (email.isEmpty || !email.contains('@')) {
       throw Exception('Ingresá un email válido del responsable.');
     }
@@ -365,7 +399,31 @@ class GuardianMvpService {
       }).eq('player_id', uid);
     }
 
-    return 'Email actualizado. Nuevo código: $newCode — compartilo con $email.';
+    String playerName = 'Jugador';
+    try {
+      final uRow = await SupaFlow.client
+          .from('users')
+          .select('display_name, name')
+          .eq('user_id', uid)
+          .maybeSingle();
+      if (uRow != null) {
+        playerName =
+            (uRow['display_name'] ?? uRow['name'])?.toString() ?? playerName;
+      }
+    } catch (_) {}
+
+    final sent = await EmailService.sendGuardianValidationEmail(
+      playerId: uid,
+      guardianEmail: email,
+      playerName: playerName,
+      approvalCode: newCode,
+    );
+
+    if (!sent) {
+      throw Exception('guardian_email_send_failed');
+    }
+
+    return 'Correo actualizado. Enviamos un nuevo código de aprobación a $email.';
   }
 
   /// 1.3 — Recupera dados do guardian de um jogador.

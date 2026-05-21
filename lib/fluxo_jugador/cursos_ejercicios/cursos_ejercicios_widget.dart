@@ -2957,8 +2957,7 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
   bool _isSupabaseStorageUrl(String raw) {
     final uri = Uri.tryParse(raw.trim());
     if (uri == null) return false;
-    return uri.host.contains('supabase.co') &&
-        uri.path.contains('/storage/v1/object/');
+    return uri.path.contains('/storage/v1/object/');
   }
 
   Future<void> _openInAppWebView() async {

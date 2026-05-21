@@ -72,7 +72,8 @@ as $$
             'profesional',
             'professional',
             'scout',
-            'club'
+            'club',
+            'club_staff'
           )
       )
     );
