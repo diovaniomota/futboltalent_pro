@@ -10,7 +10,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 import '/fluxo_compartilhado/location_data.dart';
 import 'configuracin_model.dart';
 export 'configuracin_model.dart';
@@ -1464,7 +1463,7 @@ class _ConfiguracinWidgetState extends State<ConfiguracinWidget> {
   }
 
   Widget _buildProfileTabs() {
-    final tabs = const [
+    const tabs = [
       ('convocatorias', 'Convocatorias'),
       ('cursos', 'Cursos'),
       ('fichajes', 'Fichajes'),

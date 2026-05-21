@@ -9,7 +9,7 @@ class GendersTable extends SupabaseTable<GendersRow> {
 }
 
 class GendersRow extends SupabaseDataRow {
-  GendersRow(Map<String, dynamic> data) : super(data);
+  GendersRow(super.data);
 
   @override
   SupabaseTable get table => GendersTable();

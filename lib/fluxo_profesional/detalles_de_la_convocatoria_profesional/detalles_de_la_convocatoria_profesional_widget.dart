@@ -443,7 +443,7 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
           ),
           const SizedBox(height: 6),
           Text(
-            '${_completedRequirementsCount}/${_requiredChallenges.length} completos',
+            '$_completedRequirementsCount/${_requiredChallenges.length} completos',
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -747,11 +747,11 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
   Widget build(BuildContext context) {
     if (FFAppState().isFeatureEnabled('convocatorias') &&
         !FFAppState().canAccessFeature('convocatorias')) {
-      return Scaffold(
+      return const Scaffold(
         backgroundColor: Colors.white,
         body: Center(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(24),
             child: PlanPaywallCard(
               title: 'Convocatorias en el Plan Pro',
               message:
@@ -935,7 +935,7 @@ class _DetallesDeLaConvocatoriaProfesionalWidgetState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(children: [
-                        FaIcon(FontAwesomeIcons.solidClock,
+                        const FaIcon(FontAwesomeIcons.solidClock,
                             color: Color(0xFF0D3B66), size: 20),
                         const SizedBox(width: 12),
                         Text('Proceso de Aprobación',

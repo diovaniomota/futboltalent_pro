@@ -381,7 +381,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
               content: Text(
                   'No pudimos actualizar el estado. Verifica tu conexión e intenta de nuevo.'),
               backgroundColor: Colors.red),
@@ -1131,11 +1131,11 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(borderRadius),
         border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: const Color(0x120D3B66),
+            color: Color(0x120D3B66),
             blurRadius: 18,
-            offset: const Offset(0, 8),
+            offset: Offset(0, 8),
           ),
         ],
       ),
@@ -1219,7 +1219,7 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
           else
             ..._filteredPostulaciones
                 .map((post) => _buildPostulacionItem(context, post))
-                .toList(),
+                ,
         ],
       ),
     );
@@ -2313,12 +2313,11 @@ class _PostulacionVideoSheetState extends State<_PostulacionVideoSheet> {
 // ===== ADD TO SCOUTING SHEET =====
 class _AddToScoutingSheet extends StatefulWidget {
   const _AddToScoutingSheet({
-    Key? key,
     required this.listas,
     required this.jugadorId,
     required this.jugadorName,
     required this.clubRefs,
-  }) : super(key: key);
+  });
 
   final List<Map<String, dynamic>> listas;
   final String jugadorId;
@@ -2430,7 +2429,7 @@ class _AddToScoutingSheetState extends State<_AddToScoutingSheet> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
               content: Text(
                   'No pudimos agregar este jugador a tu lista. Verifica tu conexión e intenta de nuevo.'),
               backgroundColor: Colors.red),

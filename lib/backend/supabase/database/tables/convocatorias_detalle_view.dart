@@ -11,7 +11,7 @@ class ConvocatoriasDetalleViewTable
 }
 
 class ConvocatoriasDetalleViewRow extends SupabaseDataRow {
-  ConvocatoriasDetalleViewRow(Map<String, dynamic> data) : super(data);
+  ConvocatoriasDetalleViewRow(super.data);
 
   @override
   SupabaseTable get table => ConvocatoriasDetalleViewTable();

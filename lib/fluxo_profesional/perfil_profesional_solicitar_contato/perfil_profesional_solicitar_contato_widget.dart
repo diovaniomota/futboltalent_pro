@@ -9,7 +9,6 @@ import '/guardian/guardian_mvp_service.dart';
 import '/gamification/gamification_service.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -445,12 +444,13 @@ class _PerfilProfesionalSolicitarContatoWidgetState
       final normalizedStatus =
           latest?['status']?.toString().toLowerCase().trim() ?? '';
 
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isFollowing = f != null;
           _contactRequestId = latest?['id']?.toString();
           _contactRequestStatus = normalizedStatus;
         });
+      }
     } catch (_) {}
   }
 
@@ -535,12 +535,13 @@ class _PerfilProfesionalSolicitarContatoWidgetState
 
       await _checkStatus();
       if (mounted) setState(() => _isProcessing = false);
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(_isMinor
                 ? 'Solicitud enviada al responsable del jugador'
                 : 'Solicitud enviada'),
             backgroundColor: Colors.green));
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _isProcessing = false);
@@ -710,7 +711,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
               content: Text(
                   'No pudimos agregar el jugador. Verifica tu conexión e intenta de nuevo.'),
               backgroundColor: Colors.red),
@@ -871,11 +872,12 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     final horizontalPadding = screenWidth < 360 ? 12.0 : 16.0;
     final actionButtonFontSize = screenWidth < 380 ? 13.0 : 14.0;
     final compactActionLabel = screenWidth < 390 || textScale > 1.05;
-    if (_isLoading)
+    if (_isLoading) {
       return Container(
           color: Colors.white,
-          child: Center(
+          child: const Center(
               child: CircularProgressIndicator(color: Color(0xFF0D3B66))));
+    }
     if (_userData == null) {
       return Scaffold(
         backgroundColor: Colors.white,
@@ -992,7 +994,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                   width: 120,
                                   height: 120,
                                   decoration: BoxDecoration(
-                                      color: Color(0xFFE0E0E0),
+                                      color: const Color(0xFFE0E0E0),
                                       shape: BoxShape.circle,
                                       border: Border.all(
                                           color: Colors.white, width: 4),
@@ -1007,7 +1009,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                           size: 60, color: Colors.grey[600])
                                       : null))
                         ]),
-                        SizedBox(height: 70),
+                        const SizedBox(height: 70),
                         Padding(
                             padding: EdgeInsets.symmetric(
                                 horizontal: horizontalPadding),
@@ -1193,38 +1195,38 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                 style: GoogleFonts.inter(
                                     fontSize: screenWidth < 380 ? 26 : 30,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFF444444)))),
+                                    color: const Color(0xFF444444)))),
                         Padding(
                             padding: EdgeInsets.fromLTRB(
                                 horizontalPadding, 5, horizontalPadding, 0),
                             child: Text(user,
                                 style: GoogleFonts.inter(
-                                    fontSize: 15, color: Color(0xFF444444)))),
+                                    fontSize: 15, color: const Color(0xFF444444)))),
                         if (_isMinor)
                           Padding(
                               padding: EdgeInsets.fromLTRB(
                                   horizontalPadding, 10, horizontalPadding, 0),
                               child: Container(
-                                  padding: EdgeInsets.symmetric(
+                                  padding: const EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 6),
                                   decoration: BoxDecoration(
-                                      color: Color(0xFFFFF3CD),
+                                      color: const Color(0xFFFFF3CD),
                                       borderRadius: BorderRadius.circular(8),
                                       border:
-                                          Border.all(color: Color(0xFFFFD93D))),
+                                          Border.all(color: const Color(0xFFFFD93D))),
                                   child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(Icons.shield,
+                                        const Icon(Icons.shield,
                                             color: Color(0xFF856404), size: 16),
-                                        SizedBox(width: 6),
+                                        const SizedBox(width: 6),
                                         Text(
                                             _guardianName != null
                                                 ? 'Menor de edad · Responsable: $_guardianName · ${_guardianStatus == GuardianMvpService.approvedStatus ? 'Aprobado' : 'Pendiente'}'
                                                 : 'Menor de edad · Contacto vía responsable',
                                             style: GoogleFonts.inter(
                                                 fontSize: 12,
-                                                color: Color(0xFF856404),
+                                                color: const Color(0xFF856404),
                                                 fontWeight: FontWeight.w500)),
                                       ]))),
                         if (_isLimitedMinorProfile)
@@ -1262,7 +1264,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                               child: Text(bio,
                                   style: GoogleFonts.inter(
                                       fontSize: 16,
-                                      color: Color(0xFF444444),
+                                      color: const Color(0xFF444444),
                                       height: 1.4))),
                         if (_colabs.isNotEmpty) ...[
                           Padding(
@@ -1272,7 +1274,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                   style: GoogleFonts.inter(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w500,
-                                      color: Color(0xFF444444)))),
+                                      color: const Color(0xFF444444)))),
                           Padding(
                               padding: EdgeInsets.fromLTRB(
                                   horizontalPadding, 10, horizontalPadding, 0),
@@ -1281,7 +1283,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                   runSpacing: 8,
                                   children: _colabs
                                       .map((c) => Container(
-                                          padding: EdgeInsets.symmetric(
+                                          padding: const EdgeInsets.symmetric(
                                               horizontal: 12, vertical: 6),
                                           decoration: BoxDecoration(
                                               color: Colors.white,
@@ -1295,7 +1297,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                                       .toList()))
                         ],
                         _buildPublicTabbedContent(horizontalPadding),
-                        SizedBox(height: 100)
+                        const SizedBox(height: 100)
                       ]),
                 ),
               ),
@@ -2039,16 +2041,17 @@ class _PerfilProfesionalSolicitarContatoWidgetState
   }
 
   Widget _list() {
-    if (_scoutHistory.isEmpty)
-      return Padding(
+    if (_scoutHistory.isEmpty) {
+      return const Padding(
           padding: EdgeInsets.all(40),
           child: Center(
               child: Text('No hay historial de scouting',
                   style: TextStyle(color: Colors.grey))));
+    }
     return ListView.builder(
-        physics: NeverScrollableScrollPhysics(),
+        physics: const NeverScrollableScrollPhysics(),
         shrinkWrap: true,
-        padding: EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: _scoutHistory.length,
         itemBuilder: (ctx, i) => _card(_scoutHistory[i]));
   }
@@ -2074,12 +2077,12 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         [pos, if (age.isNotEmpty) age, if (city.isNotEmpty) city].join(' • ');
 
     return Container(
-        margin: EdgeInsets.only(bottom: 15),
-        padding: EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: 15),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: Color(0xFFB5BECA))),
+            border: Border.all(color: const Color(0xFFB5BECA))),
         child: Row(children: [
           Expanded(
               child: Column(
@@ -2088,14 +2091,14 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                 Text(name.isNotEmpty ? name : 'Jugador',
                     style: GoogleFonts.inter(
                         fontSize: 16, fontWeight: FontWeight.w600)),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(info,
                     style: GoogleFonts.inter(fontSize: 13, color: Colors.grey)),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Row(children: [
-                  Icon(Icons.remove_red_eye,
+                  const Icon(Icons.remove_red_eye,
                       size: 14, color: Color(0xFF444444)),
-                  SizedBox(width: 4),
+                  const SizedBox(width: 4),
                   Expanded(
                       child: Text(
                           item['club_fichado'] != null

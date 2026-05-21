@@ -9,7 +9,6 @@ import '/flutter_flow/flutter_flow_util.dart';
 import '/index.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'convocatorias_club_model.dart';
 export 'convocatorias_club_model.dart';
@@ -361,7 +360,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
       _loadData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Convocatoria eliminada'),
             backgroundColor: Colors.green,
           ),
@@ -452,7 +451,7 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
   }
 
   void _showClubMenu(BuildContext ctx) {
-    final drawerWidth = 0.75; // Or responsive
+    const drawerWidth = 0.75; // Or responsive
 
     Navigator.of(ctx).push(
       PageRouteBuilder(
@@ -986,14 +985,18 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
                               size: 20, color: Color(0xFF718096)),
                           padding: const EdgeInsets.all(0),
                           onSelected: (value) {
-                            if (value == 'ver')
+                            if (value == 'ver') {
                               _showViewConvocatoriaModal(conv);
-                            if (value == 'scouting')
+                            }
+                            if (value == 'scouting') {
                               context.pushNamed(ListaYNotaWidget.routeName);
-                            if (value == 'editar')
+                            }
+                            if (value == 'editar') {
                               _showEditConvocatoriaModal(conv);
-                            if (value == 'eliminar')
+                            }
+                            if (value == 'eliminar') {
                               _confirmDeleteConvocatoria(conv);
+                            }
                           },
                           itemBuilder: (_) => [
                             PopupMenuItem(
@@ -1275,12 +1278,11 @@ class _ConvocatoriasClubWidgetState extends State<ConvocatoriasClubWidget> {
 // ===== MODAL CRIAR/EDITAR CONVOCATORIA =====
 class _CreateConvocatoriaModal extends StatefulWidget {
   const _CreateConvocatoriaModal({
-    Key? key,
     required this.clubId,
     this.existingData,
     required this.onCreated,
     required this.onExplorePlayers,
-  }) : super(key: key);
+  });
 
   final String clubId;
   final Map<String, dynamic>? existingData;
@@ -1608,7 +1610,7 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
       debugPrint('Error guardando convocatoria: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
               content: Text(
                   'No pudimos guardar los cambios en la convocatoria. Verifica tu conexión e intenta de nuevo.'),
               backgroundColor: Colors.red),
@@ -2130,9 +2132,8 @@ class _CreateConvocatoriaModalState extends State<_CreateConvocatoriaModal> {
 // ===== MODAL VER CONVOCATORIA =====
 class _ViewConvocatoriaModal extends StatefulWidget {
   const _ViewConvocatoriaModal({
-    Key? key,
     required this.convocatoria,
-  }) : super(key: key);
+  });
 
   final Map<String, dynamic> convocatoria;
 

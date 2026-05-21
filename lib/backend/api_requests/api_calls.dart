@@ -1,5 +1,3 @@
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
 
 import 'api_manager.dart';
 
@@ -25,11 +23,11 @@ class FindNearbyCitiesCall {
 
     return ApiManager.instance.makeApiCall(
       callName: 'findNearbyCities',
-      apiUrl: '${baseUrl}/findNearbyCities',
+      apiUrl: '$baseUrl/findNearbyCities',
       callType: ApiCallType.GET,
       headers: {
-        'X-RapidAPI-Key': '${xRapidAPIKey}',
-        'X-RapidAPI-Host': '${xRapidAPIHost}',
+        'X-RapidAPI-Key': '$xRapidAPIKey',
+        'X-RapidAPI-Host': '$xRapidAPIHost',
       },
       params: {
         'radius': radius,

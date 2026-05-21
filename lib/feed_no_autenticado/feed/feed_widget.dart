@@ -19,7 +19,6 @@ import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '/flutter_flow/nav/nav.dart';
 import 'feed_model.dart';
 export 'feed_model.dart';
 
@@ -1017,7 +1016,9 @@ class _FeedWidgetState extends State<FeedWidget>
         if (!GuardianMvpService.isVideoVisibleToPublic(
           video,
           ownerData: ownerData,
-        )) return false;
+        )) {
+          return false;
+        }
 
         final videoUserId = video['user_id']?.toString() ?? '';
         if (videoUserId.isNotEmpty &&
@@ -1650,7 +1651,7 @@ class _ChallengeFeedItem extends StatelessWidget {
   }
 
   String get _headline {
-    final reward = GamificationService.challengeCompletedPoints;
+    const reward = GamificationService.challengeCompletedPoints;
     if (!hasAccess) {
       return 'Este desafío aparece en el feed, pero se habilita completo con el Plan Pro.';
     }
@@ -1759,7 +1760,7 @@ class _ChallengeFeedItem extends StatelessWidget {
     final difficulty = challengeData['difficulty']?.toString().trim() ?? '';
     final durationMinutes =
         GamificationService.toInt(challengeData['duration_minutes']);
-    final participationReward = GamificationService.challengeParticipatedPoints;
+    const participationReward = GamificationService.challengeParticipatedPoints;
 
     return GestureDetector(
       onTap: _handleTap,
@@ -2880,10 +2881,10 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
             children: [
               const Icon(Icons.error, color: Colors.red, size: 40),
               const SizedBox(height: 12),
-              Text(
+              const Text(
                 'No pudimos reproducir este video. Verifica tu conexión e intenta de nuevo.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 12),
+                style: TextStyle(color: Colors.white, fontSize: 12),
               ),
               const SizedBox(height: 8),
               Text(

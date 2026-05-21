@@ -3,7 +3,6 @@ import '/flutter_flow/app_modals.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
 import '/fluxo_compartilhado/convocatoria_snapshot_service.dart';
-import '/auth/supabase_auth/auth_util.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -82,13 +81,11 @@ class _DetallesDeLaConvocatoriaWidgetState
                 .select()
                 .eq('id', clubId)
                 .maybeSingle();
-            if (clubResponse == null) {
-              clubResponse = await SupaFlow.client
+            clubResponse ??= await SupaFlow.client
                   .from('users')
                   .select()
                   .eq('user_id', clubId)
                   .maybeSingle();
-            }
             _clubData = clubResponse;
           } catch (e) {
             debugPrint('Error al buscar club: $e');
@@ -106,8 +103,9 @@ class _DetallesDeLaConvocatoriaWidgetState
 
   Future<void> _checkIfApplied() async {
     final userId = SupaFlow.client.auth.currentUser?.id;
-    if (userId == null || userId.isEmpty || widget.convocatoriaId == null)
+    if (userId == null || userId.isEmpty || widget.convocatoriaId == null) {
       return;
+    }
 
     try {
       final response = await SupaFlow.client
@@ -415,7 +413,7 @@ class _DetallesDeLaConvocatoriaWidgetState
           ),
           const SizedBox(height: 6),
           Text(
-            '${_completedRequirementsCount}/${_requiredChallenges.length} completos',
+            '$_completedRequirementsCount/${_requiredChallenges.length} completos',
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -811,11 +809,11 @@ class _DetallesDeLaConvocatoriaWidgetState
   Widget build(BuildContext context) {
     if (FFAppState().isFeatureEnabled('convocatorias') &&
         !FFAppState().canAccessFeature('convocatorias')) {
-      return Scaffold(
+      return const Scaffold(
         backgroundColor: Colors.white,
         body: Center(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(24),
             child: PlanPaywallCard(
               title: 'Convocatorias en el Plan Pro',
               message:
@@ -827,9 +825,9 @@ class _DetallesDeLaConvocatoriaWidgetState
     }
 
     if (_isLoading) {
-      return Scaffold(
+      return const Scaffold(
           backgroundColor: Colors.white,
-          body: const Center(
+          body: Center(
               child: CircularProgressIndicator(color: Color(0xFF0D3B66))));
     }
 
@@ -877,14 +875,16 @@ class _DetallesDeLaConvocatoriaWidgetState
     final fechaInicio = _formatDate(_convocatoria!['fecha_inicio']);
 
     String requisitos = titulo;
-    if (categoria.isNotEmpty)
+    if (categoria.isNotEmpty) {
       requisitos = 'Convocatoria para jugadores $categoria';
-    if (posicion.isNotEmpty && posicion != 'Todas')
+    }
+    if (posicion.isNotEmpty && posicion != 'Todas') {
       requisitos += ' - Posición: $posicion';
+    }
     if (edadMinima != null || edadMaxima != null) {
-      if (edadMinima != null && edadMaxima != null)
+      if (edadMinima != null && edadMaxima != null) {
         requisitos += ' ($edadMinima-$edadMaxima años)';
-      else if (edadMinima != null)
+      } else if (edadMinima != null)
         requisitos += ' (mínimo $edadMinima años)';
       else
         requisitos += ' (máximo $edadMaxima años)';
@@ -1014,8 +1014,8 @@ class _DetallesDeLaConvocatoriaWidgetState
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(children: [
-                          FaIcon(FontAwesomeIcons.solidClock,
-                              color: const Color(0xFF0D3B66), size: 20),
+                          const FaIcon(FontAwesomeIcons.solidClock,
+                              color: Color(0xFF0D3B66), size: 20),
                           const SizedBox(width: 12),
                           Text('Proceso de Aprobación',
                               style: GoogleFonts.inter(

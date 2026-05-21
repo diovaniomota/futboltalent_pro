@@ -9,7 +9,7 @@ class UserBadgesTable extends SupabaseTable<UserBadgesRow> {
 }
 
 class UserBadgesRow extends SupabaseDataRow {
-  UserBadgesRow(Map<String, dynamic> data) : super(data);
+  UserBadgesRow(super.data);
 
   @override
   SupabaseTable get table => UserBadgesTable();

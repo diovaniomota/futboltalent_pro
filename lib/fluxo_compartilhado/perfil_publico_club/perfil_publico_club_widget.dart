@@ -253,7 +253,7 @@ class _PerfilPublicoClubWidgetState extends State<PerfilPublicoClubWidget> {
   }
 
   Widget _buildTabs() {
-    final tabs = const [
+    const tabs = [
       ('convocatorias', 'Convocatorias'),
       ('cursos', 'Cursos'),
       ('sobre', 'Sobre Nosotros'),

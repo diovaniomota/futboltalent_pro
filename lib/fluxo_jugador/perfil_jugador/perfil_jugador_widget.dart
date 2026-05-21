@@ -4053,7 +4053,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem>
   bool _isInitialized = false;
   bool _hasError = false;
   bool _isPaused = false;
-  bool _isMuted = false;
+  final bool _isMuted = false;
   bool _showLikeAnimation = false;
   bool _isLiked = false;
   int _likesCount = 0;

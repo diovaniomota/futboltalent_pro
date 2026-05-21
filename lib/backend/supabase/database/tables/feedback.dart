@@ -9,7 +9,7 @@ class FeedbackTable extends SupabaseTable<FeedbackRow> {
 }
 
 class FeedbackRow extends SupabaseDataRow {
-  FeedbackRow(Map<String, dynamic> data) : super(data);
+  FeedbackRow(super.data);
 
   @override
   SupabaseTable get table => FeedbackTable();

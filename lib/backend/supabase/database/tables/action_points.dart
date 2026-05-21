@@ -9,7 +9,7 @@ class ActionPointsTable extends SupabaseTable<ActionPointsRow> {
 }
 
 class ActionPointsRow extends SupabaseDataRow {
-  ActionPointsRow(Map<String, dynamic> data) : super(data);
+  ActionPointsRow(super.data);
 
   @override
   SupabaseTable get table => ActionPointsTable();

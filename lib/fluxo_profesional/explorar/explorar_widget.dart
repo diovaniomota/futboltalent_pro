@@ -5561,7 +5561,7 @@ class _VideoPreviewSheetState extends State<_VideoPreviewSheet> {
                         shape: BoxShape.circle,
                       ),
                     ),
-                    FaIcon(
+                    const FaIcon(
                       FontAwesomeIcons.binoculars,
                       size: 64,
                       color: Color(0xFF64748B),

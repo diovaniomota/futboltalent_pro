@@ -17,7 +17,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io';
 import 'cursos_ejercicios_model.dart';
 export 'cursos_ejercicios_model.dart';
@@ -1355,13 +1354,13 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final videoUrl = item['video_url']?.toString() ?? '';
     final title =
         item['title'] ?? (item['type'] == 'course' ? 'Curso' : 'Ejercicio');
-    final pointsReward = GamificationService.challengeCompletedPoints;
-    final participationReward = GamificationService.challengeParticipatedPoints;
+    const pointsReward = GamificationService.challengeCompletedPoints;
+    const participationReward = GamificationService.challengeParticipatedPoints;
     final isCourse = item['type'] == 'course';
     final itemId = item['id'].toString();
     final itemKey = _itemKey(item);
-    final completionCallout = '🔥 +$pointsReward XP al completar';
-    final uploadCallout = '🎥 +$participationReward XP al subir el video';
+    const completionCallout = '🔥 +$pointsReward XP al completar';
+    const uploadCallout = '🎥 +$participationReward XP al subir el video';
     final imageUrl = _cacheBustedMediaUrl(
       item,
       item['thumbnail_url'] ??
@@ -1834,8 +1833,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                               SizedBox(height: 24 * scale),
                               Expanded(
                                 child: !hasTrainingAccess
-                                    ? Padding(
-                                        padding: const EdgeInsets.all(24),
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(24),
                                         child: PlanPaywallCard(
                                           title:
                                               'Desafíos y cursos en Plan Pro',
@@ -2174,8 +2173,8 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     final isCompleted = status == 'completed';
     final hasAttempt = _hasAttemptForItem(item);
     final title = item['title'] ?? (isCourse ? 'Curso' : 'Ejercicio');
-    final pointsReward = GamificationService.challengeCompletedPoints;
-    final participationReward = GamificationService.challengeParticipatedPoints;
+    const pointsReward = GamificationService.challengeCompletedPoints;
+    const participationReward = GamificationService.challengeParticipatedPoints;
     final imageUrl = _cacheBustedMediaUrl(
       item,
       item['thumbnail_url'] ??

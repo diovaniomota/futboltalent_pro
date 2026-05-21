@@ -9,7 +9,7 @@ class GuardiansTable extends SupabaseTable<GuardiansRow> {
 }
 
 class GuardiansRow extends SupabaseDataRow {
-  GuardiansRow(Map<String, dynamic> data) : super(data);
+  GuardiansRow(super.data);
 
   @override
   SupabaseTable get table => GuardiansTable();

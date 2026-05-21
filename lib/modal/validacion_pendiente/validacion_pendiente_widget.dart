@@ -1,10 +1,7 @@
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
-import '/flutter_flow/flutter_flow_widgets.dart';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 import 'validacion_pendiente_model.dart';
 export 'validacion_pendiente_model.dart';
 
@@ -50,7 +47,7 @@ class _ValidacionPendienteWidgetState extends State<ValidacionPendienteWidget> {
         borderRadius: BorderRadius.circular(20.0),
       ),
       child: Padding(
-        padding: EdgeInsetsDirectional.fromSTEB(24.0, 24.0, 24.0, 24.0),
+        padding: const EdgeInsetsDirectional.fromSTEB(24.0, 24.0, 24.0, 24.0),
         child: Column(
           mainAxisSize: MainAxisSize.max,
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -77,7 +74,7 @@ class _ValidacionPendienteWidgetState extends State<ValidacionPendienteWidget> {
                       fontStyle:
                           FlutterFlowTheme.of(context).headlineSmall.fontStyle,
                     ),
-                    color: Color(0xFF0D3B66),
+                    color: const Color(0xFF0D3B66),
                     letterSpacing: 0.0,
                     fontWeight: FontWeight.bold,
                     fontStyle:
@@ -104,7 +101,7 @@ class _ValidacionPendienteWidgetState extends State<ValidacionPendienteWidget> {
                                   .bodyMedium
                                   .fontStyle,
                             ),
-                            color: Color(0xFF1A202C),
+                            color: const Color(0xFF1A202C),
                             letterSpacing: 0.0,
                             fontWeight: FlutterFlowTheme.of(context)
                                 .bodyMedium
@@ -124,7 +121,7 @@ class _ValidacionPendienteWidgetState extends State<ValidacionPendienteWidget> {
                                   .bodyMedium
                                   .fontStyle,
                             ),
-                            color: Color(0xFF0D3B66),
+                            color: const Color(0xFF0D3B66),
                             fontSize: 16.0,
                             letterSpacing: 0.0,
                             fontWeight: FontWeight.bold,
@@ -154,7 +151,7 @@ class _ValidacionPendienteWidgetState extends State<ValidacionPendienteWidget> {
                             FlutterFlowTheme.of(context).bodyMedium.fontStyle,
                       ),
                 ),
-              ].divide(SizedBox(height: 8.0)),
+              ].divide(const SizedBox(height: 8.0)),
             ),
             Text(
               'Revisaremos tus documentos y te avisaremos cuando esté validada.',
@@ -166,7 +163,7 @@ class _ValidacionPendienteWidgetState extends State<ValidacionPendienteWidget> {
                       fontStyle:
                           FlutterFlowTheme.of(context).bodyMedium.fontStyle,
                     ),
-                    color: Color(0xFF1A202C),
+                    color: const Color(0xFF1A202C),
                     letterSpacing: 0.0,
                     fontWeight:
                         FlutterFlowTheme.of(context).bodyMedium.fontWeight,
@@ -174,7 +171,7 @@ class _ValidacionPendienteWidgetState extends State<ValidacionPendienteWidget> {
                         FlutterFlowTheme.of(context).bodyMedium.fontStyle,
                   ),
             ),
-          ].divide(SizedBox(height: 16.0)),
+          ].divide(const SizedBox(height: 16.0)),
         ),
       ),
     );

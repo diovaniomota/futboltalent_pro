@@ -9,7 +9,7 @@ class SearchViewTable extends SupabaseTable<SearchViewRow> {
 }
 
 class SearchViewRow extends SupabaseDataRow {
-  SearchViewRow(Map<String, dynamic> data) : super(data);
+  SearchViewRow(super.data);
 
   @override
   SupabaseTable get table => SearchViewTable();

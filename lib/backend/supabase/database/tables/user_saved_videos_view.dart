@@ -10,7 +10,7 @@ class UserSavedVideosViewTable extends SupabaseTable<UserSavedVideosViewRow> {
 }
 
 class UserSavedVideosViewRow extends SupabaseDataRow {
-  UserSavedVideosViewRow(Map<String, dynamic> data) : super(data);
+  UserSavedVideosViewRow(super.data);
 
   @override
   SupabaseTable get table => UserSavedVideosViewTable();

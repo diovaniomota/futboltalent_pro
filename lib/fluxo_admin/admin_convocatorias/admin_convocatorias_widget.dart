@@ -385,7 +385,7 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value:
+                  initialValue:
                       _clubs.any((club) => _clubValue(club) == selectedClubId)
                           ? selectedClubId
                           : null,

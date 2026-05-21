@@ -652,14 +652,14 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
       }
 
       final guardados = mergedByPlayerId.values.toList();
-      DateTime _safeCreatedAt(Map<String, dynamic> item) {
+      DateTime safeCreatedAt(Map<String, dynamic> item) {
         final raw = item['created_at']?.toString();
         return DateTime.tryParse(raw ?? '') ??
             DateTime.fromMillisecondsSinceEpoch(0);
       }
 
       guardados.sort(
-        (a, b) => _safeCreatedAt(b).compareTo(_safeCreatedAt(a)),
+        (a, b) => safeCreatedAt(b).compareTo(safeCreatedAt(a)),
       );
 
       if (mounted) {

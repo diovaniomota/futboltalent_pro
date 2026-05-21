@@ -4,12 +4,9 @@ import '/fluxo_compartilhado/profile_support_sheet.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/fluxo_compartilhado/notificacoes/activity_notifications_service.dart';
 import '/fluxo_compartilhado/notificacoes/notificacoes_widget.dart';
-import '/fluxo_compartilhado/perfil_publico_club/perfil_publico_club_widget.dart';
-import '/fluxo_compartilhado/account_deletion_service.dart';
 import '/modal/nav_bar_profesional/nav_bar_profesional_widget.dart';
 import '/modal/nav_bar_judador/nav_bar_judador_widget.dart';
 import '/index.dart'; // For EditarPerfilWidget and PerfilProfesionalSolicitarContatoWidget
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';

@@ -2849,13 +2849,13 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               titleWidget,
-              if (trailing != null) ...[
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: trailing,
-                ),
-              ],
+              ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: trailing,
+              ),
+            ],
             ],
           );
         },
@@ -2907,7 +2907,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                 ),
                 child: Icon(
                   Icons.search,
-                  color: Color(0xFF4F6788),
+                  color: const Color(0xFF4F6788),
                   size: searchIconSize,
                 ),
               ),
@@ -2926,7 +2926,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               Icon(
                 Icons.arrow_forward_ios_rounded,
                 size: searchArrowSize,
-                color: Color(0xFF64748B),
+                color: const Color(0xFF64748B),
               ),
             ],
           ),
@@ -2959,7 +2959,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             ),
             child: Icon(
               Icons.search,
-              color: Color(0xFF4F6788),
+              color: const Color(0xFF4F6788),
               size: searchIconSize,
             ),
           ),

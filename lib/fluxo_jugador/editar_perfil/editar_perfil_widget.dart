@@ -6,7 +6,6 @@ import '/fluxo_compartilhado/location_data.dart' as location_data;
 import '/fluxo_compartilhado/profile_history_utils.dart';
 import '/fluxo_compartilhado/profile_taxonomy_utils.dart';
 import '/flutter_flow/flutter_flow_util.dart';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -4945,7 +4944,7 @@ class _EditarPerfilWidgetState extends State<EditarPerfilWidget> {
                 // Foto de perfil com ícone de edição (clicável)
                 Positioned(
                   bottom: 0,
-                  child: Container(
+                  child: SizedBox(
                     width: MediaQuery.sizeOf(context).width,
                     child: Center(
                       child: GestureDetector(

@@ -10,7 +10,7 @@ class PostulacionesTable extends SupabaseTable<PostulacionesRow> {
 }
 
 class PostulacionesRow extends SupabaseDataRow {
-  PostulacionesRow(Map<String, dynamic> data) : super(data);
+  PostulacionesRow(super.data);
 
   @override
   SupabaseTable get table => PostulacionesTable();

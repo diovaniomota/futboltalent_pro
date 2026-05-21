@@ -2502,7 +2502,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       if (mounted) {
         setState(() {
           _cities = hardcoded;
-          if (_selectedState == null) _selectedState = '__all__';
+          _selectedState ??= '__all__';
           _isCitiesLoading = false;
         });
       }
@@ -2530,7 +2530,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
           if (mounted) {
             setState(() {
               _cities = list;
-              if (_selectedState == null) _selectedState = '__all__';
+              _selectedState ??= '__all__';
             });
           }
         }
@@ -2539,16 +2539,17 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       if (_cities.isEmpty && mounted) {
         setState(() {
           _cityFreeText = true;
-          if (_selectedState == null) _selectedState = '__all__';
+          _selectedState ??= '__all__';
         });
       }
     } catch (e) {
       debugPrint('Error al cargar ciudades directas: $e');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _cityFreeText = true;
-          if (_selectedState == null) _selectedState = '__all__';
+          _selectedState ??= '__all__';
         });
+      }
     } finally {
       if (mounted) setState(() => _isCitiesLoading = false);
     }
@@ -3927,7 +3928,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
               ),
             ],
           ),
-          SizedBox(height: 40),
+          const SizedBox(height: 40),
         ],
       ),
     );
@@ -4113,7 +4114,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
               ),
             ],
           ),
-          SizedBox(height: 40),
+          const SizedBox(height: 40),
         ],
       ),
     );
@@ -4300,7 +4301,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
               ),
             ],
           ),
-          SizedBox(height: 40),
+          const SizedBox(height: 40),
         ],
       ),
     );
@@ -4517,7 +4518,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: _LegalModal(
+        child: const _LegalModal(
           title: 'Términos de Uso',
           content: '''
 TÉRMINOS DE USO DE FUTBOLTALENT
@@ -4572,7 +4573,7 @@ Para cualquier consulta: info@futboltalent.pro
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: _LegalModal(
+        child: const _LegalModal(
           title: 'Política de Privacidad',
           content: '''
 POLÍTICA DE PRIVACIDAD DE FUTBOLTALENT

@@ -10,7 +10,7 @@ class ConvocatoriasTable extends SupabaseTable<ConvocatoriasRow> {
 }
 
 class ConvocatoriasRow extends SupabaseDataRow {
-  ConvocatoriasRow(Map<String, dynamic> data) : super(data);
+  ConvocatoriasRow(super.data);
 
   @override
   SupabaseTable get table => ConvocatoriasTable();

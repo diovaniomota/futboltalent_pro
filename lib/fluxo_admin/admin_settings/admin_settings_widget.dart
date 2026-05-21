@@ -6,7 +6,6 @@ import '/fluxo_compartilhado/account_deletion_service.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'admin_settings_model.dart';
 export 'admin_settings_model.dart';
 
@@ -772,7 +771,7 @@ class _AdminSettingsWidgetState extends State<AdminSettingsWidget> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: _featureOrder.contains(selectedFeatureKey)
+                  initialValue: _featureOrder.contains(selectedFeatureKey)
                       ? selectedFeatureKey
                       : null,
                   isExpanded: true,

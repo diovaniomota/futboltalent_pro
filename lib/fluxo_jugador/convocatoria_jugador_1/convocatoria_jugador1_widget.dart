@@ -502,9 +502,9 @@ class _ConvocatoriaJugador1WidgetState
       return Scaffold(
         key: scaffoldKey,
         backgroundColor: Colors.white,
-        body: Center(
+        body: const Center(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(24),
             child: PlanPaywallCard(
               title: 'Convocatorias en el Plan Pro',
               message:
@@ -605,7 +605,7 @@ class _ConvocatoriaJugador1WidgetState
           hintText: 'Buscar convocatorias',
           hintStyle:
               GoogleFonts.inter(color: const Color(0xFF444444), fontSize: 14),
-          prefixIcon: FaIcon(FontAwesomeIcons.magnifyingGlass,
+          prefixIcon: const FaIcon(FontAwesomeIcons.magnifyingGlass,
               size: 18, color: Color(0xFF444444)),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(

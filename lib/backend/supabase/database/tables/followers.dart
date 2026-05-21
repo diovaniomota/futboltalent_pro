@@ -9,7 +9,7 @@ class FollowersTable extends SupabaseTable<FollowersRow> {
 }
 
 class FollowersRow extends SupabaseDataRow {
-  FollowersRow(Map<String, dynamic> data) : super(data);
+  FollowersRow(super.data);
 
   @override
   SupabaseTable get table => FollowersTable();

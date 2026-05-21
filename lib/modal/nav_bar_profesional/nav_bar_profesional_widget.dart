@@ -74,15 +74,15 @@ class _NavBarProfesionalWidgetState extends State<NavBarProfesionalWidget> {
 
     return Container(
       height: navBarHeight,
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.white,
-        border: const Border(
+        border: Border(
           top: BorderSide(
             color: Color(0xFFE2E8F0),
             width: 1,
           ),
         ),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
             color: Color(0x0A000000),
             blurRadius: 8,

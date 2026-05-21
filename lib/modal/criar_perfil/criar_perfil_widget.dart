@@ -1,12 +1,10 @@
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/flutter_flow/flutter_flow_widgets.dart';
-import 'dart:ui';
 import '/index.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 import 'criar_perfil_model.dart';
 export 'criar_perfil_model.dart';
 
@@ -54,7 +52,7 @@ class _CriarPerfilWidgetState extends State<CriarPerfilWidget> {
         mainAxisSize: MainAxisSize.max,
         children: [
           Padding(
-            padding: EdgeInsetsDirectional.fromSTEB(0.0, 50.0, 0.0, 0.0),
+            padding: const EdgeInsetsDirectional.fromSTEB(0.0, 50.0, 0.0, 0.0),
             child: Text(
               'Crea tu perfil para conectar',
               style: FlutterFlowTheme.of(context).bodyMedium.override(
@@ -63,7 +61,7 @@ class _CriarPerfilWidgetState extends State<CriarPerfilWidget> {
                       fontStyle:
                           FlutterFlowTheme.of(context).bodyMedium.fontStyle,
                     ),
-                    color: Color(0xFF0D3B66),
+                    color: const Color(0xFF0D3B66),
                     fontSize: 20.0,
                     letterSpacing: 0.0,
                     fontWeight: FontWeight.bold,
@@ -73,7 +71,7 @@ class _CriarPerfilWidgetState extends State<CriarPerfilWidget> {
             ),
           ),
           Padding(
-            padding: EdgeInsetsDirectional.fromSTEB(20.0, 30.0, 20.0, 0.0),
+            padding: const EdgeInsetsDirectional.fromSTEB(20.0, 30.0, 20.0, 0.0),
             child: Text(
               'Unete a FutbolTalent.Pro para mostrar tus habilidades y conectar con ojeadores y clubes',
               textAlign: TextAlign.center,
@@ -92,7 +90,7 @@ class _CriarPerfilWidgetState extends State<CriarPerfilWidget> {
             ),
           ),
           Padding(
-            padding: EdgeInsetsDirectional.fromSTEB(0.0, 40.0, 0.0, 0.0),
+            padding: const EdgeInsetsDirectional.fromSTEB(0.0, 40.0, 0.0, 0.0),
             child: FFButtonWidget(
               onPressed: () async {
                 context.goNamed(LoginWidget.routeName);
@@ -101,9 +99,9 @@ class _CriarPerfilWidgetState extends State<CriarPerfilWidget> {
               options: FFButtonOptions(
                 width: 261.0,
                 height: 31.0,
-                padding: EdgeInsetsDirectional.fromSTEB(16.0, 0.0, 16.0, 0.0),
-                iconPadding: EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 0.0, 0.0),
-                color: Color(0xFF0D3B66),
+                padding: const EdgeInsetsDirectional.fromSTEB(16.0, 0.0, 16.0, 0.0),
+                iconPadding: const EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 0.0, 0.0),
+                color: const Color(0xFF0D3B66),
                 textStyle: FlutterFlowTheme.of(context).titleSmall.override(
                       font: GoogleFonts.inter(
                         fontWeight: FontWeight.bold,
@@ -122,7 +120,7 @@ class _CriarPerfilWidgetState extends State<CriarPerfilWidget> {
             ),
           ),
           Padding(
-            padding: EdgeInsetsDirectional.fromSTEB(0.0, 20.0, 0.0, 0.0),
+            padding: const EdgeInsetsDirectional.fromSTEB(0.0, 20.0, 0.0, 0.0),
             child: RichText(
               textScaler: MediaQuery.of(context).textScaler,
               text: TextSpan(
@@ -136,7 +134,7 @@ class _CriarPerfilWidgetState extends State<CriarPerfilWidget> {
                                 .bodyMedium
                                 .fontStyle,
                           ),
-                          color: Color(0xFF444444),
+                          color: const Color(0xFF444444),
                           letterSpacing: 0.0,
                           fontWeight: FontWeight.w500,
                           fontStyle:
@@ -152,7 +150,7 @@ class _CriarPerfilWidgetState extends State<CriarPerfilWidget> {
                                 .bodyMedium
                                 .fontStyle,
                           ),
-                          color: Color(0xFF0D3B66),
+                          color: const Color(0xFF0D3B66),
                           letterSpacing: 0.0,
                           fontWeight: FontWeight.bold,
                           fontStyle:
@@ -184,7 +182,7 @@ class _CriarPerfilWidgetState extends State<CriarPerfilWidget> {
             ),
           ),
           Padding(
-            padding: EdgeInsetsDirectional.fromSTEB(0.0, 50.0, 0.0, 0.0),
+            padding: const EdgeInsetsDirectional.fromSTEB(0.0, 50.0, 0.0, 0.0),
             child: Text(
               'Seguir viendo',
               style: FlutterFlowTheme.of(context).bodyMedium.override(

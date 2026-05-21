@@ -1916,7 +1916,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
         builder: (ctx, setStates) {
           return _buildModalContent(ctx, 'Agregar a Guardados', [
             DropdownButtonFormField<String>(
-              value: selectedListaId,
+              initialValue: selectedListaId,
               decoration: const InputDecoration(labelText: 'Lista destino *'),
               items: _listas
                   .map((l) => DropdownMenuItem<String>(

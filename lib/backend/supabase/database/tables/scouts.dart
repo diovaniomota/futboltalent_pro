@@ -9,7 +9,7 @@ class ScoutsTable extends SupabaseTable<ScoutsRow> {
 }
 
 class ScoutsRow extends SupabaseDataRow {
-  ScoutsRow(Map<String, dynamic> data) : super(data);
+  ScoutsRow(super.data);
 
   @override
   SupabaseTable get table => ScoutsTable();

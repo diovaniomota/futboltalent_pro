@@ -10,7 +10,7 @@ class CommentsWithUserTable extends SupabaseTable<CommentsWithUserRow> {
 }
 
 class CommentsWithUserRow extends SupabaseDataRow {
-  CommentsWithUserRow(Map<String, dynamic> data) : super(data);
+  CommentsWithUserRow(super.data);
 
   @override
   SupabaseTable get table => CommentsWithUserTable();

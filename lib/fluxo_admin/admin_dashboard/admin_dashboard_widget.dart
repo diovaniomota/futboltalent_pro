@@ -110,9 +110,9 @@ class _AdminDashboardWidgetState extends State<AdminDashboardWidget> {
       int jugadores = 0, profesionales = 0, clubes = 0;
       for (final user in usersResponse as List) {
         final type = user['userType']?.toString() ?? '';
-        if (type == 'jugador')
+        if (type == 'jugador') {
           jugadores++;
-        else if (type == 'profesional')
+        } else if (type == 'profesional')
           profesionales++;
         else if (type == 'club') clubes++;
       }

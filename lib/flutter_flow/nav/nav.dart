@@ -1,20 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:page_transition/page_transition.dart';
 import 'package:provider/provider.dart';
 
-import '/backend/supabase/supabase.dart';
 
 import '/auth/base_auth_user_provider.dart';
 
-import '/main.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
-import '/flutter_flow/lat_lng.dart';
-import '/flutter_flow/place.dart';
 import '/flutter_flow/flutter_flow_util.dart';
-import 'serialization_util.dart';
 
 import '/index.dart';
 
@@ -96,9 +89,9 @@ Widget _homeForUserType() {
     return const SeleccionDelTipoDePerfilWidget();
   }
   final userType = FFAppState.normalizeUserType(FFAppState().userType);
-  if (userType == 'admin') return AdminDashboardWidget();
-  if (userType == 'club') return DashboardClubWidget();
-  return FeedWidget();
+  if (userType == 'admin') return const AdminDashboardWidget();
+  if (userType == 'club') return const DashboardClubWidget();
+  return const FeedWidget();
 }
 
 GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
@@ -108,24 +101,24 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
       navigatorKey: appNavigatorKey,
       observers: [routeObserver],
       errorBuilder: (context, state) =>
-          appStateNotifier.loggedIn ? _homeForUserType() : LoginWidget(),
+          appStateNotifier.loggedIn ? _homeForUserType() : const LoginWidget(),
       routes: [
         FFRoute(
           name: '_initialize',
           path: '/',
           builder: (context, _) =>
-              appStateNotifier.loggedIn ? _homeForUserType() : LoginWidget(),
+              appStateNotifier.loggedIn ? _homeForUserType() : const LoginWidget(),
         ),
         FFRoute(
           name: 'auth_callback',
           path: '/auth/callback',
           builder: (context, _) =>
-              appStateNotifier.loggedIn ? _homeForUserType() : LoginWidget(),
+              appStateNotifier.loggedIn ? _homeForUserType() : const LoginWidget(),
         ),
         FFRoute(
           name: Onboardign1Widget.routeName,
           path: Onboardign1Widget.routePath,
-          builder: (context, params) => Onboardign1Widget(),
+          builder: (context, params) => const Onboardign1Widget(),
         ),
         FFRoute(
           name: EmpiezaComecarWidget.routeName,
@@ -140,12 +133,12 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: FeedWidget.routeName,
           path: FeedWidget.routePath,
-          builder: (context, params) => FeedWidget(),
+          builder: (context, params) => const FeedWidget(),
         ),
         FFRoute(
           name: SeleccionDelTipoDePerfilWidget.routeName,
           path: SeleccionDelTipoDePerfilWidget.routePath,
-          builder: (context, params) => SeleccionDelTipoDePerfilWidget(),
+          builder: (context, params) => const SeleccionDelTipoDePerfilWidget(),
         ),
         FFRoute(
           name: RegistroClubWidget.routeName,
@@ -164,7 +157,7 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: ConvocatoriaJugador1Widget.routeName,
           path: ConvocatoriaJugador1Widget.routePath,
-          builder: (context, params) => ConvocatoriaJugador1Widget(),
+          builder: (context, params) => const ConvocatoriaJugador1Widget(),
         ),
         FFRoute(
           name: DetallesDeLaConvocatoriaWidget.routeName,
@@ -179,7 +172,7 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: CrearPublicacinDeVideoWidget.routeName,
           path: CrearPublicacinDeVideoWidget.routePath,
-          builder: (context, params) => CrearPublicacinDeVideoWidget(),
+          builder: (context, params) => const CrearPublicacinDeVideoWidget(),
         ),
         FFRoute(
           name: CursosEjerciciosWidget.routeName,
@@ -214,17 +207,17 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: RankingWidget.routeName,
           path: RankingWidget.routePath,
-          builder: (context, params) => RankingWidget(),
+          builder: (context, params) => const RankingWidget(),
         ),
         FFRoute(
           name: PerfilJugadorWidget.routeName,
           path: PerfilJugadorWidget.routePath,
-          builder: (context, params) => PerfilJugadorWidget(),
+          builder: (context, params) => const PerfilJugadorWidget(),
         ),
         FFRoute(
           name: EditarPerfilWidget.routeName,
           path: EditarPerfilWidget.routePath,
-          builder: (context, params) => EditarPerfilWidget(),
+          builder: (context, params) => const EditarPerfilWidget(),
         ),
         FFRoute(
           name: ExplorarWidget.routeName,
@@ -239,12 +232,12 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: ListaYNotasWidget.routeName,
           path: ListaYNotasWidget.routePath,
-          builder: (context, params) => ListaYNotasWidget(),
+          builder: (context, params) => const ListaYNotasWidget(),
         ),
         FFRoute(
           name: ConvocatoriaProfesionalWidget.routeName,
           path: ConvocatoriaProfesionalWidget.routePath,
-          builder: (context, params) => ConvocatoriaProfesionalWidget(),
+          builder: (context, params) => const ConvocatoriaProfesionalWidget(),
         ),
         FFRoute(
           name: DetallesDeLaConvocatoriaProfesionalWidget.routeName,
@@ -260,7 +253,7 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: PerfilProfesioanlWidget.routeName,
           path: PerfilProfesioanlWidget.routePath,
-          builder: (context, params) => PerfilProfesioanlWidget(),
+          builder: (context, params) => const PerfilProfesioanlWidget(),
         ),
         FFRoute(
           name: PerfilProfesionalSolicitarContatoWidget.routeName,
@@ -275,73 +268,73 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: DashboardClubWidget.routeName,
           path: DashboardClubWidget.routePath,
-          builder: (context, params) => DashboardClubWidget(),
+          builder: (context, params) => const DashboardClubWidget(),
         ),
         FFRoute(
           name: ConvocatoriasClubWidget.routeName,
           path: ConvocatoriasClubWidget.routePath,
-          builder: (context, params) => ConvocatoriasClubWidget(),
+          builder: (context, params) => const ConvocatoriasClubWidget(),
         ),
         FFRoute(
           name: PostulacionesWidget.routeName,
           path: PostulacionesWidget.routePath,
-          builder: (context, params) => PostulacionesWidget(),
+          builder: (context, params) => const PostulacionesWidget(),
         ),
         FFRoute(
           name: ListaYNotaWidget.routeName,
           path: ListaYNotaWidget.routePath,
-          builder: (context, params) => ListaYNotaWidget(),
+          builder: (context, params) => const ListaYNotaWidget(),
         ),
         FFRoute(
           name: ConfiguracinWidget.routeName,
           path: ConfiguracinWidget.routePath,
-          builder: (context, params) => ConfiguracinWidget(),
+          builder: (context, params) => const ConfiguracinWidget(),
         ),
         FFRoute(
           name: LoginWidget.routeName,
           path: LoginWidget.routePath,
-          builder: (context, params) => LoginWidget(),
+          builder: (context, params) => const LoginWidget(),
         ),
         FFRoute(
           name: CriarClubWidget.routeName,
           path: CriarClubWidget.routePath,
-          builder: (context, params) => CriarClubWidget(),
+          builder: (context, params) => const CriarClubWidget(),
         ),
         FFRoute(
           name: AdminDashboardWidget.routeName,
           path: AdminDashboardWidget.routePath,
           requireAdmin: true,
-          builder: (context, params) => AdminDashboardWidget(),
+          builder: (context, params) => const AdminDashboardWidget(),
         ),
         FFRoute(
           name: AdminUsuariosWidget.routeName,
           path: AdminUsuariosWidget.routePath,
           requireAdmin: true,
-          builder: (context, params) => AdminUsuariosWidget(),
+          builder: (context, params) => const AdminUsuariosWidget(),
         ),
         FFRoute(
           name: AdminVideosWidget.routeName,
           path: AdminVideosWidget.routePath,
           requireAdmin: true,
-          builder: (context, params) => AdminVideosWidget(),
+          builder: (context, params) => const AdminVideosWidget(),
         ),
         FFRoute(
           name: AdminDesafiosWidget.routeName,
           path: AdminDesafiosWidget.routePath,
           requireAdmin: true,
-          builder: (context, params) => AdminDesafiosWidget(),
+          builder: (context, params) => const AdminDesafiosWidget(),
         ),
         FFRoute(
           name: AdminConvocatoriasWidget.routeName,
           path: AdminConvocatoriasWidget.routePath,
           requireAdmin: true,
-          builder: (context, params) => AdminConvocatoriasWidget(),
+          builder: (context, params) => const AdminConvocatoriasWidget(),
         ),
         FFRoute(
           name: AdminSettingsWidget.routeName,
           path: AdminSettingsWidget.routePath,
           requireAdmin: true,
-          builder: (context, params) => AdminSettingsWidget(),
+          builder: (context, params) => const AdminSettingsWidget(),
         )
       ].map((r) => r.toRoute(appStateNotifier)).toList(),
     );
@@ -588,7 +581,7 @@ class TransitionInfo {
   final Duration duration;
   final Alignment? alignment;
 
-  static TransitionInfo appDefault() => TransitionInfo(hasTransition: false);
+  static TransitionInfo appDefault() => const TransitionInfo(hasTransition: false);
 }
 
 class RootPageContext {

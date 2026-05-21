@@ -65,9 +65,9 @@ class _Onboardign1WidgetState extends State<Onboardign1Widget> {
               child: Stack(
                 children: [
                   Align(
-                    alignment: AlignmentDirectional(0.0, -1.0),
+                    alignment: const AlignmentDirectional(0.0, -1.0),
                     child: Padding(
-                      padding: EdgeInsetsDirectional.fromSTEB(
+                      padding: const EdgeInsetsDirectional.fromSTEB(
                           30.0, 100.0, 30.0, 0.0),
                       child: Text(
                         'Mostrá tu talento al mundo.',
@@ -91,10 +91,10 @@ class _Onboardign1WidgetState extends State<Onboardign1Widget> {
                     ),
                   ),
                   Align(
-                    alignment: AlignmentDirectional(0.0, -0.4),
+                    alignment: const AlignmentDirectional(0.0, -0.4),
                     child: Padding(
                       padding:
-                          EdgeInsetsDirectional.fromSTEB(30.0, 0.0, 30.0, 0.0),
+                          const EdgeInsetsDirectional.fromSTEB(30.0, 0.0, 30.0, 0.0),
                       child: Text(
                         'Plataforma de scouting y desarrollo de talento en el fútbol.',
                         style: FlutterFlowTheme.of(context).bodyMedium.override(
@@ -132,11 +132,11 @@ class _Onboardign1WidgetState extends State<Onboardign1Widget> {
                           options: FFButtonOptions(
                             width: double.infinity,
                             height: 43.0,
-                            padding: EdgeInsetsDirectional.fromSTEB(
+                            padding: const EdgeInsetsDirectional.fromSTEB(
                                 16.0, 0.0, 16.0, 0.0),
-                            iconPadding: EdgeInsetsDirectional.fromSTEB(
+                            iconPadding: const EdgeInsetsDirectional.fromSTEB(
                                 0.0, 0.0, 0.0, 0.0),
-                            color: Color(0xFF0D3B66),
+                            color: const Color(0xFF0D3B66),
                             textStyle: FlutterFlowTheme.of(context)
                                 .titleSmall
                                 .override(

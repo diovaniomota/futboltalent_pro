@@ -25,7 +25,7 @@ class SupaFlow {
         // Removed legacy flutterflow headers
         anonKey: _kSupabaseAnonKey,
         debug: false,
-        authOptions: FlutterAuthClientOptions(
+        authOptions: const FlutterAuthClientOptions(
           authFlowType: AuthFlowType.implicit,
           // 1.2 Persistência de sessão: autoRefreshToken é true por padrão.
           // A sessão é mantida automaticamente pelo supabase_flutter

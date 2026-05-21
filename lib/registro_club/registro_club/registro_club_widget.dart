@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import '/backend/supabase/supabase.dart';
 import '/auth/supabase_auth/auth_util.dart';
@@ -3517,8 +3516,8 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
         }
       }
       dialCode ??= _dialCodeFromCountrySelection();
-      if (dialCode != null && digits.startsWith(dialCode!)) {
-        localDigits = digits.substring(dialCode!.length);
+      if (dialCode != null && digits.startsWith(dialCode)) {
+        localDigits = digits.substring(dialCode.length);
       }
     } else {
       dialCode = _dialCodeFromCountrySelection();

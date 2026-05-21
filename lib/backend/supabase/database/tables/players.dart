@@ -9,7 +9,7 @@ class PlayersTable extends SupabaseTable<PlayersRow> {
 }
 
 class PlayersRow extends SupabaseDataRow {
-  PlayersRow(Map<String, dynamic> data) : super(data);
+  PlayersRow(super.data);
 
   @override
   SupabaseTable get table => PlayersTable();

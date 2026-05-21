@@ -10,7 +10,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_compress/video_compress.dart';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'crear_publicacin_de_video_model.dart';
 export 'crear_publicacin_de_video_model.dart';
 

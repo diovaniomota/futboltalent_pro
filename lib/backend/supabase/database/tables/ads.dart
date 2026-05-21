@@ -9,7 +9,7 @@ class AdsTable extends SupabaseTable<AdsRow> {
 }
 
 class AdsRow extends SupabaseDataRow {
-  AdsRow(Map<String, dynamic> data) : super(data);
+  AdsRow(super.data);
 
   @override
   SupabaseTable get table => AdsTable();

@@ -282,7 +282,7 @@ String countryFlagEmoji(dynamic value) {
   final key = normalizeLookupKey(value);
   if (key.isEmpty) return '';
 
-  const _flags = <String, String>{
+  const flags = <String, String>{
     // Americas
     'argentina': '🇦🇷',
     'brasil': '🇧🇷',
@@ -397,5 +397,5 @@ String countryFlagEmoji(dynamic value) {
     'india': '🇮🇳',
   };
 
-  return _flags[key] ?? '';
+  return flags[key] ?? '';
 }
