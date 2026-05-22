@@ -1,5 +1,59 @@
 begin;
 
+create or replace function public.admin_delete_rows_by_text_values(
+  p_table_name text,
+  p_column_name text,
+  p_values text[]
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_values text[];
+  v_deleted integer := 0;
+begin
+  select coalesce(array_agg(distinct v), array[]::text[])
+  into v_values
+  from (
+    select nullif(btrim(u.value), '') as v
+    from unnest(coalesce(p_values, array[]::text[])) as u(value)
+  ) values_to_delete
+  where v is not null;
+
+  if coalesce(array_length(v_values, 1), 0) = 0 then
+    return 0;
+  end if;
+
+  if to_regclass(format('public.%I', p_table_name)) is null then
+    return 0;
+  end if;
+
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = p_table_name
+      and column_name = p_column_name
+  ) then
+    return 0;
+  end if;
+
+  execute format(
+    'delete from public.%I where %I::text = any($1)',
+    p_table_name,
+    p_column_name
+  )
+  using v_values;
+
+  get diagnostics v_deleted = row_count;
+  return coalesce(v_deleted, 0);
+end;
+$$;
+
+revoke all on function public.admin_delete_rows_by_text_values(text, text, text[]) from public;
+
 create or replace function public.delete_own_account()
 returns jsonb
 language plpgsql
@@ -113,8 +167,8 @@ begin
 
   begin
     delete from storage.objects
-    where owner = p_user_id
-       or owner_id = v_user_id
+    where owner::text = v_user_id
+       or owner_id::text = v_user_id
        or name like '%' || v_user_id || '%'
        or name like '%' || v_legacy_club_id || '%'
        or path_tokens && (v_identity_ids || v_club_ids || v_video_ids);
@@ -254,22 +308,22 @@ begin
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('users', 'user_id', array[v_user_id]);
 
   begin
-    delete from auth.sessions where user_id = p_user_id;
+    delete from auth.sessions where user_id::text = v_user_id;
   exception
-    when undefined_table then null;
+    when undefined_table or undefined_column then null;
   end;
 
   begin
-    delete from auth.refresh_tokens where user_id = p_user_id;
+    delete from auth.refresh_tokens where user_id::text = v_user_id;
   exception
-    when undefined_table then null;
+    when undefined_table or undefined_column then null;
   end;
 
   delete from auth.identities
-  where user_id = p_user_id;
+  where user_id::text = v_user_id;
 
   delete from auth.users
-  where id = p_user_id;
+  where id::text = v_user_id;
 
   return jsonb_build_object(
     'user_id', p_user_id,

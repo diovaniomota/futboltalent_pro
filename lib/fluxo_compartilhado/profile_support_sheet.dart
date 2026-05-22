@@ -15,85 +15,99 @@ Future<void> showProfileSupportSheet({
 }) async {
   final action = await showModalBottomSheet<_ProfileSupportAction>(
     context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
     backgroundColor: Colors.white,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
     builder: (sheetContext) {
+      final mediaQuery = MediaQuery.of(sheetContext);
+
       return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE2E8F0),
-                    borderRadius: BorderRadius.circular(999),
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: mediaQuery.size.height * 0.88,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'Perfil y soporte',
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF0F172A),
+                const SizedBox(height: 18),
+                Text(
+                  'Perfil y soporte',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF0F172A),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Administrá tu perfil, sesión y datos de la cuenta.',
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: const Color(0xFF64748B),
-                  fontWeight: FontWeight.w500,
+                const SizedBox(height: 6),
+                Text(
+                  'Administrá tu perfil, sesión y datos de la cuenta.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: const Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 18),
-              _SupportActionTile(
-                icon: Icons.edit_outlined,
-                title: 'Editar perfil',
-                subtitle: 'Actualizá tus datos visibles en la app.',
-                onTap: () => Navigator.of(sheetContext)
-                    .pop(_ProfileSupportAction.editProfile),
-              ),
-              const SizedBox(height: 10),
-              _SupportActionTile(
-                icon: Icons.bug_report_outlined,
-                title: 'Reportar error o sugerencia',
-                subtitle: 'Mandanos feedback desde esta pantalla.',
-                onTap: () => Navigator.of(sheetContext)
-                    .pop(_ProfileSupportAction.feedback),
-              ),
-              const SizedBox(height: 10),
-              _SupportActionTile(
-                icon: Icons.logout_rounded,
-                title: 'Cerrar sesión',
-                subtitle: 'Salí de tu cuenta en este dispositivo.',
-                onTap: () => Navigator.of(sheetContext)
-                    .pop(_ProfileSupportAction.signOut),
-              ),
-              const SizedBox(height: 10),
-              _SupportActionTile(
-                icon: Icons.delete_forever_outlined,
-                title: 'Eliminar mi cuenta',
-                subtitle: 'Borrá tu cuenta y todos tus datos de la app.',
-                onTap: () => Navigator.of(sheetContext)
-                    .pop(_ProfileSupportAction.deleteAccount),
-                isDestructive: true,
-              ),
-            ],
+                const SizedBox(height: 18),
+                _SupportActionTile(
+                  icon: Icons.edit_outlined,
+                  title: 'Editar perfil',
+                  subtitle: 'Actualizá tus datos visibles en la app.',
+                  onTap: () => Navigator.of(sheetContext)
+                      .pop(_ProfileSupportAction.editProfile),
+                ),
+                const SizedBox(height: 10),
+                _SupportActionTile(
+                  icon: Icons.bug_report_outlined,
+                  title: 'Reportar error o sugerencia',
+                  subtitle: 'Mandanos feedback desde esta pantalla.',
+                  onTap: () => Navigator.of(sheetContext)
+                      .pop(_ProfileSupportAction.feedback),
+                ),
+                const SizedBox(height: 10),
+                _SupportActionTile(
+                  icon: Icons.logout_rounded,
+                  title: 'Cerrar sesión',
+                  subtitle: 'Salí de tu cuenta en este dispositivo.',
+                  onTap: () => Navigator.of(sheetContext)
+                      .pop(_ProfileSupportAction.signOut),
+                ),
+                const SizedBox(height: 10),
+                _SupportActionTile(
+                  icon: Icons.delete_forever_outlined,
+                  title: 'Eliminar mi cuenta',
+                  subtitle: 'Borrá tu cuenta y todos tus datos de la app.',
+                  onTap: () => Navigator.of(sheetContext)
+                      .pop(_ProfileSupportAction.deleteAccount),
+                  isDestructive: true,
+                ),
+              ],
+            ),
           ),
         ),
       );
     },
   );
+
+  if (!context.mounted || action == null) {
+    return;
+  }
 
   if (action == _ProfileSupportAction.editProfile) {
     onEditProfile();
@@ -326,9 +340,13 @@ class _SupportActionTile extends StatelessWidget {
       child: Ink(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isDestructive ? const Color(0xFFFEF2F2) : const Color(0xFFF8FAFC),
+          color:
+              isDestructive ? const Color(0xFFFEF2F2) : const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: isDestructive ? const Color(0xFFFCA5A5) : const Color(0xFFE2E8F0)),
+          border: Border.all(
+              color: isDestructive
+                  ? const Color(0xFFFCA5A5)
+                  : const Color(0xFFE2E8F0)),
         ),
         child: Row(
           children: [
@@ -336,10 +354,15 @@ class _SupportActionTile extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: isDestructive ? const Color(0xFFFEE2E2) : const Color(0xFFE8F0FE),
+                color: isDestructive
+                    ? const Color(0xFFFEE2E2)
+                    : const Color(0xFFE8F0FE),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, color: isDestructive ? const Color(0xFFDC2626) : const Color(0xFF0D3B66)),
+              child: Icon(icon,
+                  color: isDestructive
+                      ? const Color(0xFFDC2626)
+                      : const Color(0xFF0D3B66)),
             ),
             const SizedBox(width: 12),
             Expanded(

@@ -82,11 +82,40 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       if (mounted) {
         setState(() {
           _isDeleting = false;
-          _errorMessage =
-              'No se pudo eliminar la cuenta. Verifica tu conexión e intentá de nuevo.';
+          _errorMessage = _deleteAccountErrorMessage(e);
         });
       }
     }
+  }
+
+  String _deleteAccountErrorMessage(Object error) {
+    final rawError = error.toString().toLowerCase();
+
+    if (rawError.contains('delete_own_account') &&
+        (rawError.contains('schema cache') ||
+            rawError.contains('could not find') ||
+            rawError.contains('pgrst202'))) {
+      return 'La eliminación todavía no está configurada en el servidor. Aplicá la migración de eliminación e intentá de nuevo.';
+    }
+
+    if (rawError.contains('admin_delete_rows_by_text_values')) {
+      return 'La migración de eliminación quedó incompleta en el servidor. Aplicá la versión actualizada e intentá de nuevo.';
+    }
+
+    if (rawError.contains('permission denied') ||
+        rawError.contains('42501') ||
+        rawError.contains('insufficient_privilege')) {
+      return 'No tenés permiso para completar la eliminación. Revisá la migración y los permisos de la función.';
+    }
+
+    if (rawError.contains('auth_required') ||
+        rawError.contains('jwt') ||
+        rawError.contains('not authenticated') ||
+        rawError.contains('401')) {
+      return 'Tu sesión expiró. Iniciá sesión de nuevo y repetí la eliminación.';
+    }
+
+    return 'No se pudo eliminar la cuenta. Verifica tu conexión e intentá de nuevo.';
   }
 
   @override
