@@ -261,6 +261,7 @@ class _LoginWidgetState extends State<LoginWidget> {
   Future<void> _signInWithProvider(OAuthProvider provider) async {
     setState(() => _isLoading = true);
     try {
+      GoRouter.of(context).prepareAuthEvent();
       final success = await signInWithSocialProvider(provider);
       if (!success && mounted) {
         setState(() {
@@ -377,7 +378,7 @@ class _LoginWidgetState extends State<LoginWidget> {
         _responsive(context, mobile: 337, tablet: 380, desktop: 400);
 
     return AutofillGroup(
-      child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
       SizedBox(
           width: fieldWidth * scale,
           child: TextFormField(
@@ -530,51 +531,246 @@ class _LoginWidgetState extends State<LoginWidget> {
   }
 
   void _showForgotPasswordDialog() {
-    final resetEmailController = TextEditingController();
+    final resetEmailController =
+        TextEditingController(text: _emailController.text.trim());
+    var isSubmitting = false;
+    String? localError;
+
     showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-                title: const Text('Recuperar contraseña'),
-                content: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text(
-                      'Ingresa tu correo electrónico para restablecer la contraseña.'),
-                  const SizedBox(height: 10),
-                  TextField(
-                      controller: resetEmailController,
-                      decoration: const InputDecoration(
-                          hintText: 'Correo electrónico',
-                          border: OutlineInputBorder())),
-                ]),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancelar')),
-                  ElevatedButton(
-                      onPressed: () async {
-                        if (resetEmailController.text.trim().isNotEmpty) {
-                          try {
-                            await authManager.resetPassword(
-                                email: resetEmailController.text.trim(),
-                                context: context,
-                                redirectTo: 'futboltalent://login-callback');
-                            if (!ctx.mounted || !mounted) return;
-                            Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Correo enviado'),
-                                    backgroundColor: Colors.green));
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'No pudimos enviar el correo de recuperación. Verifica el correo e intenta de nuevo.'),
-                                    backgroundColor: Colors.red));
-                          }
-                        }
-                      },
-                      child: const Text('Enviar'))
-                ]));
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF4FF),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.lock_reset_rounded,
+                    color: Color(0xFF0D3B66),
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Recuperar contraseña',
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF151A2D),
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Te enviaremos un enlace seguro para crear una nueva contraseña.',
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF5B6478),
+                    fontSize: 14,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                TextField(
+                  controller: resetEmailController,
+                  enabled: !isSubmitting,
+                  keyboardType: TextInputType.emailAddress,
+                  textCapitalization: TextCapitalization.none,
+                  autocorrect: false,
+                  decoration: InputDecoration(
+                    labelText: 'Correo electrónico',
+                    prefixIcon: const Icon(Icons.mail_outline_rounded),
+                    errorText: localError,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF0D3B66),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+                if (isSubmitting) ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2.4),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Enviando enlace...',
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFF5B6478),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed:
+                            isSubmitting ? null : () => Navigator.pop(ctx),
+                        child: const Text('Cancelar'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D8BE8),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: isSubmitting
+                            ? null
+                            : () async {
+                                final email = resetEmailController.text.trim();
+                                if (email.isEmpty || !email.contains('@')) {
+                                  setDialogState(() {
+                                    localError =
+                                        'Ingresa un correo electrónico válido.';
+                                  });
+                                  return;
+                                }
+
+                                setDialogState(() {
+                                  isSubmitting = true;
+                                  localError = null;
+                                });
+
+                                try {
+                                  await authManager.resetPassword(
+                                    email: email,
+                                    context: context,
+                                    redirectTo: 'futboltalent://login-callback',
+                                  );
+                                  if (!ctx.mounted || !mounted) return;
+                                  Navigator.pop(ctx);
+                                  await _showResetEmailSentDialog(email);
+                                } catch (e) {
+                                  if (!ctx.mounted) return;
+                                  setDialogState(() {
+                                    isSubmitting = false;
+                                    localError =
+                                        'No pudimos enviar el correo. Verifica el email e intenta de nuevo.';
+                                  });
+                                }
+                              },
+                        child: isSubmitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                            : const Text('Enviar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).whenComplete(resetEmailController.dispose);
+  }
+
+  Future<void> _showResetEmailSentDialog(String email) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE7F8EF),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.mark_email_read_rounded,
+                  color: Color(0xFF0E8F4F),
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Revisa tu correo',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: const Color(0xFF151A2D),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Enviamos un enlace para restablecer la contraseña a $email.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: const Color(0xFF5B6478),
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D3B66),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Entendido'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _showGuardianApprovalDialog() async {
@@ -838,7 +1034,7 @@ class _LoginWidgetState extends State<LoginWidget> {
       height: 50 * scale,
       child: OutlinedButton.icon(
         onPressed: _isLoading ? null : onPressed,
-        icon: icon is IconData 
+        icon: icon is IconData
             ? Icon(icon,
                 size: icon == Icons.apple ? 24 * scale : 18 * scale,
                 color: const Color(0xFF0D3B66))

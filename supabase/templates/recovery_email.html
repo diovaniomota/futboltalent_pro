@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Recupera tu contrasena</title>
+  </head>
+  <body style="margin:0; padding:0; background:#eef4f8; font-family:Arial, Helvetica, sans-serif; color:#172033;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef4f8; padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; background:#ffffff; border-radius:24px; overflow:hidden; box-shadow:0 18px 45px rgba(13,59,102,0.14);">
+            <tr>
+              <td style="background:#0d3b66; padding:30px 28px; text-align:center;">
+                <div style="display:inline-block; padding:9px 14px; border-radius:999px; background:rgba(255,255,255,0.12); color:#dcecff; font-size:13px; font-weight:700; letter-spacing:0.3px;">
+                  FutbolTalent Pro
+                </div>
+                <h1 style="margin:18px 0 0; color:#ffffff; font-size:28px; line-height:1.15; font-weight:800;">
+                  Recupera tu contrasena
+                </h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:30px 28px 10px;">
+                <p style="margin:0; color:#48556a; font-size:16px; line-height:1.55;">
+                  Recibimos una solicitud para restablecer el acceso a tu cuenta. Toca el boton de abajo y crea una nueva contrasena segura dentro de la app.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:20px 28px 24px;">
+                <a href="{{ .ConfirmationURL }}" style="display:inline-block; background:#0d8be8; color:#ffffff; text-decoration:none; font-size:16px; font-weight:800; padding:15px 24px; border-radius:14px; box-shadow:0 10px 22px rgba(13,139,232,0.28);">
+                  Crear nueva contrasena
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 24px;">
+                <div style="background:#f5f8fb; border:1px solid #dce6ef; border-radius:16px; padding:16px;">
+                  <p style="margin:0; color:#5b6478; font-size:13px; line-height:1.5;">
+                    Por seguridad, este enlace solo debe ser usado por ti. Si no solicitaste este cambio, ignora este correo y tu contrasena actual seguira igual.
+                  </p>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 30px;">
+                <p style="margin:0; color:#7a8496; font-size:12px; line-height:1.5;">
+                  Si el boton no funciona, copia y pega este enlace en tu navegador:
+                </p>
+                <p style="margin:8px 0 0; word-break:break-all; color:#0d3b66; font-size:12px; line-height:1.45;">
+                  {{ .ConfirmationURL }}
+                </p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:18px 0 0; color:#7a8496; font-size:12px;">
+            FutbolTalent Pro
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

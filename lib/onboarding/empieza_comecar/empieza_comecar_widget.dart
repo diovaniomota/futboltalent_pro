@@ -2614,9 +2614,14 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
   Future<void> _signInWithProvider(OAuthProvider provider) async {
     setState(() => _isRegistering = true);
     try {
+      FFAppState().userType = _normalizedSelectedUserType;
+      FFAppState().registrationFlowActive = true;
+      GoRouter.of(context).prepareAuthEvent();
       final success = await signInWithSocialProvider(provider);
       if (!success && mounted) {
         _showSnackBar(socialAuthLaunchErrorMessage(provider));
+      } else if (success) {
+        await _handleCompletedSocialAuth(provider);
       }
     } catch (e) {
       debugPrint('Social auth failed for ${socialProviderLabel(provider)}: $e');
@@ -2625,6 +2630,37 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
     } finally {
       if (mounted) setState(() => _isRegistering = false);
     }
+  }
+
+  Future<void> _handleCompletedSocialAuth(OAuthProvider provider) async {
+    final uid = await _waitForSocialAuthUid();
+    if (uid.isEmpty) return;
+
+    await FFAppState().syncUserType(expectedUid: uid);
+    if (!mounted || !FFAppState().registrationComplete) return;
+
+    FFAppState().registrationFlowActive = false;
+    _showSnackBar(
+      'Ya existe una cuenta con ese correo. Iniciamos sesión con ${socialProviderLabel(provider)}.',
+    );
+
+    final userType = FFAppState.normalizeUserType(FFAppState().userType);
+    if (userType == 'admin') {
+      context.goNamed('admin_dashboard');
+    } else if (userType == 'club') {
+      context.goNamed('dashboard_club');
+    } else {
+      context.goNamed('feed');
+    }
+  }
+
+  Future<String> _waitForSocialAuthUid() async {
+    for (var attempt = 0; attempt < 10; attempt++) {
+      final uid = currentUserUid.trim();
+      if (uid.isNotEmpty) return uid;
+      await Future.delayed(const Duration(milliseconds: 150));
+    }
+    return currentUserUid.trim();
   }
 
   void _goToNextTab() {
@@ -3653,127 +3689,128 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
         _responsive(context, mobile: 320, tablet: 337, desktop: 400);
 
     return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(
-          horizontal:
-              _responsive(context, mobile: 20, tablet: 40, desktop: 60)),
-      child: AutofillGroup(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-          Padding(
-            padding: EdgeInsets.only(top: 20 * scale),
-            child: Text(
-              'Crea tu cuenta',
-              style: GoogleFonts.inter(
-                fontSize:
-                    _responsive(context, mobile: 24, tablet: 28, desktop: 32) *
+        padding: EdgeInsets.symmetric(
+            horizontal:
+                _responsive(context, mobile: 20, tablet: 40, desktop: 60)),
+        child: AutofillGroup(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: EdgeInsets.only(top: 20 * scale),
+                child: Text(
+                  'Crea tu cuenta',
+                  style: GoogleFonts.inter(
+                    fontSize: _responsive(context,
+                            mobile: 24, tablet: 28, desktop: 32) *
                         scale,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF0D3B66),
-              ),
-            ),
-          ),
-          SizedBox(height: 30 * scale),
-          _buildTextField(
-            context: context,
-            label: 'Correo electrónico',
-            hint: 'tu.correo@ejemplo.com',
-            controller: _emailController,
-            focusNode: _emailFocusNode,
-            keyboardType: TextInputType.emailAddress,
-            autofillHints: const [AutofillHints.email],
-            width: double.infinity,
-          ),
-          SizedBox(height: 15 * scale),
-          _buildTextField(
-            context: context,
-            label: 'Contraseña',
-            hint: 'Crea una contraseña segura',
-            controller: _senhaController,
-            focusNode: _senhaFocusNode,
-            keyboardType: TextInputType.visiblePassword,
-            obscureText: !_senhaVisibility,
-            autofillHints: const [AutofillHints.newPassword],
-            width: double.infinity,
-            textCapitalization: TextCapitalization.none,
-            autocorrect: false,
-            enableSuggestions: false,
-            suffixIcon: IconButton(
-              icon: Icon(
-                  _senhaVisibility ? Icons.visibility : Icons.visibility_off),
-              onPressed: () =>
-                  setState(() => _senhaVisibility = !_senhaVisibility),
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          SizedBox(height: 10 * scale),
-          _buildPasswordRequirements(context, width: double.infinity),
-          SizedBox(height: 15 * scale),
-          _buildTextField(
-            context: context,
-            label: 'Confirmar contraseña',
-            hint: 'Confirma tu contraseña',
-            controller: _confirmarSenhaController,
-            focusNode: _confirmarSenhaFocusNode,
-            keyboardType: TextInputType.visiblePassword,
-            obscureText: !_confirmarSenhaVisibility,
-            width: double.infinity,
-            textCapitalization: TextCapitalization.none,
-            autocorrect: false,
-            enableSuggestions: false,
-            suffixIcon: IconButton(
-              icon: Icon(_confirmarSenhaVisibility
-                  ? Icons.visibility
-                  : Icons.visibility_off),
-              onPressed: () => setState(
-                  () => _confirmarSenhaVisibility = !_confirmarSenhaVisibility),
-            ),
-          ),
-          SizedBox(height: 30 * scale),
-          _buildPrimaryButton(
-            context: context,
-            text: _isRegistering ? 'Registrando...' : 'Registrarse',
-            onPressed: _isRegistering ? null : _registerWithEmail,
-            width: buttonWidth,
-          ),
-          SizedBox(height: 30 * scale),
-          const Divider(thickness: 2, color: Colors.black),
-          SizedBox(height: 30 * scale),
-          _buildSocialButton(context, 'Registrarse con Google',
-              FontAwesomeIcons.google, buttonWidth,
-              onPressed: () => _signInWithProvider(OAuthProvider.google)),
-          if (isiOS) ...[
-            SizedBox(height: 10 * scale),
-            _buildSocialButton(
-                context, 'Registrarse con Apple', Icons.apple, buttonWidth,
-                onPressed: () => _signInWithProvider(OAuthProvider.apple)),
-          ],
-          SizedBox(height: 20 * scale),
-          Padding(
-            padding: EdgeInsets.symmetric(vertical: 20 * scale),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('¿Ya tienes cuenta? ',
-                    style: GoogleFonts.inter(
-                        fontSize: 14 * scale,
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFF444444))),
-                GestureDetector(
-                  onTap: () => context.pushNamed('login'),
-                  child: Text('Iniciar sesión',
-                      style: GoogleFonts.inter(
-                          fontSize: 14 * scale,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF0D3B66),
-                          decoration: TextDecoration.underline)),
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF0D3B66),
+                  ),
                 ),
+              ),
+              SizedBox(height: 30 * scale),
+              _buildTextField(
+                context: context,
+                label: 'Correo electrónico',
+                hint: 'tu.correo@ejemplo.com',
+                controller: _emailController,
+                focusNode: _emailFocusNode,
+                keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
+                width: double.infinity,
+              ),
+              SizedBox(height: 15 * scale),
+              _buildTextField(
+                context: context,
+                label: 'Contraseña',
+                hint: 'Crea una contraseña segura',
+                controller: _senhaController,
+                focusNode: _senhaFocusNode,
+                keyboardType: TextInputType.visiblePassword,
+                obscureText: !_senhaVisibility,
+                autofillHints: const [AutofillHints.newPassword],
+                width: double.infinity,
+                textCapitalization: TextCapitalization.none,
+                autocorrect: false,
+                enableSuggestions: false,
+                suffixIcon: IconButton(
+                  icon: Icon(_senhaVisibility
+                      ? Icons.visibility
+                      : Icons.visibility_off),
+                  onPressed: () =>
+                      setState(() => _senhaVisibility = !_senhaVisibility),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              SizedBox(height: 10 * scale),
+              _buildPasswordRequirements(context, width: double.infinity),
+              SizedBox(height: 15 * scale),
+              _buildTextField(
+                context: context,
+                label: 'Confirmar contraseña',
+                hint: 'Confirma tu contraseña',
+                controller: _confirmarSenhaController,
+                focusNode: _confirmarSenhaFocusNode,
+                keyboardType: TextInputType.visiblePassword,
+                obscureText: !_confirmarSenhaVisibility,
+                width: double.infinity,
+                textCapitalization: TextCapitalization.none,
+                autocorrect: false,
+                enableSuggestions: false,
+                suffixIcon: IconButton(
+                  icon: Icon(_confirmarSenhaVisibility
+                      ? Icons.visibility
+                      : Icons.visibility_off),
+                  onPressed: () => setState(() =>
+                      _confirmarSenhaVisibility = !_confirmarSenhaVisibility),
+                ),
+              ),
+              SizedBox(height: 30 * scale),
+              _buildPrimaryButton(
+                context: context,
+                text: _isRegistering ? 'Registrando...' : 'Registrarse',
+                onPressed: _isRegistering ? null : _registerWithEmail,
+                width: buttonWidth,
+              ),
+              SizedBox(height: 30 * scale),
+              const Divider(thickness: 2, color: Colors.black),
+              SizedBox(height: 30 * scale),
+              _buildSocialButton(context, 'Registrarse con Google',
+                  FontAwesomeIcons.google, buttonWidth,
+                  onPressed: () => _signInWithProvider(OAuthProvider.google)),
+              if (isiOS) ...[
+                SizedBox(height: 10 * scale),
+                _buildSocialButton(
+                    context, 'Registrarse con Apple', Icons.apple, buttonWidth,
+                    onPressed: () => _signInWithProvider(OAuthProvider.apple)),
               ],
-            ),
+              SizedBox(height: 20 * scale),
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 20 * scale),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('¿Ya tienes cuenta? ',
+                        style: GoogleFonts.inter(
+                            fontSize: 14 * scale,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF444444))),
+                    GestureDetector(
+                      onTap: () => context.pushNamed('login'),
+                      child: Text('Iniciar sesión',
+                          style: GoogleFonts.inter(
+                              fontSize: 14 * scale,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF0D3B66),
+                              decoration: TextDecoration.underline)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-    ));
+        ));
   }
 
   Widget _buildSocialButton(
@@ -3785,7 +3822,7 @@ class _EmpiezaComecarWidgetState extends State<EmpiezaComecarWidget>
       height: 50 * scale,
       child: ElevatedButton.icon(
         onPressed: onPressed,
-        icon: icon is IconData 
+        icon: icon is IconData
             ? Icon(icon,
                 size: icon == Icons.apple ? 28 * scale : 15 * scale,
                 color: const Color(0xFF444444))

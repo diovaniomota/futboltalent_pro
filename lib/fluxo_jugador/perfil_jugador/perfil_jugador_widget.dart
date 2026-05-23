@@ -612,7 +612,6 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
   String? _updatingFeaturedVideoId;
   int _userRanking = 0;
   int _pendingContactRequests = 0;
-  int _profileViewsCount = 0;
   String _videoFilterType = 'todos'; // 4.1 — filtro por content_type
 
   @override
@@ -698,16 +697,6 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
       int ranking = await _loadCategoryRanking(uid, mergedUserData);
 
       final requests = await _loadContactRequests(uid);
-      int profileViewsCount = 0;
-      try {
-        final profileViewsResponse = await SupaFlow.client
-            .from('player_profile_views')
-            .select('id')
-            .eq('player_user_id', uid);
-        profileViewsCount = (profileViewsResponse as List).length;
-      } catch (e) {
-        debugPrint('Erro ao carregar visualizações do perfil: $e');
-      }
 
       if (mounted) {
         setState(() {
@@ -717,7 +706,6 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
           _contactRequests = requests;
           _pendingContactRequests = _countUnreadContactRequests(requests);
           _userRanking = ranking;
-          _profileViewsCount = profileViewsCount;
           _isLoading = false;
         });
       }
@@ -2518,10 +2506,6 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                 ? playerStatus
                 : 'Status del jugador no definido',
           ),
-          _buildInfoRow(
-            Icons.remove_red_eye_outlined,
-            '${_formatNumber(_profileViewsCount)} visualizaciones de perfil',
-          ),
           const SizedBox(height: 20),
           Text(
             'Historial Deportivo',
@@ -3443,11 +3427,6 @@ class _PerfilJugadorWidgetState extends State<PerfilJugadorWidget>
                                   _buildStatColumn(
                                     xpInt.toString(),
                                     'XP',
-                                    compact: isCompactProfile,
-                                  ),
-                                  _buildStatColumn(
-                                    _formatNumber(_profileViewsCount),
-                                    'Vistas',
                                     compact: isCompactProfile,
                                   ),
                                 ],

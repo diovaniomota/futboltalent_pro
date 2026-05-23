@@ -1,4 +1,5 @@
 import '/auth/supabase_auth/apple_auth.dart';
+import '/auth/supabase_auth/google_auth.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart' show kIsWeb;
 
@@ -28,6 +29,10 @@ Future<bool> signInWithSocialProvider(OAuthProvider provider) {
     );
   }
 
+  if (provider == OAuthProvider.google && !kIsWeb) {
+    return nativeGoogleSignIn();
+  }
+
   return SupaFlow.client.auth.signInWithOAuth(
     provider,
     redirectTo: socialOAuthRedirectTo,
@@ -47,6 +52,10 @@ String socialAuthFriendlyErrorMessage(Object error, OAuthProvider provider) {
   final text = error.toString().toLowerCase();
 
   if (looksLikeSocialProviderConfigurationError(text)) {
+    if (provider == OAuthProvider.google) {
+      return 'El acceso con Google no está configurado para esta versión de la app. Revisa el paquete Android y SHA-1 en Google Cloud.';
+    }
+
     return 'El acceso con $label no está disponible en este momento. Intenta de nuevo más tarde.';
   }
 
@@ -87,9 +96,16 @@ bool looksLikeSocialProviderConfigurationError(String text) {
       text.contains('invalid redirect') ||
       text.contains('redirect_uri') ||
       text.contains('client_id') ||
+      text.contains('developer_error') ||
+      text.contains('api_exception: 10') ||
+      text.contains('statuscode=10') ||
+      text.contains('sign_in_failed') && text.contains('10') ||
       text.contains('bundle id') ||
       text.contains('unacceptable audience') ||
       text.contains('token audience') ||
       text.contains('audience') ||
+      text.contains('missing_google_web_client_id') ||
+      text.contains('missing_google_ios_client_id') ||
+      text.contains('missing_google_id_token') ||
       text.contains('missing') && text.contains('provider');
 }

@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import '/backend/supabase/supabase.dart';
 import '/app_state.dart';
 import '/auth/supabase_auth/auth_util.dart';
@@ -73,7 +76,27 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
     });
 
     try {
-      await SupaFlow.client.rpc('delete_own_account');
+      final accessToken =
+          SupaFlow.client.auth.currentSession?.accessToken.trim() ?? '';
+      if (accessToken.isEmpty) {
+        throw Exception('auth_required');
+      }
+
+      final response = await http.post(
+        Uri.parse('${SupaFlow.supabaseUrl}/functions/v1/delete-own-account'),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'apikey': SupaFlow.supabaseAnonKey,
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          'delete-own-account ${response.statusCode}: ${response.body}',
+        );
+      }
+
       if (mounted) {
         Navigator.of(context).pop(true);
       }
@@ -90,6 +113,35 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
 
   String _deleteAccountErrorMessage(Object error) {
     final rawError = error.toString().toLowerCase();
+
+    if (rawError.contains('delete-own-account') && rawError.contains('404')) {
+      return 'La función de eliminación todavía no está publicada en Supabase. Deployá delete-own-account e intentá de nuevo.';
+    }
+
+    if (rawError.contains('missing_supabase_server_env') ||
+        rawError.contains('supabase_service_role_key')) {
+      return 'La función de eliminación no tiene la clave service_role configurada en Supabase.';
+    }
+
+    if (rawError.contains('profile_cleanup_failed')) {
+      return _cleanupErrorMessage(rawError);
+    }
+
+    if (rawError.contains('storage_cleanup_failed')) {
+      return 'No se pudo eliminar los archivos de la cuenta en Storage. Revisá los logs de la función delete-own-account.';
+    }
+
+    if (rawError.contains('auth_account_delete_failed')) {
+      return 'No se pudo eliminar la cuenta Auth desde el servidor. Revisá los logs de la función delete-own-account.';
+    }
+
+    if (rawError.contains('auth_account_still_exists')) {
+      return 'La cuenta Auth todavía existe después de intentar eliminarla. Revisá la configuración de Auth Admin en Supabase.';
+    }
+
+    if (rawError.contains('auth_account_delete_verification_failed')) {
+      return 'No se pudo confirmar la eliminación de la cuenta Auth. Revisá los logs de la función delete-own-account.';
+    }
 
     if (rawError.contains('delete_own_account') &&
         (rawError.contains('schema cache') ||
@@ -116,6 +168,24 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
     }
 
     return 'No se pudo eliminar la cuenta. Verifica tu conexión e intentá de nuevo.';
+  }
+
+  String _cleanupErrorMessage(String rawError) {
+    try {
+      final jsonStart = rawError.indexOf('{');
+      if (jsonStart >= 0) {
+        final decoded = jsonDecode(rawError.substring(jsonStart));
+        final details = decoded is Map ? decoded['details'] : null;
+        final message = details is Map
+            ? (details['message'] ?? details['hint'] ?? details['details'])
+            : details;
+        if (message != null) {
+          return 'No se pudo limpiar la cuenta: $message';
+        }
+      }
+    } catch (_) {}
+
+    return 'No se pudo limpiar la cuenta antes de eliminarla. Revisá la migración delete_own_account.';
   }
 
   @override

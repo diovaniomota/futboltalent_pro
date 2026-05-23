@@ -52,7 +52,12 @@ begin
 end;
 $$;
 
+alter function public.admin_delete_rows_by_text_values(text, text, text[])
+owner to postgres;
+
 revoke all on function public.admin_delete_rows_by_text_values(text, text, text[]) from public;
+revoke execute on function public.admin_delete_rows_by_text_values(text, text, text[]) from anon;
+revoke execute on function public.admin_delete_rows_by_text_values(text, text, text[]) from authenticated;
 
 create or replace function public.delete_own_account()
 returns jsonb
@@ -73,6 +78,7 @@ declare
   v_lista_club_ids text[] := array[]::text[];
   v_deleted_rows integer := 0;
   v_deleted_storage_objects integer := 0;
+  v_deleted_auth_account boolean := false;
   rec record;
 begin
   if p_user_id is null then
@@ -165,18 +171,9 @@ begin
       v_lista_club_ids := array[]::text[];
   end;
 
-  begin
-    delete from storage.objects
-    where owner::text = v_user_id
-       or owner_id::text = v_user_id
-       or name like '%' || v_user_id || '%'
-       or name like '%' || v_legacy_club_id || '%'
-       or path_tokens && (v_identity_ids || v_club_ids || v_video_ids);
-    get diagnostics v_deleted_storage_objects = row_count;
-  exception
-    when undefined_table or undefined_column then
-      v_deleted_storage_objects := 0;
-  end;
+  -- Storage objects must be removed through the Storage API, not by deleting
+  -- from storage.objects directly. The delete-own-account Edge Function handles
+  -- that with the service role key before deleting the Auth account.
 
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('comment_reports', 'comment_id', v_comment_ids);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('comment_reports', 'reporter_user_id', array[v_user_id]);
@@ -307,33 +304,18 @@ begin
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('clubes', 'id', v_identity_ids);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('users', 'user_id', array[v_user_id]);
 
-  begin
-    delete from auth.sessions where user_id::text = v_user_id;
-  exception
-    when undefined_table or undefined_column then null;
-  end;
-
-  begin
-    delete from auth.refresh_tokens where user_id::text = v_user_id;
-  exception
-    when undefined_table or undefined_column then null;
-  end;
-
-  delete from auth.identities
-  where user_id::text = v_user_id;
-
-  delete from auth.users
-  where id::text = v_user_id;
-
   return jsonb_build_object(
     'user_id', p_user_id,
-    'deleted_auth_account', true,
+    'deleted_auth_account', v_deleted_auth_account,
     'deleted_related_rows', v_deleted_rows,
     'deleted_storage_objects', v_deleted_storage_objects,
-    'message', 'Cuenta, acceso y datos relacionados eliminados correctamente.'
+    'message', 'Datos relacionados eliminados correctamente. La cuenta Auth debe eliminarse con una operación admin del servidor.'
   );
 end;
 $$;
+
+alter function public.delete_own_account()
+owner to postgres;
 
 revoke all on function public.delete_own_account() from public;
 revoke execute on function public.delete_own_account() from anon;

@@ -1,4 +1,4 @@
-package com.futboltalentpro
+package com.futboltalent.pro
 
 import io.flutter.embedding.android.FlutterActivity
 

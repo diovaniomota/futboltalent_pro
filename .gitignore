@@ -60,3 +60,4 @@ app.*.map.json
 *.certSigningRequest
 ios_private_key.key
 CertificateSigningRequest.certSigningRequest
+node_modules

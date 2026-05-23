@@ -12,6 +12,7 @@ import 'auth/supabase_auth/auth_util.dart';
 
 import '/backend/supabase/supabase.dart';
 // ...existing code...
+import '/fluxo_compartilhado/password_policy.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import 'flutter_flow/internationalization.dart';
 import 'index.dart';
@@ -127,7 +128,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _onAuthUserChanged(user);
     });
 
-    _authStateSubscription = SupaFlow.client.auth.onAuthStateChange.listen((data) {
+    _authStateSubscription =
+        SupaFlow.client.auth.onAuthStateChange.listen((data) {
       if (data.event == AuthChangeEvent.passwordRecovery) {
         Future.delayed(const Duration(milliseconds: 500), () {
           _showPasswordRecoveryDialog();
@@ -162,78 +164,322 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (context == null) return;
 
     final passwordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
     bool isLoading = false;
     String? errorMessage;
+    bool showPassword = false;
+    bool showConfirmPassword = false;
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('Actualizar Contraseña'),
-          content: Column(
+        builder: (ctx, setState) => Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF4FF),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Icon(
+                        Icons.lock_reset_rounded,
+                        color: Color(0xFF0D3B66),
+                        size: 34,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Center(
+                    child: Text(
+                      'Crea una nueva contraseña',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFF151A2D),
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Usa una contraseña segura y confírmala para evitar errores al escribir.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFF5B6478),
+                      fontSize: 14,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  TextField(
+                    controller: passwordController,
+                    enabled: !isLoading,
+                    obscureText: !showPassword,
+                    textCapitalization: TextCapitalization.none,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: InputDecoration(
+                      labelText: 'Nueva contraseña',
+                      prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      suffixIcon: IconButton(
+                        onPressed: isLoading
+                            ? null
+                            : () =>
+                                setState(() => showPassword = !showPassword),
+                        icon: Icon(
+                          showPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmPasswordController,
+                    enabled: !isLoading,
+                    obscureText: !showConfirmPassword,
+                    textCapitalization: TextCapitalization.none,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: InputDecoration(
+                      labelText: 'Confirmar contraseña',
+                      prefixIcon: const Icon(Icons.verified_user_outlined),
+                      suffixIcon: IconButton(
+                        onPressed: isLoading
+                            ? null
+                            : () => setState(() =>
+                                showConfirmPassword = !showConfirmPassword),
+                        icon: Icon(
+                          showConfirmPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Debe tener 8 a 16 caracteres, mayúscula, minúscula, número y carácter especial.',
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFEEF0),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFFFA7B2)),
+                      ),
+                      child: Text(
+                        errorMessage!,
+                        style: const TextStyle(
+                          color: Color(0xFFD20F2A),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (isLoading) ...[
+                    const SizedBox(height: 14),
+                    const Row(
+                      children: [
+                        SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2.4),
+                        ),
+                        SizedBox(width: 10),
+                        Text(
+                          'Actualizando contraseña...',
+                          style: TextStyle(
+                            color: Color(0xFF5B6478),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 22),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: isLoading
+                              ? null
+                              : () {
+                                  SupaFlow.client.auth.signOut();
+                                  Navigator.pop(ctx);
+                                },
+                          child: const Text('Cancelar'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0D3B66),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: isLoading
+                              ? null
+                              : () async {
+                                  final password =
+                                      passwordController.text.trim();
+                                  final confirmPassword =
+                                      confirmPasswordController.text.trim();
+                                  final policyError =
+                                      PasswordPolicy.firstError(password);
+                                  if (policyError != null) {
+                                    setState(() => errorMessage = policyError);
+                                    return;
+                                  }
+                                  if (password != confirmPassword) {
+                                    setState(() => errorMessage =
+                                        'Las contraseñas no coinciden.');
+                                    return;
+                                  }
+
+                                  setState(() {
+                                    isLoading = true;
+                                    errorMessage = null;
+                                  });
+                                  try {
+                                    await SupaFlow.client.auth.updateUser(
+                                      UserAttributes(password: password),
+                                    );
+                                    if (!ctx.mounted) return;
+                                    Navigator.pop(ctx);
+                                    await _showPasswordUpdatedDialog(context);
+                                  } catch (e) {
+                                    if (!ctx.mounted) return;
+                                    setState(() {
+                                      isLoading = false;
+                                      errorMessage =
+                                          'No pudimos actualizar la contraseña. Intenta nuevamente.';
+                                    });
+                                  }
+                                },
+                          child: isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.4,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : const Text('Guardar'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ).whenComplete(() {
+      passwordController.dispose();
+      confirmPasswordController.dispose();
+    });
+  }
+
+  Future<void> _showPasswordUpdatedDialog(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Ingresa tu nueva contraseña para continuar.'),
-              const SizedBox(height: 15),
-              TextField(
-                controller: passwordController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  hintText: 'Nueva contraseña',
-                  errorText: errorMessage,
-                  border: const OutlineInputBorder(),
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE7F8EF),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: Color(0xFF0E8F4F),
+                  size: 34,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Contraseña actualizada',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF151A2D),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Ya puedes usar tu nueva contraseña para acceder a FutbolTalent Pro.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF5B6478),
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D3B66),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Entendido'),
                 ),
               ),
             ],
           ),
-          actions: [
-            if (isLoading)
-              const Padding(
-                padding: EdgeInsets.only(right: 16.0),
-                child: CircularProgressIndicator(),
-              )
-            else ...[
-              TextButton(
-                onPressed: () {
-                  SupaFlow.client.auth.signOut();
-                  Navigator.pop(ctx);
-                },
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  if (passwordController.text.trim().length < 6) {
-                    setState(() => errorMessage = 'La contraseña debe tener al menos 6 caracteres.');
-                    return;
-                  }
-                  setState(() {
-                    isLoading = true;
-                    errorMessage = null;
-                  });
-                  try {
-                    await SupaFlow.client.auth.updateUser(
-                      UserAttributes(password: passwordController.text.trim()),
-                    );
-                    if (!ctx.mounted) return;
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Contraseña actualizada correctamente.'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  } catch (e) {
-                    setState(() {
-                      isLoading = false;
-                      errorMessage = 'Error al actualizar la contraseña.';
-                    });
-                  }
-                },
-                child: const Text('Guardar'),
-              ),
-            ]
-          ],
         ),
       ),
     );

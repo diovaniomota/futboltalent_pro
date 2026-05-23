@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '/auth/auth_manager.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -32,7 +33,27 @@ class SupabaseAuthManager extends AuthManager with EmailSignInManager {
         debugPrint('Error: delete user attempted with no logged in user!');
         return;
       }
-      await SupaFlow.client.rpc('delete_own_account');
+      final accessToken =
+          SupaFlow.client.auth.currentSession?.accessToken.trim() ?? '';
+      if (accessToken.isEmpty) {
+        throw const AuthException('auth_required');
+      }
+
+      final response = await http.post(
+        Uri.parse('${SupaFlow.supabaseUrl}/functions/v1/delete-own-account'),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'apikey': SupaFlow.supabaseAnonKey,
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw AuthException(
+          'delete-own-account ${response.statusCode}: ${response.body}',
+        );
+      }
+
       FFAppState().clearAuthenticatedSessionState();
       currentUser = FutboltalentProSupabaseUser(null);
       AppStateNotifier.instance.update(currentUser!);
@@ -111,22 +132,8 @@ class SupabaseAuthManager extends AuthManager with EmailSignInManager {
     required BuildContext context,
     String? redirectTo,
   }) async {
-    try {
-      await SupaFlow.client.auth
-          .resetPasswordForEmail(email, redirectTo: redirectTo);
-    } on AuthException {
-      if (!context.mounted) return null;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-              'No pudimos enviar el correo de recuperación. Verifica el correo e intenta de nuevo.'),
-          backgroundColor: Colors.red));
-      return null;
-    }
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Password reset email sent')),
-    );
+    await SupaFlow.client.auth
+        .resetPasswordForEmail(email, redirectTo: redirectTo);
   }
 
   @override
