@@ -718,16 +718,28 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
     if (currentUserUid.isEmpty) return;
 
     try {
-      final response = await SupaFlow.client
-          .from('jugadores_guardados')
-          .select('jugador_id')
-          .eq('scout_id', currentUserUid);
+      Future<void> collect(String column) async {
+        final response = await SupaFlow.client
+            .from('jugadores_guardados')
+            .select('jugador_id')
+            .eq(column, currentUserUid);
 
-      for (final row in List<Map<String, dynamic>>.from(response)) {
-        final playerId = row['jugador_id']?.toString().trim() ?? '';
-        if (playerId.isNotEmpty) {
-          _savedPlayerIds.add(playerId);
+        for (final row in List<Map<String, dynamic>>.from(response)) {
+          final playerId = row['jugador_id']?.toString().trim() ?? '';
+          if (playerId.isNotEmpty) {
+            _savedPlayerIds.add(playerId);
+          }
         }
+      }
+
+      await collect('scout_id');
+      try {
+        await collect('profesional_id');
+      } catch (_) {}
+      if (FFAppState.normalizeUserType(FFAppState().userType) == 'club') {
+        try {
+          await collect('club_id');
+        } catch (_) {}
       }
     } catch (_) {}
   }
@@ -2108,6 +2120,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         ),
         duration: const Duration(seconds: 3),
         backgroundColor: added ? Colors.green : const Color(0xFF475569),
+        behavior: SnackBarBehavior.floating,
         action: added
             ? SnackBarAction(
                 label: 'Ver mi scouting',
@@ -2115,8 +2128,9 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
                 onPressed: () {
                   messenger.hideCurrentSnackBar();
                   if (!mounted) return;
-                  final uType = FFAppState.normalizeUserType(FFAppState().userType);
-                  if (uType == 'club_staff') {
+                  final uType =
+                      FFAppState.normalizeUserType(FFAppState().userType);
+                  if (uType == 'club') {
                     context.pushNamed('Lista_y_nota');
                   } else {
                     context.pushNamed('Lista_y_notas');
@@ -2126,6 +2140,49 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             : null,
       ),
     );
+  }
+
+  bool _isDuplicateSaveError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('duplicate key') ||
+        message.contains('already exists') ||
+        message.contains('23505') ||
+        message.contains('unique');
+  }
+
+  Future<void> _insertSavedPlayerForScout(String playerId) async {
+    final viewerType = FFAppState.normalizeUserType(FFAppState().userType);
+    final attempts = <Map<String, dynamic>>[
+      if (viewerType == 'club')
+        {
+          'club_id': currentUserUid,
+          'jugador_id': playerId,
+        },
+      {
+        'scout_id': currentUserUid,
+        'jugador_id': playerId,
+      },
+      {
+        'profesional_id': currentUserUid,
+        'jugador_id': playerId,
+      },
+    ];
+
+    Object? lastError;
+    for (final payload in attempts) {
+      try {
+        await SupaFlow.client.from('jugadores_guardados').insert({
+          ...payload,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+        return;
+      } catch (e) {
+        if (_isDuplicateSaveError(e)) return;
+        lastError = e;
+      }
+    }
+
+    if (lastError != null) throw lastError;
   }
 
   Future<void> _toggleSavePlayerForScout(Map<String, dynamic> player) async {
@@ -2151,6 +2208,20 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
             .delete()
             .eq('scout_id', currentUserUid)
             .eq('jugador_id', playerId);
+        try {
+          await SupaFlow.client
+              .from('jugadores_guardados')
+              .delete()
+              .eq('club_id', currentUserUid)
+              .eq('jugador_id', playerId);
+        } catch (_) {}
+        try {
+          await SupaFlow.client
+              .from('jugadores_guardados')
+              .delete()
+              .eq('profesional_id', currentUserUid)
+              .eq('jugador_id', playerId);
+        } catch (_) {}
 
         if (!mounted) return;
         setState(() {
@@ -2161,11 +2232,7 @@ class _ExplorarWidgetState extends State<ExplorarWidget> {
         return;
       }
 
-      await SupaFlow.client.from('jugadores_guardados').insert({
-        'scout_id': currentUserUid,
-        'jugador_id': playerId,
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      await _insertSavedPlayerForScout(playerId);
 
       if (!mounted) return;
       setState(() {

@@ -38,6 +38,7 @@ class _DetallesDeLaConvocatoriaWidgetState
   bool _isLoading = true;
   bool _hasApplied = false;
   bool _isApplying = false;
+  Map<String, dynamic>? _playerEligibilityData;
   List<Map<String, dynamic>> _requiredChallenges = [];
   final Map<String, bool> _requiredChallengeCompletion = {};
 
@@ -92,6 +93,7 @@ class _DetallesDeLaConvocatoriaWidgetState
           }
         }
         await _loadRequiredChallengesProgress();
+        await _loadPlayerEligibilityData();
         await _checkIfApplied();
       }
     } catch (e) {
@@ -212,6 +214,217 @@ class _DetallesDeLaConvocatoriaWidgetState
     if (_requiredChallenges.isEmpty) return true;
     if ((SupaFlow.client.auth.currentUser?.id ?? '').isEmpty) return true;
     return _requiredChallenges.every(_isRequiredChallengeCompleted);
+  }
+
+  Future<void> _loadPlayerEligibilityData() async {
+    final userId = SupaFlow.client.auth.currentUser?.id;
+    if (userId == null || userId.isEmpty) return;
+    final selects = [
+      'user_id, birthday, birth_date, fecha_nacimiento, categoria, category, posicion, position',
+      'user_id, birthday, birth_date, categoria, category, posicion, position',
+      'user_id, birthday, birth_date, categoria, posicion',
+      'user_id, birthday, birth_date',
+    ];
+    for (final fields in selects) {
+      try {
+        _playerEligibilityData = await SupaFlow.client
+            .from('users')
+            .select(fields)
+            .eq('user_id', userId)
+            .maybeSingle();
+        if (_playerEligibilityData != null) return;
+      } catch (e) {
+        debugPrint('Error al cargar elegibilidad del jugador: $e');
+      }
+    }
+  }
+
+  int? _intFromValue(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    final text = value?.toString().trim() ?? '';
+    if (text.isEmpty) return null;
+    return int.tryParse(text);
+  }
+
+  int? _ageFromRaw(dynamic raw) {
+    final birthday = DateTime.tryParse(raw?.toString() ?? '');
+    if (birthday == null) return null;
+    final now = DateTime.now();
+    var age = now.year - birthday.year;
+    if (now.month < birthday.month ||
+        (now.month == birthday.month && now.day < birthday.day)) {
+      age--;
+    }
+    return age;
+  }
+
+  String _normalizeEligibilityText(dynamic value) {
+    var text = value?.toString().trim().toLowerCase() ?? '';
+    const accents = {
+      'á': 'a',
+      'à': 'a',
+      'â': 'a',
+      'ã': 'a',
+      'ä': 'a',
+      'é': 'e',
+      'è': 'e',
+      'ê': 'e',
+      'ë': 'e',
+      'í': 'i',
+      'ì': 'i',
+      'î': 'i',
+      'ï': 'i',
+      'ó': 'o',
+      'ò': 'o',
+      'ô': 'o',
+      'õ': 'o',
+      'ö': 'o',
+      'ú': 'u',
+      'ù': 'u',
+      'û': 'u',
+      'ü': 'u',
+      'ñ': 'n',
+      'ç': 'c',
+    };
+    accents.forEach((from, to) => text = text.replaceAll(from, to));
+    return text.replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  bool _isOpenRequirement(dynamic value) {
+    final normalized = _normalizeEligibilityText(value);
+    return normalized.isEmpty ||
+        normalized == 'todas' ||
+        normalized == 'todos' ||
+        normalized == 'todas las categorias' ||
+        normalized == 'todas las posiciones' ||
+        normalized == 'all' ||
+        normalized == 'any' ||
+        normalized == 'abierta' ||
+        normalized == 'abierto' ||
+        normalized == 'sin restriccion' ||
+        normalized == 'sin restricciones';
+  }
+
+  List<String> get _eligibilityMessages {
+    final messages = <String>[];
+    final userId = SupaFlow.client.auth.currentUser?.id ?? '';
+    if (userId.isEmpty) return messages;
+
+    final minAge =
+        _intFromValue(_convocatoria?['min_age'] ?? _convocatoria?['edad_minima']);
+    final maxAge =
+        _intFromValue(_convocatoria?['max_age'] ?? _convocatoria?['edad_maxima']);
+    if (minAge != null || maxAge != null) {
+      final age = _ageFromRaw(
+        _playerEligibilityData?['birthday'] ??
+            _playerEligibilityData?['birth_date'] ??
+            _playerEligibilityData?['fecha_nacimiento'],
+      );
+      if (age == null) {
+        messages.add(
+          'Completá tu fecha de nacimiento para validar la edad requerida.',
+        );
+      } else {
+        if (minAge != null && age < minAge) {
+          messages.add('Edad mínima requerida: $minAge años. Tu edad: $age.');
+        }
+        if (maxAge != null && age > maxAge) {
+          messages.add('Edad máxima permitida: $maxAge años. Tu edad: $age.');
+        }
+      }
+    }
+
+    final requiredCategory = _firstNonEmptyText([
+      _convocatoria?['categoria'],
+      _convocatoria?['category'],
+    ]);
+    if (!_isOpenRequirement(requiredCategory)) {
+      final playerCategory = _firstNonEmptyText([
+        _playerEligibilityData?['categoria'],
+        _playerEligibilityData?['category'],
+      ]);
+      if (playerCategory.isEmpty) {
+        messages.add('Completá tu categoría para validar esta convocatoria.');
+      } else if (_normalizeEligibilityText(playerCategory) !=
+          _normalizeEligibilityText(requiredCategory)) {
+        messages.add(
+          'Categoría requerida: $requiredCategory. Tu categoría: $playerCategory.',
+        );
+      }
+    }
+
+    final requiredPosition = _firstNonEmptyText([
+      _convocatoria?['posicion'],
+      _convocatoria?['position'],
+    ]);
+    if (!_isOpenRequirement(requiredPosition)) {
+      final playerPosition = _firstNonEmptyText([
+        _playerEligibilityData?['posicion'],
+        _playerEligibilityData?['position'],
+      ]);
+      if (playerPosition.isNotEmpty &&
+          _normalizeEligibilityText(playerPosition) !=
+              _normalizeEligibilityText(requiredPosition)) {
+        messages.add(
+          'Posición requerida: $requiredPosition. Tu posición: $playerPosition.',
+        );
+      }
+    }
+
+    return messages;
+  }
+
+  Widget _buildEligibilityMessagesSection(List<String> messages) {
+    if (messages.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF97316)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                color: Color(0xFF9A3412),
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Elegibilidad pendiente',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF9A3412),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...messages.map(
+            (message) => Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Text(
+                '• $message',
+                style: GoogleFonts.inter(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF7C2D12),
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _persistRequiredChallengeCompletions(String userId) async {
@@ -536,11 +749,24 @@ class _DetallesDeLaConvocatoriaWidgetState
       return;
     }
 
+    final eligibilityMessages = _eligibilityMessages;
+    if (eligibilityMessages.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(eligibilityMessages.first),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isApplying = true);
     try {
       // 9.1 — Validação de idade para a convocatória
-      final minAge = _convocatoria?['min_age'];
-      final maxAge = _convocatoria?['max_age'];
+      final minAge =
+          _intFromValue(_convocatoria?['min_age'] ?? _convocatoria?['edad_minima']);
+      final maxAge =
+          _intFromValue(_convocatoria?['max_age'] ?? _convocatoria?['edad_maxima']);
       if (minAge != null || maxAge != null) {
         try {
           final userData = await SupaFlow.client
@@ -558,12 +784,12 @@ class _DetallesDeLaConvocatoriaWidgetState
                   (now.month == birthday.month && now.day < birthday.day)) {
                 age--;
               }
-              if (minAge != null && age < (minAge as int)) {
+              if (minAge != null && age < minAge) {
                 throw Exception(
                   'No cumpls con la edad mínima requerida ($minAge años).',
                 );
               }
-              if (maxAge != null && age > (maxAge as int)) {
+              if (maxAge != null && age > maxAge) {
                 throw Exception(
                   'Superas la edad máxima permitida ($maxAge años).',
                 );
@@ -858,21 +1084,24 @@ class _DetallesDeLaConvocatoriaWidgetState
       );
     }
 
-    final clubName = _clubData?['name'] ??
-        _clubData?['club_name'] ??
-        _clubData?['nombre'] ??
-        'Club';
-    final clubImageUrl = _clubData?['photo_url'] ??
-        _clubData?['logo_url'] ??
-        _clubData?['avatar_url'] ??
-        '';
-    final titulo = _convocatoria!['titulo'] ?? 'Convocatoria';
-    final descripcion = _convocatoria!['descripcion'] ?? '';
-    final categoria = _convocatoria!['categoria'] ?? '';
-    final posicion = _convocatoria!['posicion'] ?? '';
-    final edadMinima = _convocatoria!['edad_minima'];
-    final edadMaxima = _convocatoria!['edad_maxima'];
+    final clubName = (_clubData?['name'] ??
+            _clubData?['club_name'] ??
+            _clubData?['nombre'] ??
+            'Club')
+        .toString();
+    final clubImageUrl = (_clubData?['photo_url'] ??
+            _clubData?['logo_url'] ??
+            _clubData?['avatar_url'] ??
+            '')
+        .toString();
+    final titulo = (_convocatoria!['titulo'] ?? 'Convocatoria').toString();
+    final descripcion = (_convocatoria!['descripcion'] ?? '').toString();
+    final categoria = (_convocatoria!['categoria'] ?? '').toString();
+    final posicion = (_convocatoria!['posicion'] ?? '').toString();
+    final edadMinima = _convocatoria!['edad_minima'] ?? _convocatoria!['min_age'];
+    final edadMaxima = _convocatoria!['edad_maxima'] ?? _convocatoria!['max_age'];
     final fechaInicio = _formatDate(_convocatoria!['fecha_inicio']);
+    final eligibilityMessages = _eligibilityMessages;
 
     String requisitos = titulo;
     if (categoria.isNotEmpty) {
@@ -930,11 +1159,33 @@ class _DetallesDeLaConvocatoriaWidgetState
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                        child: Text(clubName,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            titulo,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.inter(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black))),
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            clubName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 20),
@@ -949,6 +1200,10 @@ class _DetallesDeLaConvocatoriaWidgetState
                     icon: Icons.group,
                     title: 'Requisitos',
                     subtitle: requisitos),
+                if (eligibilityMessages.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _buildEligibilityMessagesSection(eligibilityMessages),
+                ],
                 const SizedBox(height: 20),
                 Text('Descripción',
                     style: GoogleFonts.inter(
@@ -1040,7 +1295,10 @@ class _DetallesDeLaConvocatoriaWidgetState
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: _hasApplied || _isApplying
+                    onPressed: _hasApplied ||
+                            _isApplying ||
+                            eligibilityMessages.isNotEmpty ||
+                            !_canSubmitApplication
                         ? null
                         : _applyToConvocatoria,
                     style: ElevatedButton.styleFrom(
@@ -1069,7 +1327,11 @@ class _DetallesDeLaConvocatoriaWidgetState
                                 Text(
                                     _hasApplied
                                         ? 'Solicitud Enviada'
-                                        : 'Quiero participar',
+                                        : eligibilityMessages.isNotEmpty
+                                            ? 'Requisitos pendientes'
+                                            : !_canSubmitApplication
+                                                ? 'Completa los desafíos'
+                                                : 'Quiero participar',
                                     style: GoogleFonts.inter(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w600,

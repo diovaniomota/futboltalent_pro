@@ -1292,8 +1292,6 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
     final latestVideo = postulacion['latest_video'] as Map<String, dynamic>?;
     final latestVideoUrl =
         latestVideo == null ? '' : playableVideoUrl(latestVideo);
-    final latestVideoThumb =
-        latestVideo?['thumbnail_url']?.toString().trim() ?? '';
     final hasVideo = latestVideoUrl.isNotEmpty;
     final convocatoria = postulacion['convocatoria'] as Map<String, dynamic>?;
     final convocatoriaTitle = (postulacion['convocatoria_titulo'] ??
@@ -1333,44 +1331,21 @@ class _PostulacionesWidgetState extends State<PostulacionesWidget> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 26 * scale,
-                    backgroundColor: const Color(0xFFE8F0FE),
-                    backgroundImage: latestVideoThumb.isNotEmpty
-                        ? NetworkImage(latestVideoThumb)
-                        : (photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null),
-                    child: latestVideoThumb.isEmpty && photoUrl.isEmpty
-                        ? Text(
-                            _playerInitials(jugador),
-                            style: GoogleFonts.inter(
-                              fontSize: 16 * scale,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF0D3B66),
-                            ),
-                          )
-                        : null,
-                  ),
-                  if (hasVideo)
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        width: 20 * scale,
-                        height: 20 * scale,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.78),
-                          shape: BoxShape.circle,
+              CircleAvatar(
+                radius: 26 * scale,
+                backgroundColor: const Color(0xFFE8F0FE),
+                backgroundImage:
+                    photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+                child: photoUrl.isEmpty
+                    ? Text(
+                        _playerInitials(jugador),
+                        style: GoogleFonts.inter(
+                          fontSize: 16 * scale,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0D3B66),
                         ),
-                        child: Icon(
-                          Icons.play_arrow_rounded,
-                          size: 14 * scale,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                ],
+                      )
+                    : null,
               ),
               SizedBox(width: 12 * scale),
               Expanded(

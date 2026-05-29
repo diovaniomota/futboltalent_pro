@@ -3757,7 +3757,12 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(20),
-                  child: _buildCurrentStep(),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: _buildCurrentStep(),
+                    ),
+                  ),
                 ),
               ),
               _buildNavigationButtons(),
@@ -3770,27 +3775,32 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
 
   Widget _buildProgressBar() {
     final progress = (_currentStep + 1) / 3;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              height: 7,
-              decoration: BoxDecoration(
-                  color: const Color(0xFFEBF4FF),
-                  borderRadius: BorderRadius.circular(20)),
-              child: FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: progress,
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 600),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
                 child: Container(
-                    decoration: BoxDecoration(
-                        color: const Color(0xFF2B6CB0),
-                        borderRadius: BorderRadius.circular(20))),
+                  height: 7,
+                  decoration: BoxDecoration(
+                      color: const Color(0xFFEBF4FF),
+                      borderRadius: BorderRadius.circular(20)),
+                  child: FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: progress,
+                    child: Container(
+                        decoration: BoxDecoration(
+                            color: const Color(0xFF2B6CB0),
+                            borderRadius: BorderRadius.circular(20))),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -3809,34 +3819,38 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
   }
 
   Widget _buildStep1() {
-    return Column(children: [
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text('Crea el perfil de tu Club',
+          textAlign: TextAlign.center,
           style: GoogleFonts.inter(
               color: const Color(0xFF0D3B66),
               fontSize: 28,
               fontWeight: FontWeight.bold)),
       const SizedBox(height: 30),
-      GestureDetector(
-        onTap: _pickLogo,
-        child: Container(
-          width: 120,
-          height: 120,
-          decoration: BoxDecoration(
-              color: const Color(0xFFE2E8F0),
-              borderRadius: BorderRadius.circular(60),
-              border: Border.all(color: const Color(0xFFA0AEC0))),
-          child: _logoBytes != null
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(60),
-                  child: Image.memory(_logoBytes!, fit: BoxFit.cover))
-              : const Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                      Icon(Icons.add_a_photo, color: Color(0xFF718096)),
-                      Text('Add Logo',
-                          style:
-                              TextStyle(fontSize: 12, color: Color(0xFF718096)))
-                    ]),
+      Align(
+        alignment: Alignment.center,
+        child: GestureDetector(
+          onTap: _pickLogo,
+          child: Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(60),
+                border: Border.all(color: const Color(0xFFA0AEC0))),
+            child: _logoBytes != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(60),
+                    child: Image.memory(_logoBytes!, fit: BoxFit.cover))
+                : const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                        Icon(Icons.add_a_photo, color: Color(0xFF718096)),
+                        Text('Add Logo',
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFF718096)))
+                      ]),
+          ),
         ),
       ),
       const SizedBox(height: 30),
@@ -3856,8 +3870,9 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
   }
 
   Widget _buildStep2() {
-    return Column(children: [
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text('Contanos sobre el Club',
+          textAlign: TextAlign.center,
           style: GoogleFonts.inter(
               color: const Color(0xFF0D3B66),
               fontSize: 28,
@@ -3881,8 +3896,9 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
   }
 
   Widget _buildStep3() {
-    return Column(children: [
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text('Contacto y Verificación',
+          textAlign: TextAlign.center,
           style: GoogleFonts.inter(
               color: const Color(0xFF0D3B66),
               fontSize: 28,
@@ -4153,40 +4169,45 @@ class _RegistroClubWidgetState extends State<RegistroClubWidget> {
   }
 
   Widget _buildNavigationButtons() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      child: Row(children: [
-        if (_currentStep > 0)
-          Expanded(
-              child: Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: ElevatedButton(
-                      onPressed: () => setState(() => _currentStep--),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 600),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          child: Row(children: [
+            if (_currentStep > 0)
+              Expanded(
+                  child: Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: ElevatedButton(
+                          onPressed: () => setState(() => _currentStep--),
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2B6CB0)),
+                          child: const Text('Anterior',
+                              style: TextStyle(color: Colors.white))))),
+            Expanded(
+                child: Padding(
+                    padding: EdgeInsets.only(left: _currentStep > 0 ? 10 : 0),
+                    child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2B6CB0)),
-                      child: const Text('Anterior',
-                          style: TextStyle(color: Colors.white))))),
-        Expanded(
-            child: Padding(
-                padding: EdgeInsets.only(left: _currentStep > 0 ? 10 : 0),
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0D3B66)),
-                  onPressed: _isLoading
-                      ? null
-                      : () {
-                          if (_currentStep == 0 && _validateStep1()) {
-                            setState(() => _currentStep++);
-                          } else if (_currentStep == 1 && _validateStep2())
-                            setState(() => _currentStep++);
-                          else if (_currentStep == 2) _saveClub();
-                        },
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Text(_currentStep == 2 ? 'Finalizar' : 'Siguiente',
-                          style: const TextStyle(color: Colors.white)),
-                ))),
-      ]),
+                          backgroundColor: const Color(0xFF0D3B66)),
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              if (_currentStep == 0 && _validateStep1()) {
+                                setState(() => _currentStep++);
+                              } else if (_currentStep == 1 && _validateStep2())
+                                setState(() => _currentStep++);
+                              else if (_currentStep == 2) _saveClub();
+                            },
+                      child: _isLoading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : Text(_currentStep == 2 ? 'Finalizar' : 'Siguiente',
+                              style: const TextStyle(color: Colors.white)),
+                    ))),
+          ]),
+        ),
+      ),
     );
   }
 }

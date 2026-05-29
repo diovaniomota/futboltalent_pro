@@ -240,6 +240,9 @@ begin
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('admin_user_feature_overrides', 'user_id', array[v_user_id]);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('user_badges', 'user_id', array[v_user_id]);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('user_stats', 'user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('user_progress', 'user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('user_courses', 'user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('user_exercises', 'user_id', array[v_user_id]);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('user_challenge_goals', 'user_id', array[v_user_id]);
 
   -- Social graph and contact records.
@@ -249,6 +252,20 @@ begin
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('follows', 'following_id', array[v_user_id]);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('contact_requests', 'from_user_id', array[v_user_id]);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('contact_requests', 'to_user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('contact_requests', 'requester_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('contact_requests', 'target_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('saved_videos', 'user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('saved_videos', 'video_id', v_video_ids);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('blocked_users', 'user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('blocked_users', 'blocked_user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('blocked_users', 'blocker_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('blocked_users', 'blocked_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('reported_content', 'user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('reported_content', 'reporter_user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('reported_content', 'reported_user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('reports', 'user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('reports', 'reporter_user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('reports', 'reported_user_id', array[v_user_id]);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('player_profile_views', 'player_user_id', array[v_user_id]);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('player_profile_views', 'viewer_user_id', array[v_user_id]);
 
@@ -263,6 +280,15 @@ begin
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('aplicaciones_convocatoria', 'convocatoria_id', v_convocatoria_ids);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('postulaciones', 'player_id', array[v_user_id]);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('postulaciones', 'convocatoria_id', v_convocatoria_ids);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('convocatoria_application_snapshots', 'user_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('convocatoria_application_snapshots', 'player_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('convocatoria_application_snapshots', 'jugador_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('convocatoria_application_snapshots', 'convocatoria_id', v_convocatoria_ids);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('convocatoria_scout_requests', 'player_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('convocatoria_scout_requests', 'jugador_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('convocatoria_scout_requests', 'scout_id', array[v_user_id]);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('convocatoria_scout_requests', 'club_id', v_club_ids);
+  v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('convocatoria_scout_requests', 'convocatoria_id', v_convocatoria_ids);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('listas', 'profesional_id', array[v_user_id]);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('listas', 'convocatoria_id', v_convocatoria_ids);
   v_deleted_rows := v_deleted_rows + public.admin_delete_rows_by_text_values('listas_club', 'club_id', v_club_ids);

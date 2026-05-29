@@ -3226,7 +3226,6 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     final latestVideo = player['latest_video'] as Map<String, dynamic>?;
     final hasVideo =
         latestVideo != null && playableVideoUrl(latestVideo).isNotEmpty;
-    final mediaUrl = latestVideo?['thumbnail_url']?.toString().trim() ?? '';
     final photoUrl = player['photo_url']?.toString().trim() ?? '';
     final isSaved = _savedPlayerIds.contains(userId);
     final isSaving = _savingPlayerId == userId;
@@ -3258,13 +3257,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (mediaUrl.isNotEmpty)
-                    Image.network(
-                      mediaUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                    )
-                  else if (photoUrl.isNotEmpty)
+                  if (photoUrl.isNotEmpty)
                     Image.network(
                       photoUrl,
                       fit: BoxFit.cover,
@@ -3275,23 +3268,6 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
                       Icons.person_outline,
                       size: 62,
                       color: Color(0xFF0D3B66),
-                    ),
-                  if (hasVideo)
-                    Align(
-                      alignment: Alignment.center,
-                      child: Container(
-                        width: 54,
-                        height: 54,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.36),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.play_arrow_rounded,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                      ),
                     ),
                 ],
               ),
@@ -3913,7 +3889,7 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
     final isVerified = _resolveVerification(user, defaultIfMissing: false);
     final hasVerificationInfo = _hasVerificationInfo(user);
 
-    final thumb = videoData?['thumbnail_url']?.toString() ?? '';
+    final photoUrl = user?['photo_url']?.toString().trim() ?? '';
     final subtitleParts = <String>[
       if (year != null) year.toString(),
       if (category != 'N/A') category,
@@ -3940,55 +3916,23 @@ class _DashboardClubWidgetState extends State<DashboardClubWidget> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // Avatar
-              Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      width: compact ? 46 : 52,
-                      height: compact ? 46 : 52,
-                      color: const Color(0xFFE8F0FE),
-                      child: thumb.isNotEmpty
-                          ? Image.network(
-                              thumb,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.person,
-                                color: Color(0xFF0D3B66),
-                              ),
-                            )
-                          : (user?['photo_url']?.toString().isNotEmpty ?? false)
-                              ? Image.network(
-                                  user!['photo_url'],
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Icon(
-                                    Icons.person,
-                                    color: Color(0xFF0D3B66),
-                                  ),
-                                )
-                              : const Icon(Icons.person,
-                                  color: Color(0xFF0D3B66)),
-                    ),
-                  ),
-                  if (hasVideo)
-                    Positioned(
-                      right: 3,
-                      bottom: 3,
-                      child: Container(
-                        width: 18,
-                        height: 18,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.72),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.play_arrow_rounded,
-                          size: 12,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                ],
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: compact ? 46 : 52,
+                  height: compact ? 46 : 52,
+                  color: const Color(0xFFE8F0FE),
+                  child: photoUrl.isNotEmpty
+                      ? Image.network(
+                          photoUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.person,
+                            color: Color(0xFF0D3B66),
+                          ),
+                        )
+                      : const Icon(Icons.person, color: Color(0xFF0D3B66)),
+                ),
               ),
               SizedBox(width: compact ? 8 : 10),
               // Name + subtitle + badges

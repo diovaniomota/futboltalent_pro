@@ -518,6 +518,111 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     }
   }
 
+  Future<bool> _deleteAttemptProfileVideo(_ChallengeAttempt attempt) async {
+    final videoId = _cleanChallengeReference(attempt.profileVideoId);
+    final videoUrl = attempt.videoUrl.trim();
+    if (videoId.isEmpty && videoUrl.isEmpty) return true;
+
+    Future<bool> deleteBy(String column, String value) async {
+      if (value.trim().isEmpty) return false;
+      try {
+        final response = await SupaFlow.client
+            .from('videos')
+            .delete()
+            .eq('user_id', currentUserUid)
+            .eq(column, value)
+            .select('id');
+        return (response as List).isNotEmpty;
+      } catch (e) {
+        debugPrint('Challenge attempt video delete failed: $e');
+        return false;
+      }
+    }
+
+    Future<bool> hideBy(String column, String value) async {
+      if (value.trim().isEmpty) return false;
+      try {
+        final response = await SupaFlow.client
+            .from('videos')
+            .update({
+              'is_public': false,
+              'is_deleted': true,
+              'deleted_at': DateTime.now().toIso8601String(),
+            })
+            .eq('user_id', currentUserUid)
+            .eq(column, value)
+            .select('id');
+        return (response as List).isNotEmpty;
+      } catch (e) {
+        debugPrint('Challenge attempt video soft delete failed: $e');
+        try {
+          final response = await SupaFlow.client
+              .from('videos')
+              .update({'is_public': false})
+              .eq('user_id', currentUserUid)
+              .eq(column, value)
+              .select('id');
+          return (response as List).isNotEmpty;
+        } catch (_) {
+          return false;
+        }
+      }
+    }
+
+    return await deleteBy('id', videoId) ||
+        await deleteBy('video_url', videoUrl) ||
+        await hideBy('id', videoId) ||
+        await hideBy('video_url', videoUrl);
+  }
+
+  Future<bool> _deleteAttemptForItem(
+    Map<String, dynamic> item,
+    _ChallengeAttempt attempt,
+  ) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar video'),
+        content: const Text(
+          'Este video se quitará del desafío y de tu perfil. Podés subir otro intento después.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return false;
+
+    final removed = await _deleteAttemptProfileVideo(attempt);
+    if (!removed) return false;
+
+    await _deleteUnavailableServerAttempt(attempt);
+    await _revertCompletedChallengeForMissingAttempt(attempt);
+    _attemptByItemKey.remove(_itemKey(item));
+    final itemId = item['id']?.toString() ?? '';
+    final itemType = item['type']?.toString().toLowerCase() ?? '';
+    if (itemType == 'course') _userCourseStatus[itemId] = 'not_started';
+    if (itemType == 'exercise') _userExerciseStatus[itemId] = 'not_started';
+    item['status'] = 'not_started';
+    await _persistAttempts();
+    await GamificationService.recalculateUserProgress(userId: currentUserUid);
+    _combineAndFilterItems();
+    _showSnack(
+      'Video eliminado. El desafío quedó pendiente para un nuevo intento.',
+      background: const Color(0xFF475569),
+      icon: Icons.delete_outline_rounded,
+      title: 'Intento eliminado',
+    );
+    return true;
+  }
+
   Future<bool> _hasSubmittedAttemptForItem({
     required String itemType,
     required String itemId,
@@ -1370,6 +1475,7 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
     );
     _ChallengeAttempt? modalAttempt = _attemptByItemKey[itemKey];
     bool isSendingAttempt = false;
+    bool isDeletingAttempt = false;
     String uploadStateMessage = modalAttempt != null
         ? (item['status'] == 'completed'
             ? 'Tu video ya fue enviado y el desafío está completado.'
@@ -1672,6 +1778,66 @@ class _CursosEjerciciosWidgetState extends State<CursosEjerciciosWidget> {
                                 videoUrl: modalAttempt!.videoUrl,
                                 localPath: modalAttempt!.localPath,
                                 autoplay: false,
+                              ),
+                              SizedBox(height: 8 * scale),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed:
+                                      isSendingAttempt || isDeletingAttempt
+                                          ? null
+                                          : () async {
+                                              final attempt = modalAttempt;
+                                              if (attempt == null) return;
+                                              setModalState(() {
+                                                isDeletingAttempt = true;
+                                              });
+                                              final deleted =
+                                                  await _deleteAttemptForItem(
+                                                item,
+                                                attempt,
+                                              );
+                                              setModalState(() {
+                                                isDeletingAttempt = false;
+                                                if (deleted) {
+                                                  modalAttempt = null;
+                                                  uploadStateMessage =
+                                                      'Video eliminado. Subí un nuevo intento para completar el desafío.';
+                                                }
+                                              });
+                                              safeSetState(() {});
+                                            },
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: BorderSide(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.42),
+                                    ),
+                                    minimumSize:
+                                        Size(double.infinity, 44 * scale),
+                                  ),
+                                  icon: isDeletingAttempt
+                                      ? SizedBox(
+                                          width: 16 * scale,
+                                          height: 16 * scale,
+                                          child:
+                                              const CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : Icon(
+                                          Icons.delete_outline_rounded,
+                                          size: 18 * scale,
+                                        ),
+                                  label: Text(
+                                    'Eliminar video del desafío',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13.5 * scale,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
                               ),
                               SizedBox(height: 8 * scale),
                             ],

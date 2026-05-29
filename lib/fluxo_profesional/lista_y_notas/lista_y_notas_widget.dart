@@ -40,7 +40,7 @@ class _ListaYNotasWidgetState extends State<ListaYNotasWidget> {
   String? _currentUserId;
   List<Map<String, dynamic>> _jugadoresGuardados = [];
   bool _isLoadingGuardados = false;
-  bool _showGuardados = false;
+  bool _showGuardados = true;
   bool _isClubStaff = false;
   int? _currentPlanId;
   bool _currentUserVerified = true;

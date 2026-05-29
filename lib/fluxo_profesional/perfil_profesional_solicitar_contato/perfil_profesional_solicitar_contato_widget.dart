@@ -399,7 +399,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     return ordered;
   }
 
-  String get _viewerType => FFAppState().userType;
+  String get _viewerType => FFAppState.normalizeUserType(FFAppState().userType);
 
   bool get _viewerCanSavePlayers =>
       _viewerType == 'profesional' || _viewerType == 'club';
@@ -624,6 +624,16 @@ class _PerfilProfesionalSolicitarContatoWidgetState
           .eq('scout_id', uid)
           .eq('jugador_id', widget.userId!)
           .maybeSingle();
+      if (result == null) {
+        try {
+          result = await SupaFlow.client
+              .from('jugadores_guardados')
+              .select('id')
+              .eq('profesional_id', uid)
+              .eq('jugador_id', widget.userId!)
+              .maybeSingle();
+        } catch (_) {}
+      }
       if (result == null && _viewerType == 'club') {
         try {
           result = await SupaFlow.client
@@ -638,6 +648,51 @@ class _PerfilProfesionalSolicitarContatoWidgetState
     } catch (_) {}
   }
 
+  bool _isDuplicateSaveError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('duplicate key') ||
+        message.contains('already exists') ||
+        message.contains('23505') ||
+        message.contains('unique');
+  }
+
+  Future<void> _insertSavedPlayerForViewer(String uid) async {
+    final jugadorId = widget.userId?.trim() ?? '';
+    if (jugadorId.isEmpty) return;
+
+    final attempts = <Map<String, dynamic>>[
+      if (_viewerType == 'club')
+        {
+          'club_id': uid,
+          'jugador_id': jugadorId,
+        },
+      {
+        'scout_id': uid,
+        'jugador_id': jugadorId,
+      },
+      {
+        'profesional_id': uid,
+        'jugador_id': jugadorId,
+      },
+    ];
+
+    Object? lastError;
+    for (final payload in attempts) {
+      try {
+        await SupaFlow.client.from('jugadores_guardados').insert({
+          ...payload,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+        return;
+      } catch (e) {
+        if (_isDuplicateSaveError(e)) return;
+        lastError = e;
+      }
+    }
+
+    if (lastError != null) throw lastError;
+  }
+
   Future<void> _toggleGuardarJugador() async {
     if (_isGuardando) return;
     final uid = currentUserUid;
@@ -650,6 +705,13 @@ class _PerfilProfesionalSolicitarContatoWidgetState
             .delete()
             .eq('scout_id', uid)
             .eq('jugador_id', widget.userId!);
+        try {
+          await SupaFlow.client
+              .from('jugadores_guardados')
+              .delete()
+              .eq('profesional_id', uid)
+              .eq('jugador_id', widget.userId!);
+        } catch (_) {}
         if (_viewerType == 'club') {
           try {
             await SupaFlow.client
@@ -661,24 +723,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
         }
         if (mounted) setState(() => _isGuardado = false);
       } else {
-        if (_viewerType == 'club') {
-          try {
-            await SupaFlow.client.from('jugadores_guardados').insert({
-              'club_id': uid,
-              'jugador_id': widget.userId!,
-            });
-          } catch (_) {
-            await SupaFlow.client.from('jugadores_guardados').insert({
-              'scout_id': uid,
-              'jugador_id': widget.userId!,
-            });
-          }
-        } else {
-          await SupaFlow.client.from('jugadores_guardados').insert({
-            'scout_id': uid,
-            'jugador_id': widget.userId!,
-          });
-        }
+        await _insertSavedPlayerForViewer(uid);
         if (mounted) setState(() => _isGuardado = true);
       }
       if (mounted) {
@@ -690,6 +735,7 @@ class _PerfilProfesionalSolicitarContatoWidgetState
               : 'Jugador eliminado de mi Scouting'),
           duration: const Duration(seconds: 3),
           backgroundColor: _isGuardado ? Colors.green : const Color(0xFF475569),
+          behavior: SnackBarBehavior.floating,
           action: _isGuardado
               ? SnackBarAction(
                   label: 'Ver mi scouting',
@@ -697,8 +743,9 @@ class _PerfilProfesionalSolicitarContatoWidgetState
                   onPressed: () {
                     messenger.hideCurrentSnackBar();
                     if (!mounted) return;
-                    final uType = FFAppState.normalizeUserType(FFAppState().userType);
-                    if (uType == 'club_staff') {
+                    final uType =
+                        FFAppState.normalizeUserType(FFAppState().userType);
+                    if (uType == 'club') {
                       context.pushNamed('Lista_y_nota');
                     } else {
                       context.pushNamed('Lista_y_notas');

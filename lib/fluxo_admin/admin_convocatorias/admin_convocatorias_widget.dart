@@ -486,40 +486,40 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
         : (selectedClubId?.trim().isNotEmpty ?? false)
             ? selectedClubId!.trim()
             : (convocatoria?['club_id']?.toString().trim() ?? '');
-    final selectedClubName = selectedClub == null
-        ? ''
-        : (_clubBaseName(selectedClub).isNotEmpty
-            ? _clubBaseName(selectedClub)
-            : _clubLabel(selectedClub));
-
     final payload = <String, dynamic>{
-      if (convocatoria != null) 'id': convocatoria['id'],
       'titulo': titleCtrl.text.trim().isEmpty
           ? 'Convocatoria'
           : titleCtrl.text.trim(),
       'categoria': normalizePlayerCategory(categoryCtrl.text),
       'posicion': normalizePlayerPosition(positionCtrl.text),
       'pais': normalizeCountryName(countryCtrl.text),
-      'country': normalizeCountryName(countryCtrl.text),
       'ciudad': normalizeCityName(cityCtrl.text),
-      'city': normalizeCityName(cityCtrl.text),
       'ubicacion': normalizeCityName(cityCtrl.text),
       'club_id': clubIdForSave,
-      if (selectedClubName.isNotEmpty) 'club_name': selectedClubName,
-      if (selectedClubName.isNotEmpty) 'club_nombre': selectedClubName,
       'is_active': isActive,
       'estado': isActive ? 'activa' : 'cerrada',
       'updated_at': DateTime.now().toIso8601String(),
       if (startDate != null) 'fecha_inicio': startDate!.toIso8601String(),
       if (endDate != null) 'fecha_fin': endDate!.toIso8601String(),
-      if (convocatoria == null) 'created_at': DateTime.now().toIso8601String(),
     };
 
     try {
-      await SupaFlow.client.from('convocatorias').upsert(payload);
+      await _saveConvocatoria(
+        payload: payload,
+        convocatoriaId: convocatoria?['id']?.toString(),
+      );
       await _loadConvocatorias();
+      _showSnack(
+        convocatoria == null
+            ? 'Convocatoria creada correctamente.'
+            : 'Convocatoria actualizada correctamente.',
+      );
     } catch (e) {
       debugPrint('AdminConvocatorias save error: $e');
+      _showSnack(
+        'No se pudo guardar la convocatoria: ${_errorMessage(e)}',
+        color: Colors.red,
+      );
     } finally {
       titleCtrl.dispose();
       categoryCtrl.dispose();
@@ -552,11 +552,165 @@ class _AdminConvocatoriasWidgetState extends State<AdminConvocatoriasWidget> {
     if (confirm != true) return;
 
     try {
-      await SupaFlow.client.from('convocatorias').delete().eq('id', id);
+      await _deleteConvocatoriaById(id);
       await _loadConvocatorias();
+      _showSnack('Convocatoria eliminada correctamente.');
     } catch (e) {
       debugPrint('AdminConvocatorias delete error: $e');
+      _showSnack(
+        'No se pudo eliminar la convocatoria: ${_errorMessage(e)}',
+        color: Colors.red,
+      );
     }
+  }
+
+  Future<void> _saveConvocatoria({
+    required Map<String, dynamic> payload,
+    String? convocatoriaId,
+  }) async {
+    final normalizedId = convocatoriaId?.trim() ?? '';
+    final params = <String, dynamic>{
+      'p_id': normalizedId.isEmpty ? null : normalizedId,
+      'p_titulo': payload['titulo'],
+      'p_categoria': payload['categoria'],
+      'p_posicion': payload['posicion'],
+      'p_pais': payload['pais'],
+      'p_ciudad': payload['ciudad'],
+      'p_club_id': payload['club_id'],
+      'p_is_active': payload['is_active'],
+      'p_fecha_inicio': payload['fecha_inicio'],
+      'p_fecha_fin': payload['fecha_fin'],
+    };
+
+    try {
+      await SupaFlow.client.rpc(
+        'admin_save_convocatoria',
+        params: params,
+      );
+      return;
+    } catch (error) {
+      if (!_isMissingRpcError(error)) {
+        rethrow;
+      }
+      debugPrint('admin_save_convocatoria RPC unavailable: $error');
+    }
+
+    final directPayload = <String, dynamic>{
+      ...payload,
+      'ubicacion': (payload['ubicacion']?.toString().trim().isNotEmpty ?? false)
+          ? payload['ubicacion']
+          : 'Sin ubicación',
+    };
+
+    if (normalizedId.isEmpty) {
+      await SupaFlow.client.from('convocatorias').insert({
+        ...directPayload,
+        'created_at': DateTime.now().toIso8601String(),
+        'edad_min': 0,
+      });
+    } else {
+      await SupaFlow.client
+          .from('convocatorias')
+          .update(directPayload)
+          .eq('id', normalizedId);
+    }
+  }
+
+  Future<void> _deleteConvocatoriaById(String id) async {
+    try {
+      await SupaFlow.client.rpc(
+        'admin_delete_convocatoria',
+        params: <String, dynamic>{'p_convocatoria_id': id},
+      );
+      return;
+    } catch (error) {
+      if (!_isMissingRpcError(error)) {
+        rethrow;
+      }
+      debugPrint('admin_delete_convocatoria RPC unavailable: $error');
+    }
+
+    await _deleteConvocatoriaDependents(id);
+    await SupaFlow.client.from('convocatorias').delete().eq('id', id);
+  }
+
+  Future<void> _deleteConvocatoriaDependents(String convocatoriaId) async {
+    final listaIds = <String>{};
+    try {
+      final response = await SupaFlow.client
+          .from('listas')
+          .select('id')
+          .eq('convocatoria_id', convocatoriaId);
+      for (final row in List<Map<String, dynamic>>.from(response as List)) {
+        final id = row['id']?.toString().trim() ?? '';
+        if (id.isNotEmpty) listaIds.add(id);
+      }
+    } catch (error) {
+      debugPrint('Convocatoria dependent listas lookup failed: $error');
+    }
+
+    for (final listaId in listaIds) {
+      await _tryDeleteByColumn('listas_jugadores', 'lista_id', listaId);
+      await _tryDeleteByColumn('activity_notifications', 'entity_id', listaId);
+    }
+
+    for (final table in const [
+      'convocatoria_application_snapshots',
+      'convocatoria_scout_requests',
+      'aplicaciones_convocatoria',
+      'postulaciones',
+      'listas',
+    ]) {
+      await _tryDeleteByColumn(table, 'convocatoria_id', convocatoriaId);
+    }
+
+    await _tryDeleteByColumn(
+      'activity_notifications',
+      'entity_id',
+      convocatoriaId,
+    );
+  }
+
+  Future<void> _tryDeleteByColumn(
+    String table,
+    String column,
+    String value,
+  ) async {
+    try {
+      await SupaFlow.client.from(table).delete().eq(column, value);
+    } catch (error) {
+      debugPrint('Convocatoria dependent delete $table.$column failed: $error');
+    }
+  }
+
+  bool _isMissingRpcError(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('admin_save_convocatoria') ||
+        text.contains('admin_delete_convocatoria') ||
+        (text.contains('function') && text.contains('not found')) ||
+        text.contains('pgrst202') ||
+        text.contains('could not find the function');
+  }
+
+  String _errorMessage(Object error) {
+    final text = error.toString();
+    if (text.contains('admin_only')) {
+      return 'tu usuario no tiene permisos de administrador.';
+    }
+    if (text.contains('convocatoria_not_found')) {
+      return 'la convocatoria ya no existe.';
+    }
+    return text;
+  }
+
+  void _showSnack(String message, {Color color = const Color(0xFF0D3B66)}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+      ),
+    );
   }
 
   DateTime? _parseDate(dynamic value) {

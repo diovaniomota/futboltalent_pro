@@ -394,6 +394,9 @@ class AdminUserManagementService {
     );
     await _safeDeleteByColumnValues('user_badges', 'user_id', {userId});
     await _safeDeleteByColumnValues('user_stats', 'user_id', {userId});
+    await _safeDeleteByColumnValues('user_progress', 'user_id', {userId});
+    await _safeDeleteByColumnValues('user_courses', 'user_id', {userId});
+    await _safeDeleteByColumnValues('user_exercises', 'user_id', {userId});
     await _safeDeleteByColumnValues(
         'user_challenge_goals', 'user_id', {userId});
     await _safeDeleteByColumnValues('followers', 'follower_id', {userId});
@@ -403,6 +406,24 @@ class AdminUserManagementService {
     await _safeDeleteByColumnValues(
         'contact_requests', 'from_user_id', {userId});
     await _safeDeleteByColumnValues('contact_requests', 'to_user_id', {userId});
+    await _safeDeleteByColumnValues(
+        'contact_requests', 'requester_id', {userId});
+    await _safeDeleteByColumnValues('contact_requests', 'target_id', {userId});
+    await _safeDeleteByColumnValues('saved_videos', 'user_id', {userId});
+    await _safeDeleteByColumnValues('saved_videos', 'video_id', videoIds);
+    await _safeDeleteByColumnValues('blocked_users', 'user_id', {userId});
+    await _safeDeleteByColumnValues(
+        'blocked_users', 'blocked_user_id', {userId});
+    await _safeDeleteByColumnValues('blocked_users', 'blocker_id', {userId});
+    await _safeDeleteByColumnValues('blocked_users', 'blocked_id', {userId});
+    await _safeDeleteByColumnValues('reported_content', 'user_id', {userId});
+    await _safeDeleteByColumnValues(
+        'reported_content', 'reporter_user_id', {userId});
+    await _safeDeleteByColumnValues(
+        'reported_content', 'reported_user_id', {userId});
+    await _safeDeleteByColumnValues('reports', 'user_id', {userId});
+    await _safeDeleteByColumnValues('reports', 'reporter_user_id', {userId});
+    await _safeDeleteByColumnValues('reports', 'reported_user_id', {userId});
     await _safeDeleteByColumnValues(
       'player_profile_views',
       'player_user_id',
@@ -438,6 +459,51 @@ class AdminUserManagementService {
     await _safeDeleteByColumnValues('postulaciones', 'player_id', {userId});
     await _safeDeleteByColumnValues(
       'postulaciones',
+      'convocatoria_id',
+      convocatoriaIds,
+    );
+    await _safeDeleteByColumnValues(
+      'convocatoria_application_snapshots',
+      'user_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues(
+      'convocatoria_application_snapshots',
+      'player_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues(
+      'convocatoria_application_snapshots',
+      'jugador_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues(
+      'convocatoria_application_snapshots',
+      'convocatoria_id',
+      convocatoriaIds,
+    );
+    await _safeDeleteByColumnValues(
+      'convocatoria_scout_requests',
+      'player_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues(
+      'convocatoria_scout_requests',
+      'jugador_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues(
+      'convocatoria_scout_requests',
+      'scout_id',
+      {userId},
+    );
+    await _safeDeleteByColumnValues(
+      'convocatoria_scout_requests',
+      'club_id',
+      clubIds,
+    );
+    await _safeDeleteByColumnValues(
+      'convocatoria_scout_requests',
       'convocatoria_id',
       convocatoriaIds,
     );

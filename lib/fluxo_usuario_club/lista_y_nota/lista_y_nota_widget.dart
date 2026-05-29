@@ -35,7 +35,7 @@ class _ListaYNotaWidgetState extends State<ListaYNotaWidget> {
   List<Map<String, dynamic>> _jugadoresEnLista = [];
   List<Map<String, dynamic>> _filteredJugadores = [];
   String? _stateFilter; // null = all
-  bool _showSavedDirectory = false;
+  bool _showSavedDirectory = true;
   bool _isLoadingSavedDirectory = false;
   List<Map<String, dynamic>> _savedPlayersDirectory = [];
   List<Map<String, dynamic>> _filteredSavedPlayersDirectory = [];
